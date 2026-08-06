@@ -12,6 +12,7 @@ import { SearchProvider } from './context/SearchContext'
 const Home = lazy(async () => ({ default: (await import('./pages/Home')).Home }))
 const Dashboard = lazy(async () => ({ default: (await import('./pages/Dashboard')).Dashboard }))
 const SeasonProjections = lazy(async () => ({ default: (await import('./pages/SeasonProjections')).SeasonProjections }))
+const DraftBoard = lazy(async () => ({ default: (await import('./pages/DraftBoard')).DraftBoard }))
 const PlayerDetail = lazy(async () => ({ default: (await import('./pages/PlayerDetail')).PlayerDetail }))
 const BacktestExplorer = lazy(async () => ({ default: (await import('./pages/BacktestExplorer')).BacktestExplorer }))
 const Settings = lazy(async () => ({ default: (await import('./pages/Settings')).Settings }))
@@ -30,6 +31,7 @@ export function App() {
                 <Route path="/"                element={<Home />} />
                 <Route path="/projections"     element={<Dashboard />} />
                 <Route path="/season"          element={<SeasonProjections />} />
+                <Route path="/draft"           element={<DraftBoard />} />
                 <Route path="/player/:player_id" element={<PlayerDetail />} />
                 <Route path="/backtest"         element={<BacktestExplorer />} />
                 <Route path="/settings"         element={<Settings />} />

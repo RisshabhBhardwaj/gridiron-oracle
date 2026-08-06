@@ -86,6 +86,23 @@ _DEFAULT_POSITIONS = ["QB", "RB", "WR", "TE"]
 # for p10/p90 estimation. Increase to 2000 for final production reports.
 _WEEK_SAMPLES = 200
 
+# Conference membership for playoff probability (7 berths per conference).
+_AFC = frozenset({
+    "BUF", "MIA", "NE", "NYJ",
+    "BAL", "CIN", "CLE", "PIT",
+    "HOU", "IND", "JAX", "TEN",
+    "DEN", "KC", "LV", "LAC",
+})
+_NFC = frozenset({
+    "DAL", "NYG", "PHI", "WAS",
+    "CHI", "DET", "GB", "MIN",
+    "ATL", "CAR", "NO", "TB",
+    "ARI", "LAR", "SF", "SEA",
+})
+_PLAYOFF_BERTHS = 7
+# Fantasy→NFL score scale used when scoring simulated games from player PPR.
+_FANTASY_TO_NFL_SCALE = 4.0
+
 
 # ── Data Structures ───────────────────────────────────────────────────────────
 
@@ -118,6 +135,10 @@ class SeasonSimulation:
 
     # {team: {"wins_mean": float, "wins_p10": float, "wins_p90": float}}
     team_win_totals: dict[str, dict[str, float]] = field(default_factory=dict)
+
+    # {team: float} — fraction of season paths where team makes the playoffs
+    # (top 7 by wins within conference; ties broken randomly per path).
+    playoff_probs: dict[str, float] = field(default_factory=dict)
 
     # list of {player_id, week, stat, mean, p10, p50, p90} — per-week breakdown
     week_by_week: list[dict[str, Any]] = field(default_factory=list)
@@ -318,11 +339,14 @@ class SeasonSimulator:
                     "p90":       float(np.percentile(sims, 90)),
                 })
 
-            # Update simulated Elo from week outcomes
+            # Update simulated Elo + accumulate per-path team wins
             if not week_schedule.empty:
                 # Build team map for this week
                 team_map = dict(zip(initial_kalman_df["player_id"].astype(str), initial_kalman_df["team"]))
                 self._update_elo_from_week(week_schedule, week_paths, week, team_map)
+                self._accumulate_week_wins(
+                    week_schedule, week_paths, team_map, team_win_accum, self.n_simulations
+                )
 
             # Update Kalman priors with simulated week medians (for next week's prior).
             # Using median instead of mean reduces sensitivity to outlier simulations.
@@ -360,6 +384,8 @@ class SeasonSimulator:
                 "wins_p90":  float(np.percentile(wins, 90)),
             }
 
+        playoff_probs = self._playoff_probs_from_wins(team_win_accum, rng)
+
         result = SeasonSimulation(
             season=self.season,
             start_week=self.start_week,
@@ -369,6 +395,7 @@ class SeasonSimulator:
             stats=self.stats,
             player_season_totals=player_season_totals,
             team_win_totals=team_win_totals,
+            playoff_probs=playoff_probs,
             week_by_week=week_by_week_rows,
         )
 
@@ -683,6 +710,95 @@ class SeasonSimulator:
         except Exception as exc:
             logger.debug("_apply_injury_to_kalman: error (%s); returning unchanged.", exc)
             return kalman_df
+
+    # ── Team wins / playoffs ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _team_fantasy_points(
+        week_paths: dict[tuple[str, str], np.ndarray],
+        team_map: dict[str, str],
+        team: str,
+        n_simulations: int,
+    ) -> np.ndarray:
+        """Sum simulated fantasy_ppr for a team across simulation paths."""
+        pts = np.zeros(n_simulations, dtype=float)
+        for pid, tm in team_map.items():
+            if tm != team:
+                continue
+            arr = week_paths.get((pid, "fantasy_ppr"))
+            if arr is None:
+                continue
+            pts = pts + np.asarray(arr, dtype=float)
+        return pts / _FANTASY_TO_NFL_SCALE
+
+    def _accumulate_week_wins(
+        self,
+        week_schedule: pd.DataFrame,
+        week_paths: dict[tuple[str, str], np.ndarray],
+        team_map: dict[str, str],
+        team_win_accum: dict[str, np.ndarray],
+        n_simulations: int,
+    ) -> None:
+        """
+        Increment per-path win counts from simulated week outcomes.
+
+        Uses fantasy_ppr team totals (scaled) as the game score proxy so each
+        Monte Carlo path has an independent win record. Ties award 0.5 wins.
+        """
+        for _, game_row in week_schedule.iterrows():
+            home_team = str(game_row.get("home_team", "") or "")
+            away_team = str(game_row.get("away_team", "") or "")
+            if not home_team or not away_team:
+                continue
+            if home_team not in team_win_accum or away_team not in team_win_accum:
+                # Ensure keys exist even if schedule had unexpected teams
+                team_win_accum.setdefault(home_team, np.zeros(n_simulations))
+                team_win_accum.setdefault(away_team, np.zeros(n_simulations))
+
+            home_pts = self._team_fantasy_points(
+                week_paths, team_map, home_team, n_simulations
+            )
+            away_pts = self._team_fantasy_points(
+                week_paths, team_map, away_team, n_simulations
+            )
+            # If neither side has fantasy_ppr samples, skip (avoid all-tie inflation)
+            if float(home_pts.sum()) == 0.0 and float(away_pts.sum()) == 0.0:
+                continue
+
+            home_win = home_pts > away_pts
+            away_win = away_pts > home_pts
+            tie = ~(home_win | away_win)
+            team_win_accum[home_team] += home_win.astype(float) + 0.5 * tie.astype(float)
+            team_win_accum[away_team] += away_win.astype(float) + 0.5 * tie.astype(float)
+
+    @staticmethod
+    def _playoff_probs_from_wins(
+        team_win_accum: dict[str, np.ndarray],
+        rng: np.random.Generator,
+    ) -> dict[str, float]:
+        """Fraction of paths where each team finishes top-7 in its conference."""
+        if not team_win_accum:
+            return {}
+        teams = list(team_win_accum.keys())
+        n_sims = len(next(iter(team_win_accum.values())))
+        wins_mat = np.column_stack([team_win_accum[t] for t in teams])  # (n_sims, n_teams)
+
+        made = {t: 0 for t in teams}
+        for s in range(n_sims):
+            row = wins_mat[s]
+            # Tiny jitter breaks exact ties deterministically per path
+            jitter = rng.uniform(0, 1e-6, size=len(teams))
+            scored = row + jitter
+            for conf in (_AFC, _NFC):
+                idxs = [i for i, t in enumerate(teams) if t in conf]
+                if not idxs:
+                    continue
+                conf_scores = [(scored[i], teams[i]) for i in idxs]
+                conf_scores.sort(reverse=True)
+                for _, t in conf_scores[:_PLAYOFF_BERTHS]:
+                    made[t] += 1
+
+        return {t: made[t] / n_sims for t in teams}
 
     # ── Elo Update ───────────────────────────────────────────────────────────
 

@@ -7,6 +7,7 @@ import { useBetSlip } from '@/context/BetSlipContext'
 const NAV_LINKS = [
   { to: '/projections', label: 'All Projections', exact: false },
   { to: '/season', label: 'Season', exact: false },
+  { to: '/draft', label: 'Draft', exact: false },
   { to: '/backtest', label: 'Backtesting', exact: false },
   { to: '/settings', label: 'Settings', exact: false },
 ]

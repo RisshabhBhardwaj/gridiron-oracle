@@ -359,7 +359,7 @@ except ImportError:
 # Routers
 # ---------------------------------------------------------------------------
 
-from backend.app.api import predict, explain, scenario, backtest, settings as settings_router, alerts, season as season_router  # noqa: E402
+from backend.app.api import predict, explain, scenario, backtest, settings as settings_router, alerts, season as season_router, draft as draft_router  # noqa: E402
 
 app.include_router(predict.router)
 app.include_router(explain.router)
@@ -368,6 +368,7 @@ app.include_router(backtest.router)
 app.include_router(settings_router.router)
 app.include_router(alerts.router)
 app.include_router(season_router.router)
+app.include_router(draft_router.router)
 
 
 # ---------------------------------------------------------------------------

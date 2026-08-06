@@ -437,6 +437,7 @@ def _aggregate_pbp(pbp: pd.DataFrame, season: int) -> tuple[pd.DataFrame, pd.Dat
                          "xyac_per_reception", "epa_per_target",
                          "target_share_pbp", "air_yards_share_pbp",
                          "red_zone_targets", "end_zone_targets",
+                         "red_zone_target_share",
                          "pass_left_rate", "pass_middle_rate", "pass_right_rate"]].copy()
 
     features = features.merge(

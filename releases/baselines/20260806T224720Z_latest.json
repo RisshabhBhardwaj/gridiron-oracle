@@ -1,0 +1,79 @@
+{
+  "baseline_manifest_path": "releases/current_baseline.json",
+  "created_at": "2026-08-06T22:47:20.643211+00:00",
+  "environment": {
+    "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
+    "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
+    "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
+  },
+  "git_branch": "main",
+  "git_commit": "718c1f7732c7dcb7ef83c2b3b790d7f28a8ff712",
+  "git_dirty": true,
+  "integrity": {
+    "artifact_mode_ready": null,
+    "checks": {
+      "backtest_assets": {
+        "detail": "Backtest assets available",
+        "observed": {
+          "latest_csv": "/Users/risshabh/Projects/Active/gridiron_oracle/ml/backtest_results/backtest_2019_2025.csv"
+        },
+        "status": "ok"
+      },
+      "baseline_manifest": {
+        "detail": "Baseline manifest missing at releases/current_baseline.json",
+        "status": "error"
+      },
+      "database": {
+        "detail": "Database reachable",
+        "status": "ok"
+      },
+      "feature_matrix": {
+        "detail": "feature_matrix freshness checked",
+        "observed": {
+          "age_hours": 0.04,
+          "computed_at": "2026-08-06T22:45:05.733470+00:00",
+          "season": 2019,
+          "week": 5
+        },
+        "status": "ok"
+      },
+      "mlflow": {
+        "detail": "MLflow unreachable: [Errno 61] Connection refused",
+        "observed": {
+          "uri": "http://localhost:5001"
+        },
+        "status": "error"
+      },
+      "tracing": {
+        "detail": "Trace propagation enabled; exporter disabled",
+        "observed": {
+          "active_exporters": [],
+          "otlp_endpoint": null,
+          "otlp_protocol": "http/protobuf",
+          "requested_exporters": [
+            "none"
+          ],
+          "service_name": "gridiron-oracle-api"
+        },
+        "status": "ok"
+      }
+    },
+    "fallback_allowed": true,
+    "generated_at": "2026-08-06T22:47:20.643172+00:00",
+    "model_version": "latest",
+    "overall_status": "degraded",
+    "product_mode": "graceful_fallback"
+  },
+  "mlflow_tracking_uri": "http://localhost:5001",
+  "model_version": "latest",
+  "product_mode": "graceful_fallback",
+  "projection_policy": {
+    "approved_pipeline_run_ids": [],
+    "require_interval_columns": true,
+    "require_posterior_samples": true
+  },
+  "verification": {
+    "local_verify_command": "make verify-local",
+    "readiness_verify_command": "python scripts/verify_release_readiness.py"
+  }
+}

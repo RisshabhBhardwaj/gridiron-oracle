@@ -1,0 +1,250 @@
+player_name,position,team,adp
+Ja'Marr Chase,WR,CIN,1.5
+Bijan Robinson,RB,ATL,2.1
+Saquon Barkley,RB,PHI,2.5
+Justin Jefferson,WR,MIN,4.4
+CeeDee Lamb,WR,DAL,4.9
+Jahmyr Gibbs,RB,DET,5.1
+Malik Nabers,WR,NYG,7.5
+Christian McCaffrey,RB,SF,8.0
+Puka Nacua,WR,LAR,9.7
+Nico Collins,WR,HOU,10.0
+Amon-Ra St. Brown,WR,DET,10.7
+Derrick Henry,RB,BAL,11.1
+Ashton Jeanty,RB,LV,11.7
+De'Von Achane,RB,MIA,14.1
+Brian Thomas Jr.,WR,JAX,14.7
+Drake London,WR,ATL,15.4
+Josh Jacobs,RB,GB,16.6
+A.J. Brown,WR,PHI,17.9
+Jonathan Taylor,RB,IND,18.5
+Bucky Irving,RB,TB,19.5
+Chase Brown,RB,CIN,20.1
+Tee Higgins,WR,CIN,21.7
+Lamar Jackson,QB,BAL,22.9
+Kyren Williams,RB,LAR,23.1
+Ladd McConkey,WR,LAC,23.4
+Josh Allen,QB,BUF,24.7
+Tyreek Hill,WR,FA,26.4
+Brock Bowers,TE,LV,27.1
+Davante Adams,WR,LAR,29.0
+Alvin Kamara,RB,NO,29.7
+Mike Evans,WR,SF,30.0
+Joe Burrow,QB,CIN,30.3
+Jayden Daniels,QB,WAS,31.4
+Trey McBride,TE,ARI,32.6
+Jaxon Smith-Njigba,WR,SEA,33.0
+James Cook III,RB,BUF,33.7
+DK Metcalf,WR,PIT,37.6
+Terry McLaurin,WR,WAS,38.3
+Jalen Hurts,QB,PHI,38.5
+Omarion Hampton,RB,LAC,38.6
+Marvin Harrison Jr.,WR,ARI,39.0
+Garrett Wilson,WR,NYJ,39.5
+Chuba Hubbard,RB,CAR,40.2
+James Conner,RB,ARI,42.3
+DJ Moore,WR,BUF,43.5
+George Kittle,TE,SF,43.9
+Kenneth Walker III,RB,KC,44.0
+Courtland Sutton,WR,DEN,47.3
+Breece Hall,RB,NYJ,47.5
+DeVonta Smith,WR,PHI,48.3
+TreVeyon Henderson,RB,NE,50.3
+Xavier Worthy,WR,KC,50.9
+Patrick Mahomes,QB,KC,52.3
+Tetairoa McMillan,WR,CAR,52.3
+Baker Mayfield,QB,TB,53.3
+Tony Pollard,RB,TEN,56.8
+D'Andre Swift,RB,CHI,56.8
+Zay Flowers,WR,BAL,56.8
+Calvin Ridley,WR,TEN,57.1
+Jerry Jeudy,WR,CLE,58.8
+George Pickens,WR,DAL,59.6
+David Montgomery,RB,HOU,60.3
+RJ Harvey,RB,DEN,61.9
+Sam LaPorta,TE,DET,63.0
+Aaron Jones Sr.,RB,MIN,63.2
+Jameson Williams,WR,DET,63.4
+Travis Kelce,TE,KC,65.0
+Jaylen Waddle,WR,MIA,65.2
+Isiah Pacheco,RB,DET,66.8
+Bo Nix,QB,DEN,66.9
+Deebo Samuel Sr.,WR,FA,70.4
+Travis Hunter,WR,JAX,70.8
+Jakobi Meyers,WR,JAX,70.9
+Chris Olave,WR,NO,72.0
+T.J. Hockenson,TE,MIN,73.1
+Tyrone Tracy Jr.,RB,NYG,74.8
+Ricky Pearsall,WR,SF,76.1
+Jaylen Warren,RB,PIT,76.3
+David Njoku,TE,FA,76.6
+Stefon Diggs,WR,FA,77.3
+Brock Purdy,QB,SF,77.5
+Matthew Golden,WR,GB,78.2
+Kaleb Johnson,RB,PIT,79.2
+Rome Odunze,WR,CHI,80.3
+Rashee Rice,WR,KC,82.5
+Jauan Jennings,WR,FA,83.5
+Emeka Egbuka,WR,TB,84.2
+Austin Ekeler,RB,FA,84.3
+Dak Prescott,QB,DAL,84.7
+Khalil Shakir,WR,BUF,85.1
+Kyler Murray,QB,MIN,86.0
+Mark Andrews,TE,BAL,87.2
+Michael Pittman Jr.,WR,PIT,87.2
+Cooper Kupp,WR,SEA,92.0
+Dallas Defense,DEF,DAL,92.5
+Josh Downs,WR,IND,93.4
+Evan Engram,TE,DEN,93.5
+J.K. Dobbins,RB,DEN,94.0
+Jared Goff,QB,DET,97.8
+NY Giants Defense,DEF,NYG,98.7
+Jordan Addison,WR,MIN,98.8
+Zach Charbonnet,RB,SEA,99.4
+Chris Godwin Jr.,WR,TB,99.8
+Keon Coleman,WR,BUF,101.2
+Travis Etienne Jr.,RB,NO,101.2
+Caleb Williams,QB,CHI,102.3
+Jayden Reed,WR,GB,103.6
+Jordan Mason,RB,MIN,104.9
+Darnell Mooney,WR,NYG,105.9
+Rashid Shaheed,WR,SEA,106.0
+Denver Defense,DEF,DEN,106.1
+Tyler Warren,TE,IND,106.2
+J.J. McCarthy,QB,MIN,107.1
+Jacory Croskey-Merritt,RB,WAS,107.5
+Justin Herbert,QB,LAC,110.1
+Justin Fields,QB,KC,110.4
+Drake Maye,QB,NE,110.4
+Joe Mixon,RB,FA,113.3
+Tucker Kraft,TE,GB,113.9
+Pittsburgh Defense,DEF,PIT,114.6
+Javonte Williams,RB,DAL,116.3
+Keenan Allen,WR,FA,116.5
+Philadelphia Defense,DEF,PHI,116.6
+Baltimore Defense,DEF,BAL,118.0
+Jake Ferguson,TE,DAL,118.4
+Rhamondre Stevenson,RB,NE,119.7
+Christian Kirk,WR,SF,121.0
+Trevor Lawrence,QB,JAX,121.1
+Cedric Tillman,WR,CLE,121.1
+Jordan Love,QB,GB,122.3
+Quinshon Judkins,RB,CLE,125.4
+Marvin Mims Jr.,WR,DEN,125.9
+Wan'Dale Robinson,WR,TEN,127.2
+Hollywood Brown,WR,FA,127.9
+Buffalo Defense,DEF,BUF,128.3
+Cam Skattebo,RB,NYG,129.2
+C.J. Stroud,QB,HOU,129.4
+Jayden Higgins,WR,HOU,129.8
+Brandon Aubrey,PK,DAL,130.1
+Jerome Ford,RB,WAS,130.8
+Dallas Goedert,TE,PHI,131.1
+Adam Thielen,WR,FA,131.3
+Romeo Doubs,WR,NE,132.5
+Rashod Bateman,WR,BAL,133.2
+Tank Bigsby,RB,PHI,134.3
+Nick Chubb,RB,FA,136.1
+Houston Defense,DEF,HOU,137.1
+Dalton Kincaid,TE,BUF,137.5
+Rachaad White,RB,WAS,138.4
+Tua Tagovailoa,QB,ATL,138.5
+Tyjae Spears,RB,TEN,139.0
+Matt Gay,PK,LV,140.5
+Joshua Palmer,WR,BUF,140.6
+Xavier Legette,WR,CAR,140.7
+Colston Loveland,TE,CHI,141.2
+Tyler Bass,PK,BUF,141.9
+Trey Benson,RB,ARI,142.2
+Kyle Pitts Sr.,TE,ATL,142.3
+DeMario Douglas,WR,NE,142.7
+Jaydon Blue,RB,DAL,144.0
+Jake Bates,PK,DET,145.0
+Harrison Butker,PK,KC,145.3
+Green Bay Defense,DEF,GB,145.6
+Minnesota Defense,DEF,MIN,146.0
+Brandon Aiyuk,WR,SF,146.1
+Detroit Defense,DEF,DET,146.1
+Dylan Sampson,RB,CLE,146.4
+Chase McLaughlin,PK,TB,146.9
+Cameron Dicker,PK,LAC,147.8
+Chris Rodriguez Jr.,RB,JAX,148.0
+Braelon Allen,RB,NYJ,148.0
+Jake Elliott,PK,PHI,149.0
+Brian Robinson Jr.,RB,FA,149.0
+NY Jets Defense,DEF,NYJ,149.2
+Geno Smith,QB,NYJ,149.6
+Matthew Stafford,QB,LAR,149.7
+Zach Ertz,TE,FA,149.8
+Dont'e Thornton Jr.,WR,LV,150.1
+Isaiah Likely,TE,NYG,150.2
+Hunter Henry,TE,NE,150.2
+Luther Burden III,WR,CHI,150.7
+Will Shipley,RB,PHI,151.2
+Mason Taylor,TE,NYJ,151.9
+Jalen Coker,WR,CAR,152.0
+Michael Wilson,WR,ARI,152.3
+LA Rams Defense,DEF,LAR,152.3
+Bhayshul Tuten,RB,JAX,152.7
+Ollie Gordon II,RB,MIA,152.9
+Jonnu Smith,TE,FA,152.9
+Michael Penix Jr.,QB,ATL,153.2
+Bryce Young,QB,CAR,153.3
+Tory Horton,WR,SEA,153.6
+Najee Harris,RB,FA,153.9
+Tyler Allgeier,RB,ARI,154.5
+Evan McPherson,PK,CIN,154.6
+Chig Okonkwo,TE,WAS,154.7
+Tampa Bay Defense,DEF,TB,154.9
+Chicago Defense,DEF,CHI,155.1
+Tre' Harris,WR,LAC,155.4
+Ray Davis,RB,BUF,155.9
+Cleveland Defense,DEF,CLE,155.9
+Isaac TeSlaa,WR,DET,156.7
+Kyle Monangai,RB,CHI,156.8
+San Francisco Defense,DEF,SF,156.9
+Arizona Defense,DEF,ARI,157.1
+Woody Marks,RB,HOU,157.3
+Troy Franklin,WR,DEN,157.7
+Cam Little,PK,JAX,157.9
+New England Defense,DEF,NE,158.4
+Amari Cooper,WR,FA,159.4
+Washington Defense,DEF,WAS,159.5
+Cam Ward,QB,TEN,159.8
+Tyler Loop,PK,BAL,159.8
+Brenton Strange,TE,JAX,161.3
+Chris Boswell,PK,PIT,161.6
+LA Chargers Defense,DEF,LAC,162.3
+Quentin Johnston,WR,LAC,162.8
+Ka'imi Fairbairn,PK,HOU,163.0
+Tyler Lockett,WR,FA,163.5
+Aaron Rodgers,QB,FA,163.6
+Kansas City Defense,DEF,KC,163.6
+Seattle Defense,DEF,SEA,164.2
+Brandon McManus,PK,GB,164.3
+Jaxson Dart,QB,NYG,165.1
+Kyle Williams,WR,NE,165.5
+Darius Slayton,WR,NYG,165.9
+Younghoe Koo,PK,FA,166.1
+Andrei Iosivas,WR,CIN,166.3
+Joshua Karty,PK,ARI,166.5
+DeAndre Hopkins,WR,FA,166.5
+Sam Darnold,QB,SEA,166.7
+Mike Gesicki,TE,CIN,166.7
+Wil Lutz,PK,DEN,166.9
+Pat Bryant,WR,DEN,167.2
+Justice Hill,RB,BAL,167.3
+Calvin Austin III,WR,NYG,167.7
+Ray-Ray McCloud III,WR,FA,167.8
+Darren Waller,TE,FA,168.4
+Cade Otton,TE,TB,168.4
+Will Reichard,PK,MIN,168.5
+Jack Bech,WR,LV,170.0
+Jake Moody,PK,WAS,170.3
+Rico Dowdle,RB,PIT,171.1
+Daniel Carlson,PK,FA,171.1
+Jaylen Wright,RB,MIA,171.8
+Alec Pierce,WR,IND,173.1
+Kareem Hunt,RB,FA,173.8
+Keaton Mitchell,RB,LAC,174.3
+Elic Ayomanor,WR,TEN,177.0

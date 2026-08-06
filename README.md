@@ -2,6 +2,19 @@
 
 > An NFL player-projection platform with a low-latency C++ execution engine — built to be evaluated honestly, not to look impressive.
 
+## Evaluation first
+
+Before changing models or promoting a run, answer these in order:
+
+1. **Causal?** Both prediction and baseline use only prior information (`require_causal_projections`, OOF or `max_train_season`).
+2. **Beat naive + trailing-3?** `python -m ml.eval_causal` / `make diagnose-backtest` on `fantasy_ppr` (and volume targets).
+3. **Beat ADP?** `python -m ml.adp_eval --season YYYY --from-actuals` (Spearman ρ of season ranks vs historical Full PPR ADP).
+4. **Feature groups?** Phase 4 groups stay off `FEATURE_COLS` until `python -m ml.feature_groups --group …` shows a held-out MAE win.
+5. **Model floor?** Stack layers only where they beat `python -m ml.model_floor`.
+6. **Promote?** `python scripts/reprojection_gate.py` then `make freeze-baseline` with `PRODUCT_MODE=artifact_backed`.
+
+Draft board UI: `/draft` (API `/draft/board`). ADP CSVs live under `data/adp/historical/` (Fantasy Football Calculator; see `PROVENANCE.md`).
+
 Gridiron Oracle ingests multi-source NFL data, tracks latent player ability with a Kalman filter, ensembles four base learners under a Bayesian uncertainty layer, validates with walk-forward backtesting, and feeds sized signals into a lock-free C++ engine.
 
 The design principle throughout is that **the evaluation is the product.** Anyone can stack four models. The interesting question is whether the result beats a naive baseline — and this repository is set up to answer that question rather than avoid it.
@@ -104,10 +117,17 @@ make yardage-diagnostic  # the yardage evaluation reported above
 
 | Mode | Meaning |
 |---|---|
-| `artifact_backed` | The API relies on real model artifacts and backtest assets. Nothing synthetic is served. |
-| `graceful_fallback` | Fallback paths are permitted, and the API and UI **must** label synthetic outputs explicitly. |
+| `artifact_backed` | **Production default intent.** API relies on real model artifacts + `releases/current_baseline.json`. Nothing synthetic is served. Set `PRODUCT_MODE=artifact_backed`, `BASELINE_MANIFEST_PATH=releases/current_baseline.json`, `ARTIFACT_INVALIDATION_PATH=releases/artifact_invalidations.json`. |
+| `graceful_fallback` | Fallback paths are permitted, and the API and UI **must** label synthetic outputs explicitly. Local default until a baseline is frozen. |
 
 `/health` exposes a readiness summary; `/integrity` exposes the detailed operational report used for release checks.
+
+Freeze / gate:
+
+```bash
+python scripts/reprojection_gate.py --holdout-season 2024 --position WR --target fantasy_ppr
+make freeze-baseline   # writes releases/current_baseline.json
+```
 
 ## The evidence pipeline
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -575,4 +576,351 @@ def compute_scheme_interactions(
         "coverage_matchup_score":  coverage_matchup,
         "blitz_exposure":          blitz_exp,
         "separation_demand_score": sep_demand,
+    }
+
+
+# ── Phase 4 feature groups (A/B-gated) ────────────────────────────────────────
+
+# Reused from ml.volume_redistribution (keep coefficients identical — do not diverge).
+_SPREAD_PASS_COEFFICIENT = 0.35
+_TOTAL_PASS_COEFFICIENT = 0.25
+_NEUTRAL_SPREAD_ABS = 3.0  # |spread| ≤ 3 → neutral script
+_GLOBAL_PASS_AVG = 35.0
+_GLOBAL_RUSH_AVG = 24.0
+
+
+@dataclass
+class SeasonFeatureContext:
+    """Precomputed causal aggregates for one season — build once, reuse per row."""
+
+    team_carries_by_game: dict[str, float]
+    team_pass_by_game: dict[str, float]
+    team_rush_by_game: dict[str, float]
+    league_ts: dict[int, dict[str, float]]
+    league_snap: dict[int, dict[str, float]]
+    league_carry: dict[int, dict[str, float]]
+    league_tgt_allowed: dict[int, float]
+    team_game_volume: dict[str, list[tuple[int, float, float]]]
+
+
+def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureContext:
+    """Scan season rows once; return lookups keyed by week / game / team."""
+    team_carries_by_game: dict[str, float] = defaultdict(float)
+    team_pass_by_game: dict[str, float] = defaultdict(float)
+    team_rush_by_game: dict[str, float] = defaultdict(float)
+    team_targets_by_game: dict[str, float] = defaultdict(float)
+    game_week: dict[str, int] = {}
+    game_team: dict[str, str] = {}
+    by_player: dict[str, list[tuple]] = defaultdict(list)
+    player_pos: dict[str, str] = {}
+
+    for r in all_season_rows:
+        week = int(r.get("week") or 0)
+        gid = r.get("game_id")
+        team = r.get("team") or ""
+        pid = str(r.get("player_id") or "")
+        pos = (r.get("position") or "").upper()
+        if gid and team:
+            team_carries_by_game[gid] += float(r.get("carries") or 0)
+            team_pass_by_game[gid] += float(r.get("attempts") or r.get("pass_attempts") or 0)
+            team_rush_by_game[gid] += float(r.get("carries") or 0)
+            team_targets_by_game[gid] += float(r.get("targets") or 0)
+            game_week[gid] = week
+            game_team[gid] = team
+        if pid:
+            player_pos[pid] = pos
+            snap_raw = r.get("offense_pct")
+            snap = None
+            if snap_raw is not None:
+                v = float(snap_raw)
+                snap = v / 100.0 if v > 1.0 else v
+            ts = r.get("target_share")
+            by_player[pid].append(
+                (week, float(ts) if ts is not None else None, snap, gid, float(r.get("carries") or 0))
+            )
+
+    team_game_volume: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
+    seen_team_game: set[tuple[str, str]] = set()
+    for gid, week in game_week.items():
+        team = game_team.get(gid, "")
+        key = (team, gid)
+        if key in seen_team_game:
+            continue
+        seen_team_game.add(key)
+        team_game_volume[team].append(
+            (week, team_pass_by_game.get(gid, 0.0), team_rush_by_game.get(gid, 0.0))
+        )
+    for team in team_game_volume:
+        team_game_volume[team].sort(key=lambda x: x[0])
+
+    max_week = max(game_week.values()) if game_week else 18
+    league_ts: dict[int, dict[str, float]] = {w: {} for w in range(1, max_week + 2)}
+    league_snap: dict[int, dict[str, float]] = {w: {} for w in range(1, max_week + 2)}
+    league_carry: dict[int, dict[str, float]] = {w: {} for w in range(1, max_week + 2)}
+    league_tgt_allowed: dict[int, float] = {}
+
+    for week in range(1, max_week + 2):
+        pos_ts: dict[str, list[float]] = defaultdict(list)
+        pos_snap: dict[str, list[float]] = defaultdict(list)
+        pos_carry: dict[str, list[float]] = defaultdict(list)
+        for pid, entries in by_player.items():
+            pos = player_pos.get(pid, "")
+            ts_vals = [e[1] for e in entries if e[0] < week and e[1] is not None]
+            snap_vals = [e[2] for e in entries if e[0] < week and e[2] is not None]
+            cs_vals = []
+            for e in entries:
+                if e[0] >= week:
+                    continue
+                gid = e[3]
+                tc = team_carries_by_game.get(gid or "", 0.0)
+                if tc > 0:
+                    cs_vals.append(e[4] / tc)
+            if ts_vals:
+                pos_ts[pos].append(sum(ts_vals) / len(ts_vals))
+            if snap_vals:
+                pos_snap[pos].append(sum(snap_vals) / len(snap_vals))
+            if cs_vals:
+                pos_carry[pos].append(sum(cs_vals) / len(cs_vals))
+        for pos, vals in pos_ts.items():
+            if vals:
+                league_ts[week][pos] = sum(vals) / len(vals)
+        for pos, vals in pos_snap.items():
+            if vals:
+                league_snap[week][pos] = sum(vals) / len(vals)
+        for pos, vals in pos_carry.items():
+            if vals:
+                league_carry[week][pos] = sum(vals) / len(vals)
+        tgt_vals = [team_targets_by_game[gid] for gid, w in game_week.items() if w < week]
+        if tgt_vals:
+            league_tgt_allowed[week] = sum(tgt_vals) / len(tgt_vals)
+
+    return SeasonFeatureContext(
+        team_carries_by_game=dict(team_carries_by_game),
+        team_pass_by_game=dict(team_pass_by_game),
+        team_rush_by_game=dict(team_rush_by_game),
+        league_ts=league_ts,
+        league_snap=league_snap,
+        league_carry=league_carry,
+        league_tgt_allowed=league_tgt_allowed,
+        team_game_volume=dict(team_game_volume),
+    )
+
+
+def compute_usage_shares(
+    prior_rows: list[dict],
+    all_season_rows: list[dict],
+    player_id: str,
+    team: str,
+    week: int,
+    position: Optional[str],
+    ctx: Optional[SeasonFeatureContext] = None,
+) -> dict[str, Optional[float]]:
+    empty = {"carry_share": None, "snap_share_trailing": None, "snap_share_trend": None}
+    if not prior_rows or not team:
+        return empty
+
+    if ctx is not None:
+        team_carries_by_game = ctx.team_carries_by_game
+    else:
+        team_carries_by_game = defaultdict(float)
+        for r in all_season_rows:
+            if r.get("team") == team and (r.get("week") or 0) < week:
+                gid = r.get("game_id")
+                if gid:
+                    team_carries_by_game[gid] += float(r.get("carries") or 0)
+
+    player_carry_shares: list[float] = []
+    for r in prior_rows:
+        gid = r.get("game_id")
+        tc = team_carries_by_game.get(gid or "", 0.0)
+        if tc > 0:
+            player_carry_shares.append(float(r.get("carries") or 0) / tc)
+    carry_share = (
+        sum(player_carry_shares) / len(player_carry_shares) if player_carry_shares else None
+    )
+
+    def _snap_frac(r: dict) -> Optional[float]:
+        raw = r.get("offense_pct")
+        if raw is None:
+            return None
+        v = float(raw)
+        return v / 100.0 if v > 1.0 else v
+
+    snaps = [s for s in (_snap_frac(r) for r in prior_rows) if s is not None]
+    snap_share_trailing = sum(snaps) / len(snaps) if snaps else None
+    snap_share_trend = (snaps[-1] - snaps[0]) if len(snaps) >= 2 else None
+    return {
+        "carry_share": carry_share,
+        "snap_share_trailing": snap_share_trailing,
+        "snap_share_trend": snap_share_trend,
+    }
+
+
+def compute_opp_adj_usage(
+    seas: dict[str, Optional[float]],
+    matchup: dict[str, Optional[float]],
+    usage: dict[str, Optional[float]],
+    all_season_rows: list[dict],
+    week: int,
+    position: Optional[str],
+    ctx: Optional[SeasonFeatureContext] = None,
+) -> dict[str, Optional[float]]:
+    if ctx is None:
+        ctx = build_season_feature_context(all_season_rows)
+    pos = (position or "").upper()
+    league_ts = ctx.league_ts.get(week, {}).get(pos)
+    league_snap = ctx.league_snap.get(week, {}).get(pos)
+    league_carry = ctx.league_carry.get(week, {}).get(pos)
+    league_tgt_allowed = ctx.league_tgt_allowed.get(week)
+
+    player_ts = seas.get("seas_avg_target_share")
+    snap_trailing = usage.get("snap_share_trailing")
+    carry_share = usage.get("carry_share")
+    opp_targets = matchup.get("opp_avg_targets_allowed")
+    opp_adj = None
+    if player_ts is not None and opp_targets is not None and league_tgt_allowed:
+        opp_adj = player_ts * (opp_targets / league_tgt_allowed)
+
+    return {
+        "ts_vs_league": _safe_div(player_ts, league_ts),
+        "rz_ts_vs_league": None,
+        "snap_vs_pos_avg": _safe_div(snap_trailing, league_snap),
+        "carry_share_vs_league": _safe_div(carry_share, league_carry),
+        "opp_adj_target_share": opp_adj,
+        "carry_share": carry_share,
+        "snap_share_trailing": snap_trailing,
+        "snap_share_trend": usage.get("snap_share_trend"),
+    }
+
+
+def compute_pace_script(
+    team: str,
+    week: int,
+    game: dict,
+    all_season_rows: list[dict],
+    is_home: Optional[int],
+    ctx: Optional[SeasonFeatureContext] = None,
+) -> dict[str, Optional[float]]:
+    empty = {
+        "team_pace": None, "team_pass_rate": None,
+        "expected_pass_attempts": None, "expected_pass_rate": None,
+        "neutral_script_flag": None,
+    }
+    if not team:
+        return empty
+
+    team_pace = team_pass_rate = None
+    base_pass, base_rush = _GLOBAL_PASS_AVG, _GLOBAL_RUSH_AVG
+
+    if ctx is not None:
+        prior_games = [g for g in ctx.team_game_volume.get(team, []) if g[0] < week]
+        if prior_games:
+            plays = [p + r for _, p, r in prior_games]
+            passes = [p for _, p, _ in prior_games]
+            rushes = [r for _, _, r in prior_games]
+            team_pace = sum(plays) / len(plays)
+            total_plays = sum(plays)
+            team_pass_rate = (sum(passes) / total_plays) if total_plays > 0 else None
+            base_pass = sum(passes) / len(passes)
+            base_rush = sum(rushes) / len(rushes)
+    else:
+        by_game: dict[str, dict[str, float]] = defaultdict(lambda: {"pass": 0.0, "rush": 0.0})
+        for r in all_season_rows:
+            if r.get("team") != team or (r.get("week") or 0) >= week:
+                continue
+            gid = r.get("game_id")
+            if not gid:
+                continue
+            by_game[gid]["pass"] += float(r.get("attempts") or r.get("pass_attempts") or 0)
+            by_game[gid]["rush"] += float(r.get("carries") or 0)
+        if by_game:
+            plays = [g["pass"] + g["rush"] for g in by_game.values()]
+            passes = [g["pass"] for g in by_game.values()]
+            rushes = [g["rush"] for g in by_game.values()]
+            team_pace = sum(plays) / len(plays)
+            total_plays = sum(plays)
+            team_pass_rate = (sum(passes) / total_plays) if total_plays > 0 else None
+            base_pass = sum(passes) / len(passes)
+            base_rush = sum(rushes) / len(rushes)
+
+    spread = game.get("spread_line")
+    total = game.get("total_line")
+    home_flag = int(is_home) if is_home is not None else (
+        1 if team == game.get("home_team") else 0
+    )
+    expected_pass_attempts = expected_pass_rate = None
+    if spread is not None or total is not None:
+        spread_f = float(spread or 0.0)
+        total_f = float(total or 45.0)
+        effective_spread = spread_f if home_flag else -spread_f
+        expected_pass_attempts = max(
+            base_pass + _SPREAD_PASS_COEFFICIENT * effective_spread
+            + _TOTAL_PASS_COEFFICIENT * (total_f - 45.0),
+            1.0,
+        )
+        expected_rush = max(base_rush - _SPREAD_PASS_COEFFICIENT * effective_spread * 0.5, 1.0)
+        expected_pass_rate = expected_pass_attempts / (expected_pass_attempts + expected_rush)
+
+    neutral_script_flag = None
+    if spread is not None:
+        neutral_script_flag = 1.0 if abs(float(spread)) <= _NEUTRAL_SPREAD_ABS else 0.0
+
+    return {
+        "team_pace": team_pace,
+        "team_pass_rate": team_pass_rate,
+        "expected_pass_attempts": expected_pass_attempts,
+        "expected_pass_rate": expected_pass_rate,
+        "neutral_script_flag": neutral_script_flag,
+    }
+
+
+def compute_progression_priors(
+    target_row: dict,
+    prior_rows: list[dict],
+    season: int,
+) -> dict[str, Optional[float]]:
+    years_exp = target_row.get("years_exp")
+    try:
+        years_exp_f = float(years_exp) if years_exp is not None else None
+    except (TypeError, ValueError):
+        years_exp_f = None
+
+    age: Optional[float] = None
+    birth = target_row.get("birth_date") or target_row.get("age")
+    if birth is not None and not isinstance(birth, (int, float)):
+        try:
+            year = getattr(birth, "year", None)
+            if year is None:
+                year = int(str(birth)[:4])
+            age = float(season - int(year))
+        except (TypeError, ValueError):
+            age = None
+    elif isinstance(birth, (int, float)):
+        age = float(birth)
+
+    draft_round = target_row.get("draft_round")
+    try:
+        draft_round_f = float(draft_round) if draft_round is not None else None
+    except (TypeError, ValueError):
+        draft_round_f = None
+
+    career_games = float(len(prior_rows)) if prior_rows is not None else 0.0
+    exp_bucket: Optional[float] = None
+    if years_exp_f is not None:
+        ye = int(years_exp_f)
+        if ye <= 0:
+            exp_bucket = 0.0
+        elif ye == 1:
+            exp_bucket = 1.0
+        elif ye <= 7:
+            exp_bucket = 2.0
+        else:
+            exp_bucket = 3.0
+
+    return {
+        "years_exp": years_exp_f,
+        "age": age,
+        "career_games": career_games,
+        "exp_bucket": exp_bucket,
+        "draft_round_progression": draft_round_f,
     }

@@ -52,6 +52,10 @@ yardage-diagnostic:
 freeze-baseline:
 	$(PYTHON) scripts/freeze_baseline.py
 
+.PHONY: reprojection-gate
+reprojection-gate:
+	$(PYTHON) scripts/reprojection_gate.py --holdout-season $(or $(HOLDOUT),2024) --position $(or $(POSITION),WR) --target $(or $(TARGET),fantasy_ppr)
+
 .PHONY: up
 up:
 	$(COMPOSE) up -d

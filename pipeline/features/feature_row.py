@@ -233,6 +233,30 @@ class FeatureRow:
     player_emb_6: Optional[float] = None
     player_emb_7: Optional[float] = None
 
+    # ── Phase 4 feature groups (A/B-gated via ml.feature_groups) ───────────────
+    # FEATURE_GROUP_OPP_ADJ_USAGE
+    carry_share:              Optional[float] = None  # trailing player carries / team carries
+    snap_share_trailing:      Optional[float] = None  # trailing mean offense_pct (0–1)
+    snap_share_trend:         Optional[float] = None  # delta over last 2–3 games
+    ts_vs_league:             Optional[float] = None  # seas target share / pos league mean
+    rz_ts_vs_league:          Optional[float] = None  # RZ share / pos league mean (when available)
+    snap_vs_pos_avg:          Optional[float] = None  # snap share / pos league mean
+    carry_share_vs_league:    Optional[float] = None  # carry share / pos league mean
+    opp_adj_target_share:     Optional[float] = None  # seas TS × (opp targets allowed / league)
+
+    # FEATURE_GROUP_PACE_SCRIPT
+    team_pace:                Optional[float] = None  # trailing plays/game
+    team_pass_rate:           Optional[float] = None  # trailing pass / plays
+    expected_pass_attempts:   Optional[float] = None  # script-adjusted team pass volume
+    expected_pass_rate:       Optional[float] = None  # expected_pass / (pass+rush)
+    neutral_script_flag:      Optional[float] = None  # 1 if |spread| ≤ 3
+
+    # FEATURE_GROUP_PROGRESSION
+    years_exp:                Optional[float] = None
+    age:                      Optional[float] = None
+    career_games:             Optional[float] = None  # games in season prior to this week
+    exp_bucket:               Optional[float] = None  # 0 rookie / 1 2nd / 2 prime / 3 decline
+
     # Targets — the labels that train.py trains against.
     # These are populated from game_logs (actual observed outcomes).
     # Do NOT use estimated/Kalman values in the actual_* fields.

@@ -200,6 +200,7 @@ ml/mlruns/                 # MLflow experiment artifacts
 ml/mlartifacts/            # MLflow artifact store
 ml/models/                 # saved model artifacts
 ml/logs/                   # training logs
+ml/experiments/            # Phase 4/5 feature-group & model-floor experiment JSON
 engine/build/              # CMake build output
 engine/.cache/             # local compiler/cache output
 mutants/                   # mutmut working tree + results cache

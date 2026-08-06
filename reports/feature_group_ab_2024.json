@@ -1,0 +1,128 @@
+{
+  "holdout_season": 2024,
+  "target": "fantasy_ppr",
+  "promote_threshold_delta_mae": -0.05,
+  "note": "No group promoted into FEATURE_COLS. Closest: opp_adj_usage RB/WR.",
+  "results": [
+    {
+      "group": "opp_adj_usage",
+      "position": "QB",
+      "baseline_mae": 5.926282349674604,
+      "treatment_mae": 5.932608368060932,
+      "delta_mae": 0.006326018386327625,
+      "promote": false,
+      "n_train": 2842,
+      "n_holdout": 586
+    },
+    {
+      "group": "opp_adj_usage",
+      "position": "RB",
+      "baseline_mae": 5.566433791469076,
+      "treatment_mae": 5.524214975680047,
+      "delta_mae": -0.04221881578902931,
+      "promote": false,
+      "n_train": 3902,
+      "n_holdout": 772
+    },
+    {
+      "group": "opp_adj_usage",
+      "position": "TE",
+      "baseline_mae": 4.030495203370435,
+      "treatment_mae": 4.017390970201146,
+      "delta_mae": -0.013104233169289436,
+      "promote": false,
+      "n_train": 4477,
+      "n_holdout": 957
+    },
+    {
+      "group": "opp_adj_usage",
+      "position": "WR",
+      "baseline_mae": 5.400079577482599,
+      "treatment_mae": 5.363015453358726,
+      "delta_mae": -0.037064124123872944,
+      "promote": false,
+      "n_train": 8680,
+      "n_holdout": 1793
+    },
+    {
+      "group": "pace_script",
+      "position": "QB",
+      "baseline_mae": 5.926282349674604,
+      "treatment_mae": 5.892980857285647,
+      "delta_mae": -0.033301492388957854,
+      "promote": false,
+      "n_train": 2842,
+      "n_holdout": 586
+    },
+    {
+      "group": "pace_script",
+      "position": "RB",
+      "baseline_mae": 5.566433791469076,
+      "treatment_mae": 5.573825506069559,
+      "delta_mae": 0.007391714600482935,
+      "promote": false,
+      "n_train": 3902,
+      "n_holdout": 772
+    },
+    {
+      "group": "pace_script",
+      "position": "TE",
+      "baseline_mae": 4.030495203370435,
+      "treatment_mae": 4.0238319009252175,
+      "delta_mae": -0.006663302445217845,
+      "promote": false,
+      "n_train": 4477,
+      "n_holdout": 957
+    },
+    {
+      "group": "pace_script",
+      "position": "WR",
+      "baseline_mae": 5.400079577482599,
+      "treatment_mae": 5.395744563260788,
+      "delta_mae": -0.004335014221811484,
+      "promote": false,
+      "n_train": 8680,
+      "n_holdout": 1793
+    },
+    {
+      "group": "progression",
+      "position": "QB",
+      "baseline_mae": 5.926282349674604,
+      "treatment_mae": 5.947782635189755,
+      "delta_mae": 0.021500285515150708,
+      "promote": false,
+      "n_train": 2842,
+      "n_holdout": 586
+    },
+    {
+      "group": "progression",
+      "position": "RB",
+      "baseline_mae": 5.566433791469076,
+      "treatment_mae": 5.55845075756354,
+      "delta_mae": -0.007983033905536452,
+      "promote": false,
+      "n_train": 3902,
+      "n_holdout": 772
+    },
+    {
+      "group": "progression",
+      "position": "TE",
+      "baseline_mae": 4.030495203370435,
+      "treatment_mae": 4.019738175221807,
+      "delta_mae": -0.010757028148628223,
+      "promote": false,
+      "n_train": 4477,
+      "n_holdout": 957
+    },
+    {
+      "group": "progression",
+      "position": "WR",
+      "baseline_mae": 5.400079577482599,
+      "treatment_mae": 5.430317147784907,
+      "delta_mae": 0.030237570302307226,
+      "promote": false,
+      "n_train": 8680,
+      "n_holdout": 1793
+    }
+  ]
+}

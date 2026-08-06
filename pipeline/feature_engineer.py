@@ -77,6 +77,8 @@ logger = logging.getLogger(__name__)
 
 from pipeline.features.feature_row import FeatureRow
 from pipeline.features.buckets import (
+    SeasonFeatureContext,
+    build_season_feature_context,
     compute_season_baseline,
     compute_matchup_stats,
     compute_pos_rank,
@@ -86,6 +88,10 @@ from pipeline.features.buckets import (
     compute_injury_features,
     compute_rule_features,
     compute_scheme_interactions,
+    compute_usage_shares,
+    compute_opp_adj_usage,
+    compute_pace_script,
+    compute_progression_priors,
     _safe_div as _safe_div,  # re-exported for legacy tests/importers
     _safe_float,
     _sum_fumbles,
@@ -99,6 +105,7 @@ def build_feature_row(
     game: dict,
     all_season_rows: list[dict],
     injury_df: Optional[Any] = None,
+    season_ctx: Optional[SeasonFeatureContext] = None,
 ) -> FeatureRow:
     """
     Pure function — assembles all buckets into a FeatureRow.
@@ -208,6 +215,21 @@ def build_feature_row(
         target_row.get("offense_pct") or target_row.get("routes_run_pct")
     )
 
+    # ── Phase 4 feature groups (causal; prior weeks only) ────────────────────
+    usage = compute_usage_shares(
+        prior_rows, all_season_rows, player_id, team or "", week, position, ctx=season_ctx
+    )
+    opp_adj = compute_opp_adj_usage(
+        seas, matchup, usage, all_season_rows, week, position, ctx=season_ctx
+    )
+    pace = compute_pace_script(
+        team or "", week, game, all_season_rows, is_home_int, ctx=season_ctx
+    )
+    progression = compute_progression_priors(target_row, prior_rows, season)
+    # Prefer joined players.draft_round when present; else game_log fields
+    if progression.get("draft_round_progression") is not None and draft_round_val is None:
+        draft_round_val = progression["draft_round_progression"]
+
     return FeatureRow(
         player_id=player_id,
         game_id=game_id,
@@ -263,6 +285,20 @@ def build_feature_row(
         routes_run_pct=routes_run_pct,
         # Positional depth signal (e.g. 1.0 = WR1, 2.0 = WR2)
         team_pos_rank=pos_rank,
+        # Phase 4 groups
+        carry_share=opp_adj.get("carry_share"),
+        snap_share_trailing=opp_adj.get("snap_share_trailing"),
+        snap_share_trend=opp_adj.get("snap_share_trend"),
+        ts_vs_league=opp_adj.get("ts_vs_league"),
+        rz_ts_vs_league=opp_adj.get("rz_ts_vs_league"),
+        snap_vs_pos_avg=opp_adj.get("snap_vs_pos_avg"),
+        carry_share_vs_league=opp_adj.get("carry_share_vs_league"),
+        opp_adj_target_share=opp_adj.get("opp_adj_target_share"),
+        **pace,
+        years_exp=progression.get("years_exp"),
+        age=progression.get("age"),
+        career_games=progression.get("career_games"),
+        exp_bucket=progression.get("exp_bucket"),
         # player_emb_*, PBP cols: all None — populated in bulk by FeatureEngineer.run()
         # Targets — populate from target_row if the game is completed
         actual_fantasy_ppr=target_row.get("fantasy_points_ppr"),
@@ -540,6 +576,7 @@ def _compute_player_features(
     p_rows: list[dict],
     game_map: dict[str, dict],
     all_rows: list[dict],
+    season_ctx: Optional[SeasonFeatureContext] = None,
 ) -> list[FeatureRow]:
     """Compute all FeatureRows for a single player. Called in parallel via joblib."""
     p_sorted = sorted(p_rows, key=lambda r: int(r["week"]))
@@ -547,7 +584,9 @@ def _compute_player_features(
     for i, target_row in enumerate(p_sorted):
         prior = p_sorted[:i]
         game  = game_map.get(target_row["game_id"], {})
-        fr    = build_feature_row(target_row, prior, game, all_rows)
+        fr    = build_feature_row(
+            target_row, prior, game, all_rows, season_ctx=season_ctx
+        )
         results.append(fr)
     return results
 
@@ -636,9 +675,15 @@ class FeatureEngineer:
                     g.home_team, g.away_team, g.roof, g.surface,
                     g.temp, g.wind, g.total_line, g.spread_line,
                     g.home_rest, g.away_rest,
-                    g.precipitation_bucket
+                    g.precipitation_bucket,
+                    p.height AS player_height,
+                    p.weight AS player_weight,
+                    p.draft_round,
+                    p.years_exp,
+                    p.birth_date
                 FROM game_logs gl
                 JOIN games g ON gl.game_id = g.id
+                LEFT JOIN players p ON gl.player_id = p.id
                 WHERE gl.season = %s
                 ORDER BY gl.player_id, gl.week
                 """,
@@ -707,12 +752,16 @@ class FeatureEngineer:
                         )
                     }
 
+            # Precompute Phase 4 league/team aggregates once per season (causal).
+            season_ctx = build_season_feature_context(all_rows)
+            logger.info("season=%d: Phase 4 context built.", season)
+
             # Compute features in parallel across players (threading backend avoids
             # pickling the large all_rows list; all_rows is read-only so thread-safe).
             per_player: list[list[FeatureRow]] = Parallel(
                 n_jobs=-1, backend="threading", prefer="threads",
             )(
-                delayed(_compute_player_features)(pid, p_rows, game_map, all_rows)
+                delayed(_compute_player_features)(pid, p_rows, game_map, all_rows, season_ctx)
                 for pid, p_rows in player_rows.items()
             )
 

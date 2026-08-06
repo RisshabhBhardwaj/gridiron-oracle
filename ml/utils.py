@@ -243,6 +243,37 @@ FEATURE_COLS: list[str] = [
     "player_emb_4", "player_emb_5", "player_emb_6", "player_emb_7",
 ]
 
+# Phase 4 A/B feature groups — NOT in FEATURE_COLS until held-out delta is positive.
+# Enable via ml.feature_groups.resolve_feature_cols(groups=[...]).
+FEATURE_GROUP_OPP_ADJ_USAGE: list[str] = [
+    "carry_share",
+    "snap_share_trailing",
+    "snap_share_trend",
+    "ts_vs_league",
+    "rz_ts_vs_league",
+    "snap_vs_pos_avg",
+    "carry_share_vs_league",
+    "opp_adj_target_share",
+]
+FEATURE_GROUP_PACE_SCRIPT: list[str] = [
+    "team_pace",
+    "team_pass_rate",
+    "expected_pass_attempts",
+    "expected_pass_rate",
+    "neutral_script_flag",
+]
+FEATURE_GROUP_PROGRESSION: list[str] = [
+    "years_exp",
+    "age",
+    "career_games",
+    "exp_bucket",
+]
+FEATURE_GROUPS: dict[str, list[str]] = {
+    "opp_adj_usage": FEATURE_GROUP_OPP_ADJ_USAGE,
+    "pace_script": FEATURE_GROUP_PACE_SCRIPT,
+    "progression": FEATURE_GROUP_PROGRESSION,
+}
+
 # Naming convention: TARGET_COL_MAP maps a MODEL STAT NAME (what we train
 # the model to predict, also the column key in --target CLI flags) to its
 # ACTUAL OUTCOME COLUMN in feature_matrix (where the real game result is stored).
