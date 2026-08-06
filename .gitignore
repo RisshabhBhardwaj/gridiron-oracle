@@ -255,3 +255,4 @@ secrets/
 # Never track private recovery artifacts
 gridiron-private-history.bundle
 **/ACTIVE_PROJECTS_AUDIT_*/
+reports/
