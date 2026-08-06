@@ -18,7 +18,7 @@ set -euo pipefail
 
 export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
-export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:5432/oracle}
+export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/oracle}
 export ODDS_API_KEY=${ODDS_API_KEY:-}
 export OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
 export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)"
@@ -57,6 +57,12 @@ echo "Verifying PostgreSQL connection..."
 docker compose -f infra/docker-compose.yml exec -T db \
   psql -U oracle -d oracle -c "SELECT 'DB ready' AS status;" \
   || { echo "ERROR: PostgreSQL is not ready. Check: docker compose -f infra/docker-compose.yml logs db"; exit 1; }
+
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo "  STEP 1a — Alembic schema migrations"
+echo "════════════════════════════════════════════════════════════════"
+$PYTHON scripts/migrate.py upgrade
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"

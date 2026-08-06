@@ -20,7 +20,7 @@ class Settings:
 
     Required:
         DATABASE_URL: PostgreSQL DSN, e.g.
-            postgresql://oracle:oracle@localhost:5432/oracle
+            postgresql://oracle:oracle@localhost:15439/oracle
 
     Optional:
         MLFLOW_TRACKING_URI: default http://localhost:5001
@@ -43,7 +43,7 @@ class Settings:
     def __init__(self) -> None:
         self.database_url: str = os.environ.get(
             "DATABASE_URL",
-            "postgresql://oracle:oracle@localhost:5432/oracle",
+            "postgresql://oracle:oracle@localhost:15439/oracle",
         )
         # Normalise: SQLModel/psycopg2 needs postgresql://, not asyncpg.
         self.database_url = self.database_url.replace(
@@ -125,7 +125,7 @@ class Settings:
           - All secrets should be stored in .env (never committed to git) or
             injected via the container orchestrator's secret management.
         """
-        _DB_DEFAULT = "postgresql://oracle:oracle@localhost:5432/oracle"
+        _DB_DEFAULT = "postgresql://oracle:oracle@localhost:15439/oracle"
 
         if not self.api_key:
             _log.warning(

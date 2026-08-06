@@ -9,7 +9,7 @@ Kalman, Monte Carlo, backtest) talk to each other correctly.
 
 Prerequisites
 ─────────────
-  - PostgreSQL running (default: oracle:oracle@localhost:5432/oracle)
+  - PostgreSQL running (default: oracle:oracle@localhost:15439/oracle)
   - projections table populated:
         python3.11 -m ml.train --seasons 2025 --all-weeks --fast
   - Backtest results CSV present (optional, enables coverage_80 assertion):
@@ -19,7 +19,7 @@ Excluded from CI (requires live DB):
     pytest -m "not integration and not slow"
 
 Run locally:
-    export DATABASE_URL="postgresql://oracle:oracle@localhost:5432/oracle"
+    export DATABASE_URL="postgresql://oracle:oracle@localhost:15439/oracle"
     pytest backend/tests/test_integration.py -v -m integration
 """
 
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.integration
 
 # Normalise asyncpg → psycopg2 DSN for direct fixture queries
 _DB_URL = (
-    os.environ.get("DATABASE_URL", "postgresql://oracle:oracle@localhost:5432/oracle")
+    os.environ.get("DATABASE_URL", "postgresql://oracle:oracle@localhost:15439/oracle")
     .replace("postgresql+asyncpg://", "postgresql://")
 )
 

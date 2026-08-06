@@ -7,6 +7,7 @@ slowapi>=0.1.9            # IP-based rate limiting for /predict and /backtest
 sqlmodel>=0.0.19
 asyncpg>=0.29
 psycopg2-binary>=2.9          # MLflow requires sync psycopg2
+alembic>=1.13                 # schema migrations (replaces inline CREATE TABLE)
 
 # ── Scheduling (embedded in backend process) ──────────────────────────────────
 apscheduler>=3.10

@@ -1148,41 +1148,11 @@ class PipelineRunner:
         try:
             cur = conn.cursor()
 
-            # Ensure table exists (idempotent).
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS projections (
-                    id               SERIAL PRIMARY KEY,
-                    player_id        VARCHAR NOT NULL,
-                    game_id          VARCHAR NOT NULL,
-                    season           INTEGER NOT NULL,
-                    week             INTEGER NOT NULL,
-                    stat             VARCHAR NOT NULL,
-                    position         VARCHAR,
-                    projection       FLOAT,
-                    floor            FLOAT,
-                    ceiling          FLOAT,
-                    p25              FLOAT,
-                    p75              FLOAT,
-                    boom_probability FLOAT,
-                    bust_probability FLOAT,
-                    fantasy_projection FLOAT,
-                    fantasy_floor    FLOAT,
-                    fantasy_ceiling  FLOAT,
-                    pipeline_run_id  VARCHAR,
-                    posterior_samples JSONB,
-                    created_at       TIMESTAMP DEFAULT NOW(),
-                    CONSTRAINT uq_projections_player_game_stat
-                        UNIQUE (player_id, game_id, stat)
-                )
-            """)
-            # Migrate existing tables: add new columns if absent.
-            for _col, _type in [
-                ("posterior_samples", "JSONB"),
-                ("p25", "FLOAT"),
-                ("p75", "FLOAT"),
-            ]:
-                cur.execute(f"ALTER TABLE projections ADD COLUMN IF NOT EXISTS {_col} {_type}")
-            conn.commit()
+            # Alembic-managed schema; bootstrap CREATE IF NOT EXISTS for empty DBs.
+            from pipeline.schema import ensure_schema
+
+            ensure_schema(conn)
+            cur = conn.cursor()
 
             upsert_sql = """
                 INSERT INTO projections
@@ -1374,7 +1344,7 @@ class PipelineRunner:
             raise RuntimeError(
                 "DATABASE_URL environment variable not set. "
                 "Export it before calling run(), e.g.:\n"
-                "  export DATABASE_URL=postgresql://oracle:oracle@localhost:5432/oracle"
+                "  export DATABASE_URL=postgresql://oracle:oracle@localhost:15439/oracle"
             )
         # Convert asyncpg DSN (used by FastAPI) to psycopg2 synchronous DSN.
         dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")

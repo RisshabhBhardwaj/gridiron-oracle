@@ -40,7 +40,7 @@ bash pipeline/run_full_etl.sh
 export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
 export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://127.0.0.1:5001}
-export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:5432/oracle}
+export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/oracle}
 export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Run CatBoost for all stat/position combos (38 total)

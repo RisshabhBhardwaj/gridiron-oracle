@@ -531,10 +531,9 @@ class NFLReadPyAdapter:
     def _ensure_tables(self) -> None:
         """Create staging and dead_letter tables if they don't exist."""
         assert self._conn
-        with self._conn.cursor() as cur:
-            cur.execute(_CREATE_STAGING)
-            cur.execute(_CREATE_DEAD_LETTER)
-        self._conn.commit()
+        from pipeline.schema import ensure_schema
+
+        ensure_schema(self._conn)
 
     # ── DB writes ─────────────────────────────────────────────────────────
 

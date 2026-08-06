@@ -70,10 +70,10 @@ CREATE TABLE IF NOT EXISTS injury_history (
 
 
 def _ensure_schema(conn) -> None:
-    cur = conn.cursor()
-    cur.execute(_DDL)
-    conn.commit()
-    logger.info("injury_history table ensured.")
+    from pipeline.schema import ensure_schema
+
+    ensure_schema(conn)
+    logger.info("injury_history table ensured via schema registry.")
 
 
 # ── Ingestion ──────────────────────────────────────────────────────────────────

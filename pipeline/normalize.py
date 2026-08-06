@@ -519,9 +519,12 @@ class Normalizer:
 
     def _ensure_production_tables(self) -> None:
         assert self._conn
+        # Alembic-managed schema; CREATE IF NOT EXISTS remains as empty-DB bootstrap.
+        from pipeline.schema import ensure_schema
+
+        ensure_schema(self._conn)
         with self._conn.cursor() as cur:
-            cur.execute(_CREATE_PRODUCTION)
-            # Migrations for existing game_logs (add fumble columns if absent)
+            # Narrow backfills kept here until promoted into a dedicated revision.
             cur.execute(
                 "ALTER TABLE game_logs ADD COLUMN IF NOT EXISTS receiving_fumbles INTEGER"
             )

@@ -43,7 +43,7 @@ class ScraperScheduler:
     ) -> None:
         self._db_url = db_url or os.environ.get(
             "DATABASE_URL",
-            "postgresql://oracle:oracle@localhost:5432/oracle",
+            "postgresql://oracle:oracle@localhost:15439/oracle",
         )
         self._odds_key = odds_api_key or os.environ.get("ODDS_API_KEY", "")
         self._weather_key = openweather_api_key or os.environ.get("OPENWEATHER_API_KEY", "")

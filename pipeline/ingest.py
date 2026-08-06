@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     db_url = args.db_url or os.environ.get(
         "DATABASE_URL",
-        "postgresql://oracle:oracle@localhost:5432/oracle",
+        "postgresql://oracle:oracle@localhost:15439/oracle",
     )
 
     logger.info(

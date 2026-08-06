@@ -47,26 +47,9 @@ def _dsn_for_psycopg2(url: str) -> str:
 
 def _ensure_prop_odds_table(conn) -> None:
     """Create prop_odds table if not exists."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS prop_odds (
-                id                SERIAL PRIMARY KEY,
-                odds_event_id     TEXT NOT NULL,
-                game_id           TEXT,
-                player_name       TEXT,
-                player_id         TEXT REFERENCES players(id),
-                stat_type         TEXT NOT NULL,
-                line_value        FLOAT,
-                over_odds         FLOAT,
-                under_odds        FLOAT,
-                bookmaker         TEXT,
-                fetched_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                UNIQUE (odds_event_id, player_name, stat_type, bookmaker)
-            )
-            """
-        )
-    conn.commit()
+    from pipeline.schema import ensure_schema
+
+    ensure_schema(conn)
 
 
 def fetch_and_store_props(db_url: str, api_key: Optional[str] = None) -> int:

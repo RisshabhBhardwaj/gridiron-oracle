@@ -100,10 +100,10 @@ ON CONFLICT (id) DO NOTHING
 def _ensure_alerts_table(db_url: str) -> None:
     """Create the alerts table if it doesn't exist."""
     import psycopg2
-    with psycopg2.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(_ENSURE_TABLE_SQL)
-        conn.commit()
+    from pipeline.schema import ensure_schema, normalize_dsn
+
+    with psycopg2.connect(normalize_dsn(db_url)) as conn:
+        ensure_schema(conn)
 
 
 def _flush_alerts_to_db(db_url: str, alerts: list[Alert]) -> None:

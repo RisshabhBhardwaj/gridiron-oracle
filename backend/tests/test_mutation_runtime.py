@@ -129,7 +129,7 @@ def test_settings_normalize_asyncpg_and_invalid_mode(monkeypatch):
 
     monkeypatch.setenv(
         "DATABASE_URL",
-        "postgresql+asyncpg://oracle:oracle@localhost:5432/oracle",
+        "postgresql+asyncpg://oracle:oracle@localhost:15439/oracle",
     )
     monkeypatch.setenv("PRODUCT_MODE", "not-a-real-mode")
     monkeypatch.setenv("API_KEY", "  secret  ")
@@ -180,7 +180,7 @@ def test_settings_defaults_cover_all_runtime_fallbacks(monkeypatch):
 
     settings = Settings()
 
-    assert settings.database_url == "postgresql://oracle:oracle@localhost:5432/oracle"
+    assert settings.database_url == "postgresql://oracle:oracle@localhost:15439/oracle"
     assert settings.mlflow_tracking_uri == "http://localhost:5001"
     assert settings.model_version == "latest"
     assert settings.product_mode == "graceful_fallback"
@@ -351,10 +351,10 @@ def test_alert_service_start_persistence_sets_state_and_stops_cleanly(monkeypatc
     monkeypatch.setattr("backend.app.services.alert.asyncio.create_task", fake_create_task)
 
     async def scenario() -> None:
-        await svc.start_persistence("postgresql://oracle:oracle@localhost:5432/oracle")
-        assert svc._db_url == "postgresql://oracle:oracle@localhost:5432/oracle"
+        await svc.start_persistence("postgresql://oracle:oracle@localhost:15439/oracle")
+        assert svc._db_url == "postgresql://oracle:oracle@localhost:15439/oracle"
         assert svc._drain_task is not None
-        assert calls[0] == "postgresql://oracle:oracle@localhost:5432/oracle"
+        assert calls[0] == "postgresql://oracle:oracle@localhost:15439/oracle"
         assert len(created_tasks) == 1
         await svc.stop_persistence()
         assert calls[-1] == "cancel"

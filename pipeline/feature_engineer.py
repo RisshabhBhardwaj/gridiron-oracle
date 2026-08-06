@@ -592,9 +592,12 @@ class FeatureEngineer:
 
     def _ensure_table(self) -> None:
         assert self._conn
+        from pipeline.schema import ensure_schema
+
+        ensure_schema(self._conn)
         with self._conn.cursor() as cur:
-            cur.execute(_CREATE_FEATURE_MATRIX)
-            # Auto-migrate all numeric fields defined in FeatureRow
+            # Auto-migrate all numeric fields defined in FeatureRow until a
+            # dedicated Alembic revision owns FeatureRow drift.
             for f in dc_fields(FeatureRow):
                 if f.name in ("player_id", "game_id", "position", "team", "opponent_team", "season", "week"):
                     continue
@@ -604,8 +607,10 @@ class FeatureEngineer:
                     db_type = "INTEGER"
                 cur.execute(f"ALTER TABLE feature_matrix ADD COLUMN IF NOT EXISTS {f.name} {db_type}")
 
-            # Indices
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_matrix_player_season ON feature_matrix (player_id, season)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_feature_matrix_player_season "
+                "ON feature_matrix (player_id, season)"
+            )
         self._conn.commit()
 
     def _fetch_season_rows(self, season: int) -> list[dict]:

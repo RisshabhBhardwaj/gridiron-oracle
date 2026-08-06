@@ -122,12 +122,10 @@ CREATE INDEX IF NOT EXISTS idx_ftn_player_game_lookup
 
 
 def _ensure_schema(conn) -> None:
-    cur = conn.cursor()
-    cur.execute(_PBP_FEATURES_DDL)
-    cur.execute(_PBP_MATCHUPS_DDL)
-    cur.execute(_FTN_PLAYER_GAME_DDL)
-    conn.commit()
-    logger.info("pbp_features, pbp_matchups, ftn_player_game tables ensured.")
+    from pipeline.schema import ensure_schema
+
+    ensure_schema(conn)
+    logger.info("pbp_features, pbp_matchups, ftn_player_game tables ensured via schema registry.")
 
 
 # ── PBP aggregation ────────────────────────────────────────────────────────────

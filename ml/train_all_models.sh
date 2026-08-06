@@ -44,7 +44,7 @@ export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
 # Respect caller-provided MLflow URI; default only when unset.
 export MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI:-http://localhost:5001}"
-export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:5432/oracle}
+export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/oracle}
 export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Use .venv_311 so all project packages (xgboost, lightgbm, mlflow,

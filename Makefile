@@ -18,6 +18,14 @@ hooks:
 	@chmod +x .git/hooks/pre-push
 	@echo "Installed public-push gate into .git/hooks/pre-push"
 
+.PHONY: migrate
+migrate:
+	$(PYTHON) scripts/migrate.py upgrade
+
+.PHONY: migrate-stamp
+migrate-stamp:
+	$(PYTHON) scripts/migrate.py stamp
+
 .PHONY: bootstrap-local
 bootstrap-local:
 	bash scripts/bootstrap_local.sh
