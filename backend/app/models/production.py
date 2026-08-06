@@ -47,6 +47,9 @@ class Player(SQLModel, table=True):
     headshot_url: Optional[str] = None
     espn_id: Optional[str] = None
     pfr_id: Optional[str] = None
+    draft_round: Optional[float] = None
+    draft_number: Optional[int] = None
+    draft_club: Optional[str] = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationships

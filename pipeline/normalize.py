@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS players (
     headshot_url TEXT,
     espn_id      TEXT,
     pfr_id       TEXT,
+    draft_round  FLOAT,
+    draft_number INTEGER,
+    draft_club   TEXT,
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
@@ -386,6 +389,14 @@ def roster_row_to_player(row: RosterRow) -> Optional[dict[str, Any]]:
         "headshot_url": row.headshot_url,
         "espn_id":      str(row.espn_id) if row.espn_id is not None else None,
         "pfr_id":       row.pfr_id,
+        "draft_club":   row.draft_club,
+        "draft_number": row.draft_number,
+        # nflverse exposes overall pick; convert to approximate round (1–7).
+        "draft_round":  (
+            float(min(7, max(1, ((int(row.draft_number) - 1) // 32) + 1)))
+            if row.draft_number is not None
+            else None
+        ),
     }
 
 
@@ -651,6 +662,7 @@ class Normalizer:
             "id", "full_name", "position", "team", "height", "weight",
             "birth_date", "college", "years_exp", "entry_year",
             "status", "headshot_url", "espn_id", "pfr_id",
+            "draft_round", "draft_number", "draft_club",
         ]
         rows = [tuple(p.get(c) for c in cols) for p in player_dicts]
 
@@ -662,7 +674,8 @@ class Normalizer:
                 INSERT INTO players (
                     id, full_name, position, team, height, weight,
                     birth_date, college, years_exp, entry_year,
-                    status, headshot_url, espn_id, pfr_id, updated_at
+                    status, headshot_url, espn_id, pfr_id,
+                    draft_round, draft_number, draft_club, updated_at
                 ) VALUES %s
                 ON CONFLICT (id) DO UPDATE SET
                     full_name    = EXCLUDED.full_name,
@@ -670,6 +683,9 @@ class Normalizer:
                     team         = EXCLUDED.team,
                     status       = EXCLUDED.status,
                     pfr_id       = COALESCE(EXCLUDED.pfr_id, players.pfr_id),
+                    draft_round  = COALESCE(EXCLUDED.draft_round, players.draft_round),
+                    draft_number = COALESCE(EXCLUDED.draft_number, players.draft_number),
+                    draft_club   = COALESCE(EXCLUDED.draft_club, players.draft_club),
                     updated_at   = NOW()
                 """,
                 [r + (datetime.utcnow(),) for r in rows],

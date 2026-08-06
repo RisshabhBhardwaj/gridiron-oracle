@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS players (
     headshot_url TEXT,
     espn_id      TEXT,
     pfr_id       TEXT,
+    draft_round  FLOAT,
+    draft_number INTEGER,
+    draft_club   TEXT,
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
