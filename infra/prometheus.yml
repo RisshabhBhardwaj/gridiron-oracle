@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: gridiron-oracle-api
+    static_configs:
+      - targets: ["backend:8000"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+    # When API_KEY is set in the backend, add it here so Prometheus can scrape
+    # the now-authenticated /metrics endpoint:
+    #
+    #   headers:
+    #     X-API-Key: "<your-api-key>"
+    #
+    # In local dev (API_KEY unset) no header is required.

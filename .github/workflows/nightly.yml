@@ -1,0 +1,48 @@
+name: Nightly slow tests
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC daily
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  slow-tests:
+    name: Bayesian calibration + slow suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: oracle
+          POSTGRES_PASSWORD: oracle
+          POSTGRES_DB: oracle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://oracle:oracle@localhost:5432/oracle
+      KMP_DUPLICATE_LIB_OK: "TRUE"
+      OMP_NUM_THREADS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Run slow test suite
+        run: |
+          pytest backend/tests/ -v -m "slow" \
+            --cov=ml --cov=backend \
+            --cov-report=term-missing \
+            --timeout=600

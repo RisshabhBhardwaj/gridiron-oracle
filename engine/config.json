@@ -1,0 +1,8 @@
+{
+  "kelly_fraction": 0.25,
+  "max_bet_fraction": 0.05,
+  "bankroll": 1000.0,
+  "max_per_player_fraction": 0.05,
+  "max_per_game_fraction": 0.20,
+  "max_total_in_play_fraction": 0.20
+}

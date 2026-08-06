@@ -1,0 +1,146 @@
+"""
+backend/tests/test_orchestrator.py
+
+Integration test for pipeline/orchestrator.py.
+
+Runs the full 3-step pipeline (ingest → normalize → feature_engineer) in
+dry-run mode using the 2025 nflreadpy data (24h filesystem cache).
+No database connection required.
+
+Scope: class — the orchestrator runs once and all tests share the result.
+This avoids re-fetching nflreadpy data for each test method.
+"""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
+from pipeline.orchestrator import Orchestrator, OrchestratorSummary, SeasonResult
+
+pytestmark = [pytest.mark.integration, pytest.mark.network]
+
+
+class TestOrchestratorDryRun:
+    """Integration test: full chain dry-run for 2025 season."""
+
+    @pytest.fixture(scope="class")
+    def summary(self) -> OrchestratorSummary:
+        """
+        Run once per test class.
+        Fetches from nflreadpy (cached after first call so subsequent runs
+        are fast disk reads).
+        """
+        orch = Orchestrator(db_url="")
+        return orch.run(seasons=[2025], dry_run=True)
+
+    # ── Structural checks ─────────────────────────────────────────────────────
+
+    def test_returns_orchestrator_summary(self, summary: OrchestratorSummary) -> None:
+        assert isinstance(summary, OrchestratorSummary)
+
+    def test_dry_run_flag_set(self, summary: OrchestratorSummary) -> None:
+        assert summary.dry_run is True
+
+    def test_seasons_recorded(self, summary: OrchestratorSummary) -> None:
+        assert summary.seasons == [2025]
+
+    def test_one_season_result(self, summary: OrchestratorSummary) -> None:
+        assert len(summary.season_results) == 1
+
+    def test_season_result_is_2025(self, summary: OrchestratorSummary) -> None:
+        assert summary.season_results[0].season == 2025
+
+    def test_end_time_set(self, summary: OrchestratorSummary) -> None:
+        assert summary.end_time is not None
+
+    # ── Step presence and ordering ────────────────────────────────────────────
+
+    def test_exactly_three_steps(self, summary: OrchestratorSummary) -> None:
+        assert len(summary.season_results[0].steps) == 3
+
+    def test_step_names_in_order(self, summary: OrchestratorSummary) -> None:
+        names = [s.name for s in summary.season_results[0].steps]
+        assert names == ["ingest", "normalize", "feature_engineer"]
+
+    # ── All steps succeeded ───────────────────────────────────────────────────
+
+    def test_ingest_step_ok(self, summary: OrchestratorSummary) -> None:
+        ingest = summary.season_results[0].steps[0]
+        assert ingest.ok, f"ingest failed: {ingest.error}"
+
+    def test_normalize_step_ok(self, summary: OrchestratorSummary) -> None:
+        normalize = summary.season_results[0].steps[1]
+        assert normalize.ok, f"normalize failed: {normalize.error}"
+
+    def test_feature_engineer_step_ok(self, summary: OrchestratorSummary) -> None:
+        fe = summary.season_results[0].steps[2]
+        assert fe.ok, f"feature_engineer failed: {fe.error}"
+
+    def test_no_step_has_error_message(self, summary: OrchestratorSummary) -> None:
+        for step in summary.season_results[0].steps:
+            assert step.error is None, f"Step {step.name!r} has error: {step.error}"
+
+    # ── Steps produced output ─────────────────────────────────────────────────
+
+    def test_ingest_produced_rows(self, summary: OrchestratorSummary) -> None:
+        ingest = summary.season_results[0].steps[0]
+        assert ingest.rows_out > 0, "ingest produced no validated rows"
+
+    def test_normalize_produced_rows(self, summary: OrchestratorSummary) -> None:
+        norm = summary.season_results[0].steps[1]
+        assert norm.rows_out > 0, "normalize produced no output rows"
+
+    def test_feature_engineer_produced_rows(self, summary: OrchestratorSummary) -> None:
+        fe = summary.season_results[0].steps[2]
+        assert fe.rows_out > 0, "feature_engineer produced no feature rows"
+
+    # ── Timing sanity ─────────────────────────────────────────────────────────
+
+    def test_all_steps_have_positive_elapsed(self, summary: OrchestratorSummary) -> None:
+        for step in summary.season_results[0].steps:
+            assert step.elapsed_s >= 0, f"Step {step.name!r} has negative elapsed"
+
+    # ── Season-level totals ───────────────────────────────────────────────────
+
+    def test_season_result_players_positive(self, summary: OrchestratorSummary) -> None:
+        assert summary.season_results[0].n_players > 0
+
+    def test_season_result_games_positive(self, summary: OrchestratorSummary) -> None:
+        assert summary.season_results[0].n_games > 0
+
+    def test_season_result_feature_rows_positive(self, summary: OrchestratorSummary) -> None:
+        assert summary.season_results[0].n_feature_rows > 0
+
+    # ── Summary-level totals roll up correctly ────────────────────────────────
+
+    def test_total_players_matches_season(self, summary: OrchestratorSummary) -> None:
+        assert summary.total_players == summary.season_results[0].n_players
+
+    def test_total_games_matches_season(self, summary: OrchestratorSummary) -> None:
+        assert summary.total_games == summary.season_results[0].n_games
+
+    def test_total_feature_rows_matches_season(self, summary: OrchestratorSummary) -> None:
+        assert summary.total_feature_rows == summary.season_results[0].n_feature_rows
+
+    # ── Reasonable magnitudes ─────────────────────────────────────────────────
+
+    def test_players_at_least_100(self, summary: OrchestratorSummary) -> None:
+        # nflreadpy load_rosters() returns a snapshot (current or end-of-season
+        # active roster), not every player who appeared during the year.
+        # With gsis_id filter we get ~100–1,700 depending on roster timing.
+        assert summary.total_players >= 100
+
+    def test_games_at_least_270(self, summary: OrchestratorSummary) -> None:
+        # Regular season: 272 games + playoffs ≥ 270
+        assert summary.total_games >= 270
+
+    def test_feature_rows_between_1_and_sample(self, summary: OrchestratorSummary) -> None:
+        from pipeline.orchestrator import DRY_RUN_SAMPLE
+        # DRY_RUN_SAMPLE unique players × ≥1 game each
+        assert 1 <= summary.total_feature_rows
+        # Upper bound: sample players × max ~20 games each
+        assert summary.total_feature_rows <= DRY_RUN_SAMPLE * 20

@@ -1,0 +1,9 @@
+requests>=2.31
+pandas>=2.0
+beautifulsoup4>=4.12
+pydantic>=2.0
+nflreadpy>=0.1
+tenacity>=8.2              # exponential backoff (429 handling, robots.txt compliance)
+psycopg2-binary>=2.9       # sync DB writes from scraper (asyncpg is for FastAPI only)
+polars>=0.20               # nflreadpy returns Polars DataFrames
+pyarrow>=14.0              # required for polars → pandas conversion if needed

@@ -1,0 +1,40 @@
+{
+  "is_yardage": true,
+  "mae": 35.432737914858066,
+  "missingness": {},
+  "position": "WR",
+  "provenance": {
+    "duplicate_player_games": 0,
+    "feature_actual_columns": [],
+    "observed_column": "y_true",
+    "temporal_ordered": false
+  },
+  "residuals": {
+    "5%": -49.31372772432783,
+    "50%": -7.992759334698313,
+    "95%": 107.21306489792818,
+    "count": 60.0,
+    "max": 130.40990099211115,
+    "mean": 5.141580445048864,
+    "min": -67.01492938321489,
+    "std": 46.78511320108386
+  },
+  "rows": 60,
+  "schema_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "season_rows": {
+    "2023": 60
+  },
+  "target": "receiving_yards",
+  "target_distribution": {
+    "1%": 1.0417248570946556,
+    "5%": 3.9377777405165677,
+    "50%": 42.91236616326327,
+    "95%": 138.2227741498469,
+    "99%": 177.1092164838394,
+    "count": 60.0,
+    "max": 178.35377495373584,
+    "mean": 52.80776732838219,
+    "min": 0.822914370060433,
+    "std": 43.67990502661607
+  }
+}

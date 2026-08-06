@@ -1,0 +1,18 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: backend-logger
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+
+receivers:
+  # Alerts are POSTed to the FastAPI backend's /alert-webhook endpoint, which
+  # logs them at WARNING (firing) or INFO (resolved) level. This works within
+  # the Docker network (backend:8000) without any external service.
+  # To add email/Slack/PagerDuty, add a real receiver here alongside this one.
+  - name: backend-logger
+    webhook_configs:
+      - url: "http://backend:8000/alert-webhook"
+        send_resolved: true

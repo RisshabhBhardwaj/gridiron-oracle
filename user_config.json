@@ -1,0 +1,14 @@
+{
+  "weights": {
+    "kalman_form": 35.0,
+    "seasonal_baseline": 20.0,
+    "matchup": 20.0,
+    "weather_venue": 10.0,
+    "team_context": 5.0,
+    "roster_injury": 5.0,
+    "rule_meta": 5.0
+  },
+  "fantasy_scoring": "ppr",
+  "engine_exposure_cap": 0.25,
+  "weight_preset_name": "Default"
+}

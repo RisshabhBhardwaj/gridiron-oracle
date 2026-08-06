@@ -1,0 +1,155 @@
+services:
+  # ── PostgreSQL — transactional store ────────────────────────────────────────
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: oracle
+      POSTGRES_PASSWORD: oracle
+      POSTGRES_DB: oracle
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "15439:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U oracle" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MLflow — experiment tracking + model registry ────────────────────────────
+  mlflow:
+    image: python:3.11-slim-bullseye
+    command: >
+      bash -c "pip install mlflow psycopg2-binary && mlflow server
+        --host 0.0.0.0
+        --port 5001
+        --backend-store-uri postgresql+psycopg2://oracle:oracle@db:5432/oracle
+        --default-artifact-root /mlflow/artifacts"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    ports:
+      - "15091:5001"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Jaeger — trace storage + UI ─────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.59
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    command:
+      - "--collector.otlp.grpc.host-port=:4317"
+      - "--collector.otlp.http.host-port=:4318"
+    ports:
+      - "18686:16686"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q -O- http://localhost:16686/ >/dev/null 2>&1 || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── OpenTelemetry Collector — OTLP receiver for backend spans ──────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.107.0
+    command: [ "--config=/etc/otelcol-contrib/config.yaml" ]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "14317:4317"
+      - "14318:4318"
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  # ── FastAPI backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    command: python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ../backend/app:/app/backend/app # hot-reload: only app code, keeps site-packages
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://oracle:oracle@db:5432/oracle
+      - MLFLOW_TRACKING_URI=http://mlflow:5001
+      - OTEL_SERVICE_NAME=gridiron-oracle-api
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    ports:
+      - "18017:8000"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/health || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Scraper / ETL ────────────────────────────────────────────────────────────
+  scraper:
+    build:
+      context: ..
+      dockerfile: scraper/Dockerfile
+    volumes:
+      - ../scraper:/scraper
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://oracle:oracle@db:5432/oracle
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── React frontend (dev mode; prod uses nginx in Dockerfile) ─────────────────
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    command: npm run dev -- --host
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules # anonymous volume: keeps container's installed modules
+    ports:
+      - "15173:5173"
+    depends_on:
+      - backend
+
+  # ── Prometheus — metrics scraping + alerting evaluation ─────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "19090:9090"
+    depends_on:
+      - backend
+
+  # ── Alertmanager — receives Prometheus alerts; logs to stdout for solo dev ───
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "19093:9093"
+
+volumes:
+  db_data:
+  mlflow_artifacts:
+  prometheus_data:

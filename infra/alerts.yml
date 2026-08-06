@@ -1,0 +1,65 @@
+groups:
+  - name: gridiron_oracle_slos
+    interval: 30s
+    rules:
+
+      # ── Error rate SLO ────────────────────────────────────────────────────────
+      # Fires when >= 5% of API responses over the last 5 minutes are 5xx errors.
+      # Excludes /health, /metrics, and /integrity (probe paths, not user traffic).
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{
+              handler!~"/health|/metrics|/integrity",
+              status=~"5.."
+            }[5m]))
+            /
+            sum(rate(http_requests_total{
+              handler!~"/health|/metrics|/integrity"
+            }[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API error rate above 5%"
+          description: >
+            {{ printf "%.1f" (mul 100 $value) }}% of requests returning 5xx
+            over the last 5 minutes (threshold: 5%).
+            Check `docker compose logs backend` for tracebacks.
+
+      # ── p99 latency SLO ───────────────────────────────────────────────────────
+      # Fires when the 99th-percentile response time exceeds 2 seconds.
+      # /predict and /backtest are the expected slow paths; exclude if needed.
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (
+              rate(http_request_duration_seconds_bucket{
+                handler!~"/health|/metrics|/integrity"
+              }[5m])
+            )
+          ) > 2.0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p99 latency above 2 s"
+          description: >
+            99th-percentile response time is {{ printf "%.2f" $value }}s
+            (threshold: 2 s). Check slow ML inference or DB contention.
+
+      # ── Data freshness SLO ────────────────────────────────────────────────────
+      # Fires when no successful /health scrape has been seen for 5 minutes,
+      # which indicates the backend process is down or unreachable.
+      - alert: BackendDown
+        expr: up{job="gridiron-oracle-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gridiron Oracle API is unreachable"
+          description: >
+            Prometheus cannot reach the /metrics endpoint on backend:8000.
+            Run `make up` or `docker compose ps` to diagnose.

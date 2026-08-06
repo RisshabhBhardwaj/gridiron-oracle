@@ -1,0 +1,18 @@
+[run]
+source = ml,pipeline,backend
+omit =
+    */tests/*
+    */migrations/*
+    */__pycache__/*
+    ml/oof/*
+    ml/train_all_models.sh
+    pipeline/run_full_etl.sh
+    e2e/*
+    scripts/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if TYPE_CHECKING:
+    @(abc\.)?abstractmethod

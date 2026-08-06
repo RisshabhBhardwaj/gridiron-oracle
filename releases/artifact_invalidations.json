@@ -1,0 +1,10 @@
+{
+  "invalid_pipeline_run_ids": [],
+  "invalid_projection_targets": [
+    {
+      "position": "QB",
+      "reason": "Use only for known-bad legacy runs until a promoted replay manifest approves fresh QB passing artifacts.",
+      "stat": "passing_yards"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python:
+    name: Python tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # matches local dev (Apple Silicon M-series)
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Pytest (unit + API — no DB required)
+        # Exclude integration tests (require live PostgreSQL) and slow MCMC tests
+        run: |
+          export KMP_DUPLICATE_LIB_OK=TRUE
+          export OMP_NUM_THREADS=1
+          export OTEL_TRACES_EXPORTER=none
+          pytest backend/tests/ -v -m "not integration and not slow and not network"
+
+  cpp:
+    name: C++ build + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost
+        run: sudo apt-get update && sudo apt-get install -y libboost-all-dev
+
+      - name: CMake configure
+        run: cmake -B engine/build engine/ -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build engine/build -j$(nproc)
+
+      - name: Run all C++ tests (unified run_tests binary)
+        # Runs all 4 suites: ring_buffer, kelly, exposure_manager, ipc_bridge
+        run: ./engine/build/run_tests
+
+  frontend:
+    name: TypeScript type check + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Unit tests (Vitest)
+        working-directory: frontend
+        run: npm test -- --run
