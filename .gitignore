@@ -225,7 +225,9 @@ pgdata/
 .DS_Store
 
 # Archived local runs / generated outputs
+# Keep archive/INDEX.md tracked; ignore bulky/private archive contents.
 archive/run_pre_*/
+archive/**/run_pre_*/
 mlartifacts/               # root-level MLflow artifact store
 /ml/backtest_results/
 /ml/backtest_results/**    # generated backtest outputs
@@ -249,3 +251,7 @@ ml/player_embeddings_store.pkl.npz
 secrets/
 
 /mutants/
+
+# Never track private recovery artifacts
+gridiron-private-history.bundle
+**/ACTIVE_PROJECTS_AUDIT_*/

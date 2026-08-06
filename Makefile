@@ -11,9 +11,17 @@ export OPENWEATHER_API_KEY ?=
 setup:
 	$(COMPOSE) build
 
+.PHONY: hooks
+hooks:
+	@mkdir -p .git/hooks
+	@cp .githooks/pre-push .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-push
+	@echo "Installed public-push gate into .git/hooks/pre-push"
+
 .PHONY: bootstrap-local
 bootstrap-local:
 	bash scripts/bootstrap_local.sh
+	$(MAKE) hooks
 
 .PHONY: verify-local
 verify-local:
