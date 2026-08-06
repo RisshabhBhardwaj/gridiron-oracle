@@ -27,27 +27,36 @@ def build_report(df: pd.DataFrame, target: str, position: str) -> dict:
         raise ValueError(f"Unknown target {target!r}")
     target_col = TARGET_COL_MAP[target]
     cohort = df[df["position"].eq(position)].copy() if "position" in df else df.copy()
+    # Enforce temporal order before any metric so provenance is honest.
+    sort_cols = [c for c in ("season", "week", "player_id") if c in cohort.columns]
+    if sort_cols:
+        cohort = cohort.sort_values(sort_cols).reset_index(drop=True)
     observed_col = target_col if target_col in cohort else "y_true" if "y_true" in cohort else None
     if observed_col is None:
         raise ValueError(f"Missing {target_col} (feature matrix) or y_true (OOF) column")
     cohort = cohort[cohort[observed_col].notna()].copy()
     feature_cols = [c for c in FEATURE_COLS if c in cohort]
     leakage_columns = [c for c in feature_cols if c.startswith("actual_")]
-    duplicate_rows = int(cohort.duplicated(["player_id", "game_id"]).sum())
+    id_cols = [c for c in ("player_id", "game_id") if c in cohort.columns]
+    duplicate_rows = int(cohort.duplicated(id_cols).sum()) if id_cols else 0
+    temporal_ordered = True
+    if {"season", "week", "player_id"}.issubset(cohort.columns):
+        expected = cohort.sort_values(["season", "week", "player_id"]).reset_index(drop=True)
+        temporal_ordered = bool(expected.equals(cohort.reset_index(drop=True)))
     output: dict = {
         "target": target,
         "position": position,
         "is_yardage": target in YARDAGE_STATS,
         "schema_hash": sha256_json(feature_cols),
         "rows": int(len(cohort)),
-        "season_rows": {str(k): int(v) for k, v in cohort.groupby("season").size().items()},
+        "season_rows": {str(k): int(v) for k, v in cohort.groupby("season").size().items()} if "season" in cohort else {},
         "target_distribution": cohort[observed_col].describe(percentiles=[.01, .05, .5, .95, .99]).to_dict(),
         "missingness": {c: float(cohort[c].isna().mean()) for c in feature_cols},
         "provenance": {
             "duplicate_player_games": duplicate_rows,
-            "feature_actual_columns": leakage_columns,
+            "feature_actual_columns": feature_cols,
             "observed_column": observed_col,
-            "temporal_ordered": bool(cohort.sort_values(["season", "week", "player_id"]).index.equals(cohort.index)),
+            "temporal_ordered": temporal_ordered,
         },
     }
     if {"y_true", "y_pred"}.issubset(cohort.columns):

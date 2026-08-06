@@ -400,10 +400,12 @@ class BacktestRunner:
         data_provider: Optional[Callable] = None,
         projection_provider: Optional[Callable] = None,
         mlflow_tracking_uri: str = "",
+        require_causal_projections: bool = False,
     ) -> None:
         self._data_provider       = data_provider       or _default_data_provider
         self._projection_provider = projection_provider or _default_projection_provider
         self.mlflow_tracking_uri  = mlflow_tracking_uri
+        self.require_causal_projections = require_causal_projections
 
     # ------------------------------------------------------------------
     # run — walk-forward backtest
@@ -421,10 +423,10 @@ class BacktestRunner:
         For each eval_season:
           1. Load actual outcomes via data_provider(eval_season, ...).
           2. Load projections via projection_provider(eval_season, ...).
-             Caller ensures the projection model was trained on seasons
-             strictly less than eval_season.
-          3. Inner-join actuals + projections on (player_id, season, week, stat).
-          4. Compute BacktestResult per (position, stat).
+          3. When require_causal_projections=True, abort if any projection
+             row has max_train_season >= eval_season (or is missing).
+          4. Inner-join actuals + projections on (player_id, season, week, stat).
+          5. Compute BacktestResult per (position, stat).
 
         Returns:
             pd.DataFrame with one BacktestResult row per
@@ -441,6 +443,9 @@ class BacktestRunner:
             if actuals_df.empty or projections_df.empty:
                 logger.warning("Empty data for eval_season=%d — skipping.", eval_season)
                 continue
+
+            if self.require_causal_projections:
+                self._assert_causal_projections(projections_df, eval_season)
 
             merged = _merge_actuals_projections(actuals_df, projections_df)
 
@@ -475,6 +480,37 @@ class BacktestRunner:
             return pd.DataFrame(columns=list(BacktestResult.__dataclass_fields__))
 
         return pd.DataFrame([vars(r) for r in all_results])
+
+    @staticmethod
+    def _assert_causal_projections(projections_df: pd.DataFrame, eval_season: int) -> None:
+        """
+        Executable causality claim: every prediction must declare the max
+        training season that produced it, and that season must be strictly
+        less than the evaluation season.
+        """
+        if "max_train_season" not in projections_df.columns:
+            raise AssertionError(
+                f"Causal backtest for eval_season={eval_season} requires "
+                "projection column 'max_train_season'. DB-replay projections "
+                "without provenance are not evaluable; use OOF predictions "
+                "or stamp max_train_season at write time."
+            )
+        missing = projections_df["max_train_season"].isna()
+        if missing.any():
+            n = int(missing.sum())
+            raise AssertionError(
+                f"Causal backtest for eval_season={eval_season}: "
+                f"{n} projection rows missing max_train_season."
+            )
+        leaked = projections_df["max_train_season"].astype(int) >= int(eval_season)
+        if leaked.any():
+            n = int(leaked.sum())
+            bad = int(projections_df.loc[leaked, "max_train_season"].max())
+            raise AssertionError(
+                f"Causal backtest FAILED for eval_season={eval_season}: "
+                f"{n} rows have max_train_season >= eval_season "
+                f"(max observed={bad}). Refusing to score leaked predictions."
+            )
 
     # ------------------------------------------------------------------
     # evaluate — pure metric computation

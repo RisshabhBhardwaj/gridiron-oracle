@@ -150,17 +150,24 @@ class InferenceClient:
         )
         base_preds.append(tft_pred)
 
-        # Apply Ridge blending weights + intercept (or equal weights if no coefs file).
-        # Pass position so position-specific coef file is preferred over cross-position one.
+        # Apply Ridge blending weights + intercept.
+        # Fail closed when position-specific coefs are missing — equal-weight
+        # averaging silently destroyed QB passing_yards quality historically.
         ridge_result = self.load_ridge_coefs(stat, position=position)
-        if ridge_result is not None:
-            coefs, intercept = ridge_result
-            if len(coefs) == len(base_preds):
-                stacked = sum(w * p for w, p in zip(coefs, base_preds)) + intercept
-            else:
-                stacked = np.mean(base_preds, axis=0)
-        else:
-            stacked = np.mean(base_preds, axis=0)
+        if ridge_result is None:
+            raise FileNotFoundError(
+                f"Missing Ridge coefs for stat={stat!r} position={position!r} "
+                f"under {self.oof_dir}. Refusing equal-weight fallback. "
+                f"Expected ridge_{stat}_{position}_coefs.json."
+            )
+        coefs, intercept = ridge_result
+        if len(coefs) != len(base_preds):
+            raise ValueError(
+                f"Ridge coef length {len(coefs)} != base learner count "
+                f"{len(base_preds)} for stat={stat!r} position={position!r}. "
+                "Refusing silent equal-weight fallback."
+            )
+        stacked = sum(w * p for w, p in zip(coefs, base_preds)) + intercept
 
         logger.info(
             "Stacked estimates for stat=%s: n=%d mean=%.2f std=%.2f",
