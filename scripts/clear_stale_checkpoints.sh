@@ -25,13 +25,17 @@ if [[ "$TARGET" == "all" ]]; then
   rm -f "$DONE"/*.done
   echo "Cleared $count checkpoint markers under $DONE"
 else
-  mapfile -t files < <(find "$DONE" -name "*${TARGET}*" -name '*.done')
-  count=${#files[@]}
+  # Portable (macOS/BSD): no mapfile
+  count=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    rm -f "$f"
+    count=$((count + 1))
+  done < <(find "$DONE" -name "*${TARGET}*" -name '*.done')
   if [[ "$count" -eq 0 ]]; then
     echo "No markers matching *$TARGET*"
     exit 0
   fi
-  rm -f "${files[@]}"
   echo "Cleared $count markers matching *$TARGET*"
 fi
 
