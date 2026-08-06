@@ -22,12 +22,15 @@ def _save_local_oof(
     oof_df: pd.DataFrame,
     target: str,
     out_dir: Path,
+    position: Optional[str] = None,
 ) -> Optional[Path]:
     if oof_df.empty:
         return None
 
     pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-    return save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="tft")
+    return save_oof(
+        oof_df, target, pseudo_run_id, out_dir, prefix="tft", position=position or "all"
+    )
 
 
 def persist_training_artifacts(
@@ -116,7 +119,7 @@ def persist_training_artifacts(
                     mlflow.pytorch.log_model(final_model, "model")
 
                 if not oof_df.empty:
-                    oof_path = save_oof(oof_df, target, run_id, out_dir, prefix="tft")
+                    oof_path = save_oof(oof_df, target, run_id, out_dir, prefix="tft", position=position_filter or "all")
                     mlflow.log_artifact(str(oof_path))
 
                 logger.info(
@@ -127,10 +130,10 @@ def persist_training_artifacts(
         except Exception as exc:
             logger.error("MLflow logging failed (continuing without it): %s", exc)
             if not oof_df.empty and oof_path is None:
-                oof_path = _save_local_oof(oof_df, target, out_dir)
+                oof_path = _save_local_oof(oof_df, target, out_dir, position=position_filter)
 
     elif not oof_df.empty:
-        oof_path = _save_local_oof(oof_df, target, out_dir)
+        oof_path = _save_local_oof(oof_df, target, out_dir, position=position_filter)
 
     return run_id, oof_path
 

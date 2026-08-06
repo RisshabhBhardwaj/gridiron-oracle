@@ -26,6 +26,7 @@ def upgrade() -> None:
         ("posterior_samples", "JSONB"),
         ("p25", "FLOAT"),
         ("p75", "FLOAT"),
+        ("max_train_season", "INTEGER"),
     ):
         op.execute(f"ALTER TABLE projections ADD COLUMN IF NOT EXISTS {col} {typ}")
 

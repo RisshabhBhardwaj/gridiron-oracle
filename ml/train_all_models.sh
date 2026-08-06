@@ -165,7 +165,7 @@ run_xgb() {
       fi
       echo "→ [XGB] stat=$stat  position=$pos"
       if $PYTHON -m ml.xgb_model \
-        --seasons "2019-2026" \
+        --seasons "2019-2025" \
         --target "$stat" \
         --position "$pos" \
         --n-trials 20 \
@@ -202,7 +202,7 @@ run_lgbm() {
       fi
       echo "→ [LGB] stat=$stat  position=$pos"
       if $PYTHON -m ml.lgbm_model \
-        --seasons "2019-2026" \
+        --seasons "2019-2025" \
         --target "$stat" \
         --position "$pos" \
         --n-trials 20 \
@@ -239,7 +239,7 @@ run_catboost() {
       fi
       echo "→ [CB]  stat=$stat  position=$pos"
       if $PYTHON -m ml.catboost_model \
-        --seasons "2019-2026" \
+        --seasons "2019-2025" \
         --target "$stat" \
         --position "$pos" \
         --n-trials 20 \
@@ -310,7 +310,7 @@ for stat in $STATS; do
   fi
   echo "→ TFT: stat=$stat  (all positions)"
   if $PYTHON -m ml.tft_model \
-    --seasons "2019-2026" \
+    --seasons "2019-2025" \
     --target "$stat" \
     --position all \
     --n-trials "$TFT_TRIALS" \
@@ -386,7 +386,7 @@ TRAIN_FAST_FLAG=""
 [[ "$FAST_MODE" == "true" ]] && TRAIN_FAST_FLAG="--fast"
 
 $PYTHON -m ml.train \
-  --seasons 2019 2020 2021 2022 2023 2024 2025 2026 \
+  --seasons 2019 2020 2021 2022 2023 2024 2025 \
   --all-weeks \
   $TRAIN_FAST_FLAG \
   $([ "$RESUME" = "true" ] && echo "--resume")

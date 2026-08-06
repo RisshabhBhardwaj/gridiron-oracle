@@ -3,6 +3,11 @@
 # Rejects pushes that would publish private, secret, or bulky non-public paths.
 set -euo pipefail
 
+# Explicitly public templates (must not be blocked by .env.* rules).
+ALLOW_EXACT=(
+  '.env.example'
+)
+
 BLOCK_PATTERNS=(
   '^\.env$'
   '^\.env\.'
@@ -19,6 +24,17 @@ BLOCK_PATTERNS=(
 zero_sha="0000000000000000000000000000000000000000"
 blocked=0
 
+is_allowed() {
+  local path="$1"
+  local allowed
+  for allowed in "${ALLOW_EXACT[@]}"; do
+    if [[ "$path" == "$allowed" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ "$local_sha" == "$zero_sha" ]]; then
     continue
@@ -32,6 +48,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
   while IFS= read -r path; do
     [[ -z "$path" ]] && continue
+    if is_allowed "$path"; then
+      continue
+    fi
     for pat in "${BLOCK_PATTERNS[@]}"; do
       if [[ "$path" =~ $pat ]]; then
         echo "PUBLIC-PUSH GATE: blocked path '$path' (matched /$pat/)" >&2

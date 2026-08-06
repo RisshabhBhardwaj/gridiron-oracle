@@ -43,6 +43,7 @@ def bootstrap_schema(conn: Any) -> None:
         ("posterior_samples", "JSONB"),
         ("p25", "FLOAT"),
         ("p75", "FLOAT"),
+        ("max_train_season", "INTEGER"),
     ):
         cur.execute(f"ALTER TABLE projections ADD COLUMN IF NOT EXISTS {col} {typ}")
     conn.commit()

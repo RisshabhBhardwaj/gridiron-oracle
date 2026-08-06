@@ -448,6 +448,9 @@ class Projection(SQLModel, table=True):
 
     # ── Pipeline provenance ────────────────────────────────────────────
     pipeline_run_id: Optional[str] = None  # MLflow run ID; NULL for dry_run
+    # Max season used to train the model that produced this row.
+    # Required for causal backtest: must be strictly < projection.season.
+    max_train_season: Optional[int] = None
 
     # ── Posterior samples for CRPS computation ─────────────────────────
     # JSON array of up to 500 draws from the Bayesian posterior.

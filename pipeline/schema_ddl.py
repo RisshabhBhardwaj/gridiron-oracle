@@ -501,6 +501,7 @@ CREATE TABLE IF NOT EXISTS projections (
     fantasy_floor    FLOAT,
     fantasy_ceiling  FLOAT,
     pipeline_run_id  VARCHAR,
+    max_train_season INTEGER,
     posterior_samples JSONB,
     created_at       TIMESTAMP DEFAULT NOW(),
     CONSTRAINT uq_projections_player_game_stat

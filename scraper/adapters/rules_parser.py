@@ -38,29 +38,46 @@ class RulesParser:
     # Hard-coded known rule changes by season.
     # Expand as new rules are added each offseason.
     _RULE_CHANGES_BY_SEASON: dict[int, dict[str, float]] = {
+        2026: {
+            # Carry forward 2025 kickoff / hip-drop regime until catalogued otherwise.
+            "hip_drop_tackle_ban": 1.0,
+            "kickoff_unified_rule": 1.0,
+            "dynamic_kickoff_refined": 1.0,  # 2025–26 kickoff refinements
+        },
+        2025: {
+            "hip_drop_tackle_ban": 1.0,
+            "kickoff_unified_rule": 1.0,
+            "dynamic_kickoff_refined": 1.0,
+        },
         2024: {
             "hip_drop_tackle_ban": 1.0,         # Penalised starting 2024
             "kickoff_unified_rule": 1.0,         # New kickoff format 2024
+            "dynamic_kickoff_refined": 0.0,
         },
         2023: {
             "hip_drop_tackle_ban": 0.0,
             "kickoff_unified_rule": 0.0,
+            "dynamic_kickoff_refined": 0.0,
         },
         2022: {
             "hip_drop_tackle_ban": 0.0,
             "kickoff_unified_rule": 0.0,
+            "dynamic_kickoff_refined": 0.0,
         },
         2021: {
             "hip_drop_tackle_ban": 0.0,
             "kickoff_unified_rule": 0.0,
+            "dynamic_kickoff_refined": 0.0,
         },
         2020: {
             "hip_drop_tackle_ban": 0.0,
             "kickoff_unified_rule": 0.0,
+            "dynamic_kickoff_refined": 0.0,
         },
         2019: {
             "hip_drop_tackle_ban": 0.0,
             "kickoff_unified_rule": 0.0,
+            "dynamic_kickoff_refined": 0.0,
         },
     }
 
@@ -68,14 +85,22 @@ class RulesParser:
         """
         Return rule_meta features for the given season.
 
-        Uses the hard-coded lookup table above. Falls back to the most-recent
-        known season when 'season' is beyond what's been catalogued.
+        Uses the hard-coded lookup table above. Unknown future seasons raise
+        rather than silently inheriting an older season's rules.
         """
+        import logging
+        import warnings
+
         if season in self._RULE_CHANGES_BY_SEASON:
             return dict(self._RULE_CHANGES_BY_SEASON[season])
 
-        # Fall back to the most recent available season
         latest = max(self._RULE_CHANGES_BY_SEASON)
+        msg = (
+            f"RulesParser: season {season} not catalogued; "
+            f"falling back to season {latest}. Update _RULE_CHANGES_BY_SEASON."
+        )
+        logging.getLogger(__name__).warning(msg)
+        warnings.warn(msg, UserWarning, stacklevel=2)
         return dict(self._RULE_CHANGES_BY_SEASON[latest])
 
     def get_current_season_features(self) -> dict[str, float]:

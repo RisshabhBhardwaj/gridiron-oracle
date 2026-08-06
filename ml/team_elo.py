@@ -103,7 +103,7 @@ ELO_FLOOR: float = 1000.0
 ELO_CEILING: float = 2200.0
 
 # Seasons available in the nflreadpy game data
-NFL_SEASONS_AVAILABLE: list[int] = list(range(2000, 2026))
+NFL_SEASONS_AVAILABLE: list[int] = list(range(2000, 2027))  # through CURRENT_SEASON; incomplete years may be empty
 
 
 # ── Data Structures ───────────────────────────────────────────────────────────

@@ -465,10 +465,16 @@ def save_oof(
     run_id: str,
     out_dir: Path,
     prefix: str = "xgb",
+    position: Optional[str] = None,
 ) -> Path:
-    """Save OOF predictions to CSV. Returns path written."""
+    """Save OOF predictions to CSV. Returns path written.
+
+    Filename includes position when provided so multi-position same-day runs
+    cannot overwrite each other (stacking discovery depends on this).
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{prefix}_{target}_{run_id[:8]}.csv"
+    pos_part = f"_{position}" if position else ""
+    filename = f"{prefix}_{target}{pos_part}_{run_id[:8]}.csv"
     path = out_dir / filename
     oof_df.to_csv(path, index=False)
     logger.info("OOF predictions saved → %s  (%d rows)", path, len(oof_df))
@@ -579,12 +585,35 @@ def run_onnx_inference(onnx_path: Path, X: np.ndarray) -> Optional[np.ndarray]:
         return None
 
 
-def _parse_seasons(season_str: str) -> list[int]:
-    """Parse '2018-2024' (range) or '2018 2019 2020' (list) into a list of ints."""
+def _parse_seasons(season_str: str, *, complete_only: bool = True) -> list[int]:
+    """
+    Parse '2018-2024' (range) or '2018 2019 2020' (list) into a list of ints.
+
+    By default, seasons beyond LAST_COMPLETE_SEASON are dropped with a warning
+    so incomplete (pre-Week-1) seasons cannot enter walk-forward folds.
+    """
+    from ml.season_constants import LAST_COMPLETE_SEASON, cap_seasons
+
     season_str = season_str.strip()
     if "-" in season_str and not season_str.startswith("-"):
         parts = season_str.split("-")
         if len(parts) == 2 and all(p.isdigit() for p in parts):
             start, end = int(parts[0]), int(parts[1])
-            return list(range(start, end + 1))
-    return [int(s.strip()) for s in season_str.replace(",", " ").split()]
+            seasons = list(range(start, end + 1))
+        else:
+            seasons = [int(s.strip()) for s in season_str.replace(",", " ").split()]
+    else:
+        seasons = [int(s.strip()) for s in season_str.replace(",", " ").split()]
+
+    if complete_only:
+        capped = cap_seasons(seasons, complete_only=True)
+        dropped = [s for s in seasons if s not in capped]
+        if dropped:
+            logger.warning(
+                "Dropping incomplete seasons %s (LAST_COMPLETE_SEASON=%d). "
+                "Context-only seasons must not enter training folds.",
+                dropped,
+                LAST_COMPLETE_SEASON,
+            )
+        return capped
+    return seasons

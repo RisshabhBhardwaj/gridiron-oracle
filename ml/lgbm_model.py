@@ -518,7 +518,7 @@ def train(
                 # ── OOF artifact ───────────────────────────────────────────
                 if not oof_df.empty:
                     oof_path = save_oof(oof_df, target, run_id, out_dir,
-                                       prefix="lgbm")
+                                       prefix="lgbm", position=position_filter or "all")
                     mlflow.log_artifact(str(oof_path))
 
                 logger.info("MLflow run logged: experiment=%s  run_id=%s",
@@ -529,11 +529,11 @@ def train(
             # MLflow was configured but unreachable — still save OOF to disk.
             if not oof_df.empty and oof_path is None:
                 pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-                oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm")
+                oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm", position=position_filter or "all")
 
     elif not oof_df.empty:
         pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-        oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm")
+        oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm", position=position_filter or "all")
 
     return LGBMTrainResult(
         fold_results=fold_results,

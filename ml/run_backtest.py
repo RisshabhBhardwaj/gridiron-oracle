@@ -268,7 +268,9 @@ def real_projection_provider(
 if __name__ == "__main__":
     assert_position_stats_resolvable(VALID_POSITION_STATS)
 
-    SEASONS = [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+    from ml.season_constants import train_seasons
+
+    SEASONS = train_seasons()
 
     runner = BacktestRunner(
         data_provider=real_data_provider,

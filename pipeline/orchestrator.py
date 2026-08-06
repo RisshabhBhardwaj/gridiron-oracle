@@ -578,7 +578,7 @@ def main() -> None:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Resolve seasons — default to current NFL season
+    # Resolve seasons — default to current NFL season (context ETL; may be empty logs)
     if args.seasons:
         seasons = args.seasons
     else:
@@ -587,8 +587,13 @@ def main() -> None:
             seasons = [nfl.get_current_season()]
             logger.info("Resolved current season: %d", seasons[0])
         except Exception:
-            seasons = [2025]
-            logger.info("Could not resolve current season; defaulting to 2025.")
+            from ml.season_constants import CURRENT_SEASON
+
+            seasons = [CURRENT_SEASON]
+            logger.info(
+                "Could not resolve current season; defaulting to CURRENT_SEASON=%d.",
+                CURRENT_SEASON,
+            )
 
     db_url = os.environ.get("DATABASE_URL", "")
 

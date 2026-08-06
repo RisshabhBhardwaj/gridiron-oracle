@@ -1160,8 +1160,8 @@ class PipelineRunner:
                      projection, floor, ceiling, p25, p75,
                      boom_probability, bust_probability,
                      fantasy_projection, fantasy_floor, fantasy_ceiling,
-                     pipeline_run_id, posterior_samples)
-                VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s, %s,%s,%s, %s, %s)
+                     pipeline_run_id, posterior_samples, max_train_season)
+                VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s, %s,%s,%s, %s, %s, %s)
                 ON CONFLICT (player_id, game_id, stat) DO UPDATE SET
                     season             = EXCLUDED.season,
                     week               = EXCLUDED.week,
@@ -1177,18 +1177,28 @@ class PipelineRunner:
                     fantasy_floor      = EXCLUDED.fantasy_floor,
                     fantasy_ceiling    = EXCLUDED.fantasy_ceiling,
                     pipeline_run_id    = EXCLUDED.pipeline_run_id,
-                    posterior_samples  = EXCLUDED.posterior_samples
+                    posterior_samples  = EXCLUDED.posterior_samples,
+                    max_train_season   = EXCLUDED.max_train_season
             """
+
+            from ml.season_constants import LAST_COMPLETE_SEASON
 
             for _, row in results_df.iterrows():
                 # Serialize posterior samples to JSON for storage.
                 # Stored as first 500 draws; None if samples absent (legacy rows).
                 samples = row.get("posterior_samples")
                 samples_json = json.dumps(samples) if samples is not None and len(samples) > 0 else None
+                proj_season = int(row.get("season", 0) or 0)
+                # Causal provenance: models used for season S were trained on ≤ S-1,
+                # and never beyond the last complete season.
+                if proj_season > 0:
+                    max_train_season = min(LAST_COMPLETE_SEASON, proj_season - 1)
+                else:
+                    max_train_season = LAST_COMPLETE_SEASON
                 cur.execute(upsert_sql, (
                     str(row["player_id"]),
                     str(row.get("game_id", "")),
-                    int(row.get("season", 0)),
+                    proj_season,
                     int(row.get("week", 0)),
                     str(row["stat"]),
                     row.get("position"),
@@ -1205,6 +1215,7 @@ class PipelineRunner:
                     _float_or_none(row.get("fantasy_ceiling")),
                     self._run_id,
                     samples_json,
+                    int(max_train_season),
                 ))
             conn.commit()
             logger.info("Wrote %d projection rows to DB.", len(results_df))
