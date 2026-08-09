@@ -11,12 +11,17 @@ export OPENWEATHER_API_KEY ?=
 setup:
 	$(COMPOSE) build
 
+# Point Git at the tracked hooks directory rather than copying into
+# .git/hooks — one gate file, live edits, and no drift between the tracked
+# hook and the installed copy (audit C-30).
 .PHONY: hooks
 hooks:
-	@mkdir -p .git/hooks
-	@cp .githooks/pre-push .git/hooks/pre-push
-	@chmod +x .git/hooks/pre-push
-	@echo "Installed public-push gate into .git/hooks/pre-push"
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/pre-push
+	@rm -f .git/hooks/pre-push
+	@echo "core.hooksPath set to .githooks (public-push gate active)"
+	@echo "Reminder: the local hook is convenience only. The required check is"
+	@echo "the 'push-gate' job in .github/workflows/ci.yml."
 
 .PHONY: migrate
 migrate:
@@ -38,6 +43,12 @@ verify-local:
 .PHONY: verify-readiness
 verify-readiness:
 	$(PYTHON) scripts/verify_release_readiness.py
+
+# Shipped evidence lives under ignored paths, so `git status` cannot report
+# drift in it. See releases/artifacts/README.md (audit C-29).
+.PHONY: verify-evidence
+verify-evidence:
+	$(PYTHON) scripts/verify_evidence_manifest.py
 
 .PHONY: verify-artifact-prerequisites
 verify-artifact-prerequisites:

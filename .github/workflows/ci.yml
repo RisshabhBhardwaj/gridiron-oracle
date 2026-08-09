@@ -7,6 +7,48 @@ on:
     branches: [main]
 
 jobs:
+  # The authoritative public-push gate. The local `.githooks/pre-push` hook is
+  # convenience only — it runs on the contributor's machine and is skippable
+  # with `--no-verify`. Mark this job as a required check on `main`.
+  #
+  # This runs the real hook with an empty remote-tracking set, so it enumerates
+  # every object reachable from HEAD rather than an endpoint diff: blocked paths
+  # introduced in an ancestor and deleted before the tip are still caught (C-07).
+  push-gate:
+    name: Public-push gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          version=8.21.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      # Validate the invocation against the pinned binary rather than assuming
+      # it: the CLI was reworked mid-v8 and `gitleaks git` replaced
+      # `gitleaks detect`. The hook picks whichever exists; this step fails
+      # loudly here if neither does, instead of inside the gate.
+      - name: Check the gitleaks invocation exists
+        run: gitleaks git --help > /dev/null || gitleaks detect --help > /dev/null
+
+      - name: Scan every object reachable from HEAD
+        run: |
+          set -euo pipefail
+          # Drop remote-tracking refs so nothing is excluded from the scan.
+          git for-each-ref --format='%(refname)' refs/remotes \
+            | xargs -r -n1 git update-ref -d
+          chmod +x .githooks/pre-push
+          printf 'refs/heads/ci %s refs/heads/ci %s\n' \
+            "$(git rev-parse HEAD)" \
+            "0000000000000000000000000000000000000000" \
+            | ./.githooks/pre-push origin "${{ github.server_url }}/${{ github.repository }}.git"
+
   python:
     name: Python tests + lint
     runs-on: ubuntu-latest
@@ -22,6 +64,11 @@ jobs:
 
       - name: Ruff lint
         run: ruff check .
+
+      # Evidence under reports/ and ml/experiments/ is gitignored-plus-force-added,
+      # so `git status` cannot report drift in it (audit C-29).
+      - name: Evidence manifest
+        run: python scripts/verify_evidence_manifest.py
 
       - name: Pytest (unit + API — no DB required)
         # Exclude integration tests (require live PostgreSQL) and slow MCMC tests

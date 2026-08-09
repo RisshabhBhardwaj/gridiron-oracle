@@ -14,8 +14,13 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored: these are setuptools build output at the repo ROOT. Unanchored,
+# `lib/` matched every directory named `lib` at any depth and silently swallowed
+# `e2e/lib/http_assert.sh` — a dependency the smoke test sources, which would
+# have been absent from every fresh clone. The only `lib` directory in the tree
+# is `e2e/lib`; `.venv_311/` is ignored wholesale on its own line.
+/lib/
+/lib64/
 parts/
 sdist/
 var/

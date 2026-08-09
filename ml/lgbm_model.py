@@ -86,6 +86,7 @@ from ml.utils import (
     save_oof,
 )
 from ml.cohort_guards import validate_training_cohort
+from ml.season_constants import assert_not_fitting_incomplete_season
 from ml.reliability import build_training_manifest, write_manifest
 
 logging.basicConfig(
@@ -580,6 +581,10 @@ def main() -> None:
         raise SystemExit(1)
 
     seasons  = _parse_seasons(args.seasons)
+    # Trainer entrypoint guarantee: an incomplete season must never enter a
+    # walk-forward fold. `_parse_seasons` already raises on out-of-range input;
+    # this is the explicit assert the pre-Week-1 claim rests on (audit C-28).
+    assert_not_fitting_incomplete_season(seasons)
     position = None if args.position.lower() == "all" else args.position
     mlflow_tracking_uri = "" if args.no_mlflow else args.mlflow_uri
 

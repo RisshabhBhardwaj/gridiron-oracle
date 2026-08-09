@@ -7,11 +7,59 @@
 
 ## Table of Contents
 
-1. [Adding a New Stat](#adding-a-new-stat)
-2. [Adding a New Base Learner](#adding-a-new-base-learner)
-3. [Running Training](#running-training)
-4. [Running the Backtest](#running-the-backtest)
-5. [Running Tests](#running-tests)
+1. [Public-push gate](#public-push-gate)
+2. [Adding a New Stat](#adding-a-new-stat)
+3. [Adding a New Base Learner](#adding-a-new-base-learner)
+4. [Running Training](#running-training)
+5. [Running the Backtest](#running-the-backtest)
+6. [Running Tests](#running-tests)
+
+---
+
+## Public-push gate
+
+This repository is public. `.githooks/pre-push` refuses to publish private paths,
+secret-looking content, and oversized objects.
+
+### The local hook is convenience, not a security boundary
+
+It runs on your machine, it is skippable with `git push --no-verify`, and a
+contributor who never enables it is unprotected. **The authoritative gate is the
+`push-gate` job in `.github/workflows/ci.yml`** — mark it as a required status
+check on `main`, and enable server-side secret scanning and push protection in
+the repository settings. Do not treat a green local hook as clearance.
+
+### Enabling it
+
+```bash
+make hooks
+```
+
+That sets `core.hooksPath=.githooks`; `make bootstrap-local` does it for you.
+Pointing Git at the tracked directory means a fresh clone is covered after one
+command and edits to `.githooks/pre-push` take effect immediately. The old flow
+copied the file into `.git/hooks`, which left clones with no gate at all and let
+the installed copy drift from the tracked one (audit C-30).
+
+### What it checks
+
+For every ref being pushed, the gate enumerates **every object introduced by the
+push** — `git rev-list --objects --root <local> --not --remotes=<remote>` — not
+the tip commit and not the endpoint diff. That is what catches a blocked path
+committed in an ancestor and deleted before the tip (audit C-07). Both bypasses
+are locked by `backend/tests/test_push_gate.py`.
+
+| Check | Mechanism |
+|---|---|
+| Blocked paths | Pattern list in the hook, anchored `(^\|/)` so nested copies match |
+| Secret content | Built-in regex set, via `git grep` across every introduced commit |
+| Secret content (extra) | `gitleaks` when installed; **required** when `CI=true` |
+| Object size | `git cat-file --batch-check`, default limit 5 MB |
+
+Thresholds are overridable for testing via `PUSH_GATE_MAX_OBJECT_BYTES`.
+
+Install `gitleaks` locally (`brew install gitleaks`) for the same coverage CI
+has. Without it the hook prints a notice and runs the built-in scan only.
 
 ---
 

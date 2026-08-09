@@ -36,34 +36,68 @@ CREATE TABLE IF NOT EXISTS fantasy_adp (
 )
 """
 
-# Common FantasyPros export headers → canonical names
-_COLUMN_ALIASES = {
-    "player": "player_name",
-    "player name": "player_name",
-    "name": "player_name",
-    "pos": "position",
-    "team": "team",
-    "avg": "adp",
-    "average": "adp",
-    "adp": "adp",
-    "rank": "adp",
+# Common FantasyPros export headers → canonical names, in PRIORITY ORDER.
+#
+# A standard FantasyPros ADP export looks like:
+#   Rank,Player,Team,Bye,POS,ESPN,Sleeper,NFL,RTSports,FFC,AVG
+# `AVG` is the average draft position; `Rank` is FantasyPros' own ordering and
+# is a different quantity — an integer 1..N rather than a pick number. Mapping
+# both onto `adp` (audit C-23) silently imported Rank as ADP, wrong by an order
+# of magnitude on the documented 2026 import path, and the old
+# `required - set(out.columns)` check could not detect it because the rename
+# produced two columns both labelled `adp`.
+#
+# `rank` is deliberately NOT an ADP alias. A CSV carrying only Rank has no ADP
+# and must raise rather than import a rank as a draft position.
+_ALIAS_PRIORITY: dict[str, tuple[str, ...]] = {
+    "player_name": ("player name", "player", "name"),
+    "adp": ("adp", "avg adp", "adp avg", "avg", "average"),
+    "position": ("pos", "position"),
+    "team": ("team", "tm"),
+    "fp_rank": ("rank", "#"),
 }
+
+REQUIRED_COLUMNS = ("player_name", "adp")
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    rename = {}
-    for col in df.columns:
-        key = str(col).strip().lower()
-        if key in _COLUMN_ALIASES:
-            rename[col] = _COLUMN_ALIASES[key]
-    out = df.rename(columns=rename)
-    required = {"player_name", "adp"}
-    missing = required - set(out.columns)
+    """
+    Resolve FantasyPros export headers to canonical names.
+
+    Each canonical name takes the highest-priority source column present, and
+    every canonical name binds to at most one source column — so a header set
+    containing both `AVG` and `Rank` resolves `adp` to `AVG` and never emits
+    duplicate `adp` columns.
+    """
+    lowered = {str(col).strip().lower(): col for col in df.columns}
+    rename: dict[str, str] = {}
+    resolved: dict[str, str] = {}
+    for canonical, candidates in _ALIAS_PRIORITY.items():
+        for candidate in candidates:
+            source = lowered.get(candidate)
+            if source is not None and source not in rename:
+                rename[source] = canonical
+                resolved[canonical] = str(source)
+                break
+
+    missing = [c for c in REQUIRED_COLUMNS if c not in resolved]
     if missing:
         raise ValueError(
-            f"FantasyPros CSV missing columns {sorted(missing)}. "
-            f"Found: {list(df.columns)}"
+            f"FantasyPros CSV missing columns {missing}. Found: {list(df.columns)}. "
+            "ADP must come from an average-draft-position column (AVG/ADP); "
+            "a Rank column is not an ADP."
         )
+
+    out = df.rename(columns=rename)
+    if list(out.columns).count("adp") != 1:
+        raise ValueError(
+            f"Ambiguous ADP column in {list(df.columns)} — resolved to "
+            f"{out.columns.tolist().count('adp')} columns named 'adp'."
+        )
+    logger.info(
+        "FantasyPros column mapping: %s",
+        ", ".join(f"{v!r}→{k}" for k, v in sorted(resolved.items())),
+    )
     return out
 
 

@@ -1,32 +1,63 @@
-[
-  {
-    "target": "targets",
-    "position": "WR",
-    "beat_both": "5/5",
-    "pooled_mae": 1.2694748215921523
-  },
-  {
-    "target": "targets",
-    "position": "TE",
-    "beat_both": "5/5",
-    "pooled_mae": 1.1656297721831625
-  },
-  {
-    "target": "targets",
-    "position": "RB",
-    "beat_both": "5/5",
-    "pooled_mae": 1.4112442588229972
-  },
-  {
-    "target": "carries",
-    "position": "RB",
-    "beat_both": "5/5",
-    "pooled_mae": 1.9357561955804552
-  },
-  {
-    "target": "pass_attempts",
-    "position": "QB",
-    "beat_both": "5/5",
-    "pooled_mae": 1.9207368942863414
-  }
-]
+{
+  "schema_version": 1,
+  "generated_by": "python scripts/summarize_causal_evals.py",
+  "generated_at": "2026-08-09T19:17:48.094055+00:00",
+  "metric_note": "`metric` is carried through from the per-cell eval CSVs, which get it from ml.eval_metrics.primary_score. `mean_season_score` is the unweighted mean of per-season scores; `n_weighted_score` weights by row count. Neither is a score recomputed over pooled rows.",
+  "cells": [
+    {
+      "target": "targets",
+      "position": "WR",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "mean_season_score": 1.2694748215921523,
+      "n_weighted_score": 1.2696184225472766,
+      "seasons": 5,
+      "rows": 8964,
+      "source_report": "reports/eval_causal_stack_targets_WR.csv"
+    },
+    {
+      "target": "targets",
+      "position": "TE",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "mean_season_score": 1.1656297721831623,
+      "n_weighted_score": 1.1657267277328254,
+      "seasons": 5,
+      "rows": 4691,
+      "source_report": "reports/eval_causal_stack_targets_TE.csv"
+    },
+    {
+      "target": "targets",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "mean_season_score": 1.4112442588229972,
+      "n_weighted_score": 1.4114001702274623,
+      "seasons": 5,
+      "rows": 3987,
+      "source_report": "reports/eval_causal_stack_targets_RB.csv"
+    },
+    {
+      "target": "carries",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "mean_season_score": 1.9357561955804552,
+      "n_weighted_score": 1.935327964068662,
+      "seasons": 5,
+      "rows": 3987,
+      "source_report": "reports/eval_causal_stack_carries_RB.csv"
+    },
+    {
+      "target": "pass_attempts",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "mean_season_score": 1.9207368942863414,
+      "n_weighted_score": 1.9208895137243112,
+      "seasons": 5,
+      "rows": 2929,
+      "source_report": "reports/eval_causal_stack_pass_attempts_QB.csv"
+    }
+  ]
+}

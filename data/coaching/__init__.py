@@ -1,28 +1,26 @@
 """
-2026 coaching / scheme seed data (manual, free).
+Coaching / scheme seed data (manual, free).
 
-Update this CSV when HC/OC/DC changes land. Consumed by
-`scraper.adapters.coaching_adapter`.
+**No seed CSV ships with this repository.** The previous `coaching_2026.csv` and
+the `DEFAULT_ROWS` fallback that regenerated it both contained unverified staff
+assignments — including a defensive coordinator who was never a coach and two
+coordinators each holding the same role on two teams (audit C-24). A fallback
+that writes unverified facts on demand is the same defect with an extra step, so
+it is gone too.
+
+Supply your own verified CSV: copy `coaching_TEMPLATE.csv`, fill it in with
+`source` / `verified_by` / `verified_on`, and load it with
+`scraper.adapters.coaching_adapter`, which validates before it upserts.
+See `README.md` in this directory.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-SEED_PATH = Path(__file__).with_name("coaching_2026.csv")
-
-# Written once if missing so the repo has a usable starter file.
-DEFAULT_ROWS = """season,team,head_coach,offensive_coordinator,defensive_coordinator,scheme_pass_rate_prior,notes
-2026,KC,Andy Reid,Matt Nagy,Steve Spagnuolo,0.58,seed — verify before draft
-2026,BUF,Sean McDermott,Joe Brady,Bobby Babich,0.55,seed — verify before draft
-2026,PHI,Nick Sirianni,Kevin Patullo,Vic Fangio,0.52,seed — verify before draft
-2026,DET,Dan Campbell,John Morton,Kelvin Sheppard,0.54,seed — verify before draft
-2026,BAL,John Harbaugh,Todd Monken,Zach Orr,0.53,seed — verify before draft
-2026,SF,Kyle Shanahan,Klay Kubiak,Robert Saleh,0.56,seed — verify before draft
-"""
+TEMPLATE_PATH = Path(__file__).with_name("coaching_TEMPLATE.csv")
 
 
-def ensure_seed_file() -> Path:
-    if not SEED_PATH.exists():
-        SEED_PATH.write_text(DEFAULT_ROWS)
-    return SEED_PATH
+def seed_path(season: int) -> Path:
+    """Expected location of a verified coaching CSV for `season`."""
+    return Path(__file__).with_name(f"coaching_{season}.csv")
