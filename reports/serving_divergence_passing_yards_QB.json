@@ -1,0 +1,16 @@
+{
+  "equal_weight_risk": false,
+  "oof_vs_db": {
+    "corr": 1.0,
+    "db_mae": 53.48904625901628,
+    "mae_db_vs_oof": 0.0,
+    "mean_db_minus_oof": 0.0,
+    "oof_mae": 53.48904625901628,
+    "rows": 2929
+  },
+  "position": "QB",
+  "ridge_artifacts": [
+    "ml/oof/ridge_passing_yards_QB_coefs.json"
+  ],
+  "stat": "passing_yards"
+}

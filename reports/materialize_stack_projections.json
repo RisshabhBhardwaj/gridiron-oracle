@@ -1,0 +1,70 @@
+{
+  "created_at": "2026-08-09T17:18:11.399366+00:00",
+  "pipeline_run_id": "stack_materialize_20260809T171811Z",
+  "n_rows": 48058,
+  "cells": [
+    {
+      "stat": "carries",
+      "position": "RB",
+      "n": 3987,
+      "seasons": 5
+    },
+    {
+      "stat": "fantasy_ppr",
+      "position": "QB",
+      "n": 2929,
+      "seasons": 5
+    },
+    {
+      "stat": "fantasy_ppr",
+      "position": "RB",
+      "n": 3987,
+      "seasons": 5
+    },
+    {
+      "stat": "fantasy_ppr",
+      "position": "TE",
+      "n": 4691,
+      "seasons": 5
+    },
+    {
+      "stat": "fantasy_ppr",
+      "position": "WR",
+      "n": 8964,
+      "seasons": 5
+    },
+    {
+      "stat": "pass_attempts",
+      "position": "QB",
+      "n": 2929,
+      "seasons": 5
+    },
+    {
+      "stat": "passing_yards",
+      "position": "QB",
+      "n": 2929,
+      "seasons": 5
+    },
+    {
+      "stat": "targets",
+      "position": "RB",
+      "n": 3987,
+      "seasons": 5
+    },
+    {
+      "stat": "targets",
+      "position": "TE",
+      "n": 4691,
+      "seasons": 5
+    },
+    {
+      "stat": "targets",
+      "position": "WR",
+      "n": 8964,
+      "seasons": 5
+    }
+  ],
+  "skipped": [],
+  "dry_run": false,
+  "n_upserted": 48058
+}

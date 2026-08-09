@@ -1,0 +1,6 @@
+stat,metric,n,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,season,position
+pass_attempts,poisson_deviance,588,2.437927418318468,14.291147172408428,9.990854231198172,True,True,True,2021,QB
+pass_attempts,poisson_deviance,583,2.0681453111598556,22.549540446172223,5.196870505024281,True,True,True,2022,QB
+pass_attempts,poisson_deviance,587,1.570588995521531,8.23391175213315,4.889197914105212,True,True,True,2023,QB
+pass_attempts,poisson_deviance,586,1.8113002872792863,14.211820923882966,7.614822065916603,True,True,True,2024,QB
+pass_attempts,poisson_deviance,585,1.7157224591525666,18.354354104184118,10.040133209355085,True,True,True,2025,QB

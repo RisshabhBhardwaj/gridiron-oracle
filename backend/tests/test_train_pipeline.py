@@ -488,9 +488,10 @@ class TestStackingInferenceHelpers:
         runner = PipelineRunner(oof_dir=tmp_path)
         result = runner._load_ridge_coefs("receiving_yards")
         assert result is not None
-        coefs, intercept = result
+        coefs, intercept, learner_order = result
         assert len(coefs) == 3
         assert coefs == [2.0, 1.0, 1.0]
+        assert learner_order == ["xgb", "lgbm", "tft"]
         assert abs(intercept - 0.5) < 1e-9
 
     def test_load_ridge_coefs_corrupt_file_returns_none(self, tmp_path):

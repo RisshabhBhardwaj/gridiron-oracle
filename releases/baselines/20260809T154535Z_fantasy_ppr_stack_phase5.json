@@ -1,9 +1,9 @@
 {
-  "created_at": "2026-08-09T17:14:33.142022+00:00",
+  "created_at": "2026-08-09T15:45:35.835046+00:00",
   "git_commit": "a4fb0e96995de1de943842afaa196777e0a194cb",
   "git_branch": "main",
   "git_dirty": true,
-  "model_version": "fantasy_ppr_stack_phase5_clean_plus_volume",
+  "model_version": "fantasy_ppr_stack_phase5_lgbm_catboost",
   "product_mode": "artifact_backed",
   "baseline_manifest_path": "releases/current_baseline.json",
   "stack_policy": {
@@ -21,145 +21,155 @@
   "known_issues": [
     {
       "id": "2022_oof_collapse",
-      "status": "fixed",
-      "detail": "Clean restack from 20260809 tree OOFs only; WR-2022 now beats both baselines."
+      "positions": [
+        "QB",
+        "RB",
+        "WR"
+      ],
+      "status": "diagnosed_retraining",
+      "detail": "Aug-6 tree OOF for 2022 collapsed to near-constant predictions (WR lgbm unique=1). TE unaffected. Retrain in flight."
+    },
+    {
+      "id": "wr_2022_cell",
+      "status": "open_until_retrain",
+      "detail": "Only Phase5 cell still losing both baselines before retrain (19/20 beat both)."
     }
   ],
   "reprojection_gates": {
     "fantasy_ppr:QB:2021": {
-      "mae": 6.107414130095707,
+      "mae": 4.378639308669132,
       "naive_mae": 6.910667166279862,
       "trailing3_mae": 6.950148148148148,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 588,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:QB:2022": {
-      "mae": 5.364820547410334,
+      "mae": 6.105270856532033,
       "naive_mae": 6.411737117652595,
       "trailing3_mae": 6.448567807351077,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 583,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:QB:2023": {
-      "mae": 5.4797670035232136,
+      "mae": 5.437133852977674,
       "naive_mae": 6.699552269787426,
       "trailing3_mae": 6.615474860335195,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 587,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:QB:2024": {
-      "mae": 5.696750514488936,
+      "mae": 5.661643174131408,
       "naive_mae": 7.108820051951951,
       "trailing3_mae": 6.90030191004313,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 586,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:QB:2025": {
-      "mae": 6.0653788369193435,
+      "mae": 6.016537183839608,
       "naive_mae": 7.079836489547978,
       "trailing3_mae": 7.262857142857143,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 585,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:RB:2021": {
-      "mae": 5.564812768797207,
+      "mae": 3.623369370870354,
       "naive_mae": 6.714819296021681,
       "trailing3_mae": 6.966240942028986,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 789,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:RB:2022": {
-      "mae": 5.410268001356786,
+      "mae": 5.937225429148558,
       "naive_mae": 6.265861353692151,
       "trailing3_mae": 6.505561403508773,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 814,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:RB:2023": {
-      "mae": 5.251372048238762,
+      "mae": 5.211096143150548,
       "naive_mae": 6.224347630089493,
       "trailing3_mae": 6.255681313803817,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 802,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:RB:2024": {
-      "mae": 5.5259594037166915,
+      "mae": 5.445486964036386,
       "naive_mae": 6.218930274584735,
       "trailing3_mae": 6.343907407407406,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 772,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:RB:2025": {
-      "mae": 5.598701088841798,
+      "mae": 5.723745253821563,
       "naive_mae": 6.346133899635114,
       "trailing3_mae": 6.533114035087719,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 810,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:WR:2021": {
-      "mae": 5.548637564890009,
+      "mae": 2.548118457516668,
       "naive_mae": 5.898779248177397,
       "trailing3_mae": 5.9240862137465236,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 1818,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:WR:2022": {
-      "mae": 5.420342601138125,
+      "mae": 6.229596671822971,
       "naive_mae": 5.622293810655552,
       "trailing3_mae": 5.970430436556508,
-      "beats_naive": true,
-      "beats_trailing3": true,
+      "beats_naive": false,
+      "beats_trailing3": false,
       "n": 1768,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:WR:2023": {
-      "mae": 5.185474137167873,
+      "mae": 5.185871940115539,
       "naive_mae": 5.559122179521016,
       "trailing3_mae": 5.774025457438345,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 1802,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:WR:2024": {
-      "mae": 5.272734276359981,
+      "mae": 5.241194793602187,
       "naive_mae": 5.916485365491974,
       "trailing3_mae": 5.952787769784172,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 1793,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:WR:2025": {
-      "mae": 5.072118545969718,
+      "mae": 5.083393400411623,
       "naive_mae": 5.710803761542445,
       "trailing3_mae": 5.581872862603098,
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 1783,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:TE:2021": {
       "mae": 4.206811657200344,
@@ -168,7 +178,7 @@
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 921,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:TE:2022": {
       "mae": 4.003814223681295,
@@ -177,7 +187,7 @@
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 929,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:TE:2023": {
       "mae": 3.885991199661308,
@@ -186,7 +196,7 @@
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 902,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:TE:2024": {
       "mae": 3.900102648186149,
@@ -195,7 +205,7 @@
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 957,
-      "stack": "lgbm+catboost_phase5_clean"
+      "stack": "lgbm+catboost_phase5"
     },
     "fantasy_ppr:TE:2025": {
       "mae": 4.031682569778117,
@@ -204,65 +214,25 @@
       "beats_naive": true,
       "beats_trailing3": true,
       "n": 982,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "passing_yards:QB:2021": {
-      "mae": 57.44398220036389,
-      "naive_mae": 70.81905465744192,
-      "trailing3_mae": 71.54228395061729,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 588
-    },
-    "passing_yards:QB:2022": {
-      "mae": 52.49595619686016,
-      "naive_mae": 67.16971816673302,
-      "trailing3_mae": 67.7138783269962,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 583
-    },
-    "passing_yards:QB:2023": {
-      "mae": 53.055275233338264,
-      "naive_mae": 74.7220934524027,
-      "trailing3_mae": 70.54965859714464,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 587
-    },
-    "passing_yards:QB:2024": {
-      "mae": 52.83429782983649,
-      "naive_mae": 76.10116861903929,
-      "trailing3_mae": 71.22828096118299,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 586
-    },
-    "passing_yards:QB:2025": {
-      "mae": 51.59464513815641,
-      "naive_mae": 68.98080412275229,
-      "trailing3_mae": 71.00061842918987,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 585
+      "stack": "lgbm+catboost_phase5"
     }
   },
   "artifacts": {
-    "stacks_fantasy_ppr": [
+    "stacks": [
       "ml/oof/stack_fantasy_ppr_QB_20260809.csv",
       "ml/oof/stack_fantasy_ppr_RB_20260809.csv",
       "ml/oof/stack_fantasy_ppr_WR_20260809.csv",
       "ml/oof/stack_fantasy_ppr_TE_20260809.csv"
     ],
-    "stacks_volume": [
-      "ml/oof/stack_targets_WR_20260809.csv",
-      "ml/oof/stack_targets_TE_20260809.csv",
-      "ml/oof/stack_targets_RB_20260809.csv",
-      "ml/oof/stack_carries_RB_20260809.csv",
-      "ml/oof/stack_pass_attempts_QB_20260809.csv"
+    "ridge_coefs": [
+      "ml/oof/ridge_fantasy_ppr_QB_coefs.json",
+      "ml/oof/ridge_fantasy_ppr_RB_coefs.json",
+      "ml/oof/ridge_fantasy_ppr_WR_coefs.json",
+      "ml/oof/ridge_fantasy_ppr_TE_coefs.json"
     ],
-    "passing_yards": "ml/oof/stack_passing_yards_QB_20260809.csv",
-    "serving_divergence": "reports/serving_divergence_passing_yards_QB.json"
+    "autopsy": "reports/fantasy_ppr_2022_autopsy.json",
+    "adp_spearman_stack": "reports/adp_spearman_stack_ranks.json",
+    "eval_causal_phase5": "reports/eval_causal_stack_phase5_fantasy_ppr_all.csv"
   },
   "verification": {
     "local_verify_command": "make verify-local",

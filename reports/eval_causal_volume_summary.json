@@ -1,0 +1,32 @@
+[
+  {
+    "target": "targets",
+    "position": "WR",
+    "beat_both": "5/5",
+    "pooled_mae": 1.2694748215921523
+  },
+  {
+    "target": "targets",
+    "position": "TE",
+    "beat_both": "5/5",
+    "pooled_mae": 1.1656297721831625
+  },
+  {
+    "target": "targets",
+    "position": "RB",
+    "beat_both": "5/5",
+    "pooled_mae": 1.4112442588229972
+  },
+  {
+    "target": "carries",
+    "position": "RB",
+    "beat_both": "5/5",
+    "pooled_mae": 1.9357561955804552
+  },
+  {
+    "target": "pass_attempts",
+    "position": "QB",
+    "beat_both": "5/5",
+    "pooled_mae": 1.9207368942863414
+  }
+]

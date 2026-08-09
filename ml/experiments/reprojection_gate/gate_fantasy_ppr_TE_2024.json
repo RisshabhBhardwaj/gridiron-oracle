@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-08-09T15:46:29.571984+00:00",
+  "holdout_season": 2024,
+  "position": "TE",
+  "target": "fantasy_ppr",
+  "candidate_source": "oof",
+  "candidate_mae": 3.900102648186149,
+  "ridge_floor_mae": 4.030495203370435,
+  "oof_mae": 3.900102648186149,
+  "baseline_mae": 3.900102648186149,
+  "promote": true,
+  "reasons": [],
+  "checks": [
+    {
+      "name": "vs_frozen_baseline",
+      "baseline_mae": 3.900102648186149,
+      "candidate_mae": 3.900102648186149,
+      "ok": true
+    },
+    {
+      "name": "oof_vs_ridge_floor",
+      "ridge_mae": 4.030495203370435,
+      "oof_mae": 3.900102648186149,
+      "ok": true
+    }
+  ]
+}

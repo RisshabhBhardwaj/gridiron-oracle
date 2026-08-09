@@ -83,35 +83,52 @@ def main() -> int:
             db = pd.DataFrame(
                 [
                     {
-                        "player_id": p.player_id,
-                        "season": p.season,
-                        "week": p.week,
-                        "db_projection": p.projection,
+                        "player_id": getattr(p, "player_id", None),
+                        "season": getattr(p, "season", None),
+                        "week": getattr(p, "week", None),
+                        "db_projection": getattr(p, "projection", None),
                     }
                     for p in proj
-                ]
+                ],
+                columns=["player_id", "season", "week", "db_projection"],
             )
-            merged = oof.merge(
-                db,
-                on=["player_id", "season", "week"],
-                how="inner",
-            )
-            if merged.empty:
-                report["oof_vs_db"] = {"rows": 0, "note": "No overlapping keys"}
-            else:
-                delta = merged["db_projection"] - merged[pred_col]
+            if db.empty or db["player_id"].isna().all():
                 report["oof_vs_db"] = {
-                    "rows": int(len(merged)),
-                    "oof_mae": float(np.mean(np.abs(merged[pred_col] - merged[actual_col])))
-                    if actual_col in merged.columns
-                    else None,
-                    "db_mae": float(np.mean(np.abs(merged["db_projection"] - merged[actual_col])))
-                    if actual_col in merged.columns
-                    else None,
-                    "mean_db_minus_oof": float(delta.mean()),
-                    "mae_db_vs_oof": float(delta.abs().mean()),
-                    "corr": float(np.corrcoef(merged["db_projection"], merged[pred_col])[0, 1]),
+                    "rows": 0,
+                    "db_rows": int(len(proj)),
+                    "note": (
+                        "No usable Projection rows for "
+                        f"stat={args.stat} position={args.position}. "
+                        "Ridge artifact check still applies; OOF-vs-DB skipped."
+                    ),
                 }
+            else:
+                merged = oof.merge(
+                    db,
+                    on=["player_id", "season", "week"],
+                    how="inner",
+                )
+                if merged.empty:
+                    report["oof_vs_db"] = {
+                        "rows": 0,
+                        "db_rows": int(len(db)),
+                        "oof_rows": int(len(oof)),
+                        "note": "No overlapping keys",
+                    }
+                else:
+                    delta = merged["db_projection"] - merged[pred_col]
+                    report["oof_vs_db"] = {
+                        "rows": int(len(merged)),
+                        "oof_mae": float(np.mean(np.abs(merged[pred_col] - merged[actual_col])))
+                        if actual_col in merged.columns
+                        else None,
+                        "db_mae": float(np.mean(np.abs(merged["db_projection"] - merged[actual_col])))
+                        if actual_col in merged.columns
+                        else None,
+                        "mean_db_minus_oof": float(delta.mean()),
+                        "mae_db_vs_oof": float(delta.abs().mean()),
+                        "corr": float(np.corrcoef(merged["db_projection"], merged[pred_col])[0, 1]),
+                    }
 
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

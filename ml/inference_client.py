@@ -87,72 +87,8 @@ class InferenceClient:
         _load = model_loader if model_loader is not None else self.load_latest_mlflow_model
 
         # Build feature matrix: kalman_est_* columns pass through directly.
-        X_df = self.build_inference_features(kalman_df)
-        n_rows = len(X_df)
-
-        # Load the most recent XGB, LGB, CB, and TFT models from MLflow.
-        xgb_model = _load("xgb", stat, position)
-        lgbm_model = _load("lgbm", stat, position)
-        catboost_model = _load("catboost", stat, position)
-        tft_model = _load("tft", stat, position)
-
-        if xgb_model is None and lgbm_model is None and catboost_model is None:
-            raise RuntimeError(
-                f"No base model artifacts found for stat={stat} in MLflow "
-                f"experiments 'xgb_{stat}' / 'lgbm_{stat}' / 'catboost_{stat}'."
-            )
-
-        # Collect base-learner predictions. Order must match ridge coefs: xgb, lgbm, catboost, tft.
-        # ONNX fast path: try ml/onnx/{learner}_{stat}_{pos}.onnx first (2-5× faster than MLflow).
-        # Falls back to the loaded MLflow model if ONNX file is absent or onnxruntime not installed.
-        base_preds: list[np.ndarray] = []
-        X_arr = X_df.values.astype("float32")  # shared float32 array for ONNX sessions
-
-        xgb_onnx = self.try_onnx_pred("xgb", stat, position, X_arr, n_rows)
-        if xgb_onnx is not None:
-            base_preds.append(xgb_onnx)
-            logger.info("XGB ONNX inference: %d predictions for stat=%s", n_rows, stat)
-        elif xgb_model is not None:
-            X_xgb, use_array = self.align_features_to_model(xgb_model, X_df)
-            inp = X_xgb.values if use_array else X_xgb
-            base_preds.append(np.array(xgb_model.predict(inp), dtype=float))
-            logger.info("XGB MLflow inference: %d predictions for stat=%s", n_rows, stat)
-
-        lgbm_onnx = self.try_onnx_pred("lgbm", stat, position, X_arr, n_rows)
-        if lgbm_onnx is not None:
-            base_preds.append(lgbm_onnx)
-            logger.info("LGB ONNX inference: %d predictions for stat=%s", n_rows, stat)
-        elif lgbm_model is not None:
-            X_lgb, use_array = self.align_features_to_model(lgbm_model, X_df)
-            inp = X_lgb.values if use_array else X_lgb
-            base_preds.append(np.array(lgbm_model.predict(inp), dtype=float))
-            logger.info("LGB MLflow inference: %d predictions for stat=%s", n_rows, stat)
-
-        cb_onnx = self.try_onnx_pred("catboost", stat, position, X_arr, n_rows)
-        if cb_onnx is not None:
-            base_preds.append(cb_onnx)
-            logger.info("CB ONNX inference: %d predictions for stat=%s", n_rows, stat)
-        elif catboost_model is not None:
-            X_cb, use_array = self.align_features_to_model(catboost_model, X_df)
-            inp = X_cb.values if use_array else X_cb
-            base_preds.append(np.array(catboost_model.predict(inp), dtype=float))
-            logger.info("CB MLflow inference: %d predictions for stat=%s", n_rows, stat)
-
-        # TFT: real inference when possible, else kalman proxy.
-        tft_pred = self.run_tft_inference(
-            kalman_df=kalman_df,
-            stat=stat,
-            position=position,
-            tft_model=tft_model,
-            season=season,
-            week=week,
-            dry_run_mode=dry_run_mode,
-        )
-        base_preds.append(tft_pred)
-
-        # Apply Ridge blending weights + intercept.
-        # Fail closed when position-specific coefs are missing — equal-weight
-        # averaging silently destroyed QB passing_yards quality historically.
+        # Load Ridge first — Phase-5 stacks may keep only a subset (e.g. lgbm+catboost).
+        # Fail closed when position-specific coefs are missing.
         ridge_result = self.load_ridge_coefs(stat, position=position)
         if ridge_result is None:
             raise FileNotFoundError(
@@ -160,7 +96,44 @@ class InferenceClient:
                 f"under {self.oof_dir}. Refusing equal-weight fallback. "
                 f"Expected ridge_{stat}_{position}_coefs.json."
             )
-        coefs, intercept = ridge_result
+        coefs, intercept, learner_order = ridge_result
+
+        X_df = self.build_inference_features(kalman_df)
+        n_rows = len(X_df)
+        X_arr = X_df.values.astype("float32")
+
+        # Only load/run learners present in the Ridge artifact (kill TFT/XGB when absent).
+        def _pred_for(learner: str) -> np.ndarray:
+            if learner == "tft":
+                tft_model = _load("tft", stat, position)
+                return self.run_tft_inference(
+                    kalman_df=kalman_df,
+                    stat=stat,
+                    position=position,
+                    tft_model=tft_model,
+                    season=season,
+                    week=week,
+                    dry_run_mode=dry_run_mode,
+                )
+            model = _load(learner, stat, position)
+            onnx = self.try_onnx_pred(learner, stat, position, X_arr, n_rows)
+            if onnx is not None:
+                logger.info("%s ONNX inference: %d predictions for stat=%s", learner.upper(), n_rows, stat)
+                return onnx
+            if model is None:
+                raise RuntimeError(
+                    f"Ridge requires learner={learner!r} for stat={stat!r} position={position!r}, "
+                    "but no ONNX/MLflow artifact was found."
+                )
+            X_aligned, use_array = self.align_features_to_model(model, X_df)
+            inp = X_aligned.values if use_array else X_aligned
+            logger.info("%s MLflow inference: %d predictions for stat=%s", learner.upper(), n_rows, stat)
+            return np.array(model.predict(inp), dtype=float)
+
+        if not learner_order:
+            raise RuntimeError(f"Ridge coef file for {stat}/{position} has no learner weights.")
+
+        base_preds = [_pred_for(learner) for learner in learner_order]
         if len(coefs) != len(base_preds):
             raise ValueError(
                 f"Ridge coef length {len(coefs)} != base learner count "
@@ -170,8 +143,9 @@ class InferenceClient:
         stacked = sum(w * p for w, p in zip(coefs, base_preds)) + intercept
 
         logger.info(
-            "Stacked estimates for stat=%s: n=%d mean=%.2f std=%.2f",
-            stat, len(stacked), float(np.mean(stacked)), float(np.std(stacked)),
+            "Stacked estimates for stat=%s learners=%s: n=%d mean=%.2f std=%.2f",
+            stat, ",".join(learner_order), len(stacked),
+            float(np.mean(stacked)), float(np.std(stacked)),
         )
         return np.asarray(stacked, dtype=float)
 
@@ -478,7 +452,7 @@ class InferenceClient:
 
     def load_ridge_coefs(
         self, stat: str, position: Optional[str] = None
-    ) -> Optional[tuple[list[float], float]]:
+    ) -> Optional[tuple[list[float], float, list[str]]]:
         """
         Load Ridge blending coefficients + intercept.
 
@@ -489,7 +463,9 @@ class InferenceClient:
         The file is written by stacking_ensemble.py.
         Format: {"xgb": 0.4, "lgbm": 0.35, ..., "intercept": 1.2}.
 
-        Returns (coefs_list, intercept) or None when no file is found.
+        Returns (coefs_list, intercept, learner_order) or None when no file is found.
+        learner_order is the subset of [xgb, lgbm, catboost, tft] present in the
+        artifact — inference must only run those learners (Phase-5 kill policy).
         """
         candidates: list[Path] = []
         if position:
@@ -505,11 +481,15 @@ class InferenceClient:
                     data = json.load(f)
                 intercept = float(data.pop("intercept", 0.0))
                 learner_keys = ["xgb", "lgbm", "catboost", "tft"]
-                coefs = [float(data[k]) for k in learner_keys if k in data]
+                learner_order = [k for k in learner_keys if k in data]
+                coefs = [float(data[k]) for k in learner_order]
                 if not coefs:
                     continue
-                logger.debug("Loaded Ridge coefs from %s: %s", coef_path.name, data)
-                return coefs, intercept
+                logger.debug(
+                    "Loaded Ridge coefs from %s learners=%s",
+                    coef_path.name, learner_order,
+                )
+                return coefs, intercept, learner_order
             except Exception as exc:
                 logger.debug(
                     "Could not load Ridge coefs from %s: %s", coef_path, exc

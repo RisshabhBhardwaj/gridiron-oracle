@@ -825,16 +825,25 @@ def _discover_oof_files(oof_dir: Path, target: str) -> list[Path]:
             combined_paths.append(Path(files[0]))
             logger.info("Found 1 OOF file for prefix=%s: %s", prefix, files[0])
         else:
-            # Multiple files = per-position runs; concatenate and deduplicate.
-            dfs = [pd.read_csv(f) for f in files]
+            # Multiple files = per-position runs and/or retrain stamps.
+            # Sort by mtime ascending, then keep='last' so newer OOFs win on
+            # (player_id, game_id, fold_idx) — avoids collapsed stale folds
+            # poisoning a restack after retrain.
+            paths = sorted((Path(f) for f in files), key=lambda p: p.stat().st_mtime)
+            # Prefer position-tagged dated runs over stale *combined.csv blobs.
+            paths = [p for p in paths if "combined" not in p.name] or paths
+            dfs = [pd.read_csv(p) for p in paths]
             combined = pd.concat(dfs, ignore_index=True).drop_duplicates(
-                subset=["player_id", "game_id", "fold_idx"]
+                subset=["player_id", "game_id", "fold_idx"],
+                keep="last",
             )
             combined_path = oof_dir / f"{prefix}_{target}_combined.csv"
             combined.to_csv(combined_path, index=False)
             logger.info(
-                "Combined %d OOF files for prefix=%s → %s  (%d rows)",
-                len(files), prefix, combined_path, len(combined),
+                "Combined %d OOF files for prefix=%s → %s  (%d rows) "
+                "(newest wins: %s)",
+                len(paths), prefix, combined_path, len(combined),
+                paths[-1].name if paths else "?",
             )
             combined_paths.append(combined_path)
 
@@ -891,6 +900,12 @@ def main() -> None:
     parser.add_argument("--out-dir", default="ml/oof", dest="out_dir")
     parser.add_argument("--mlflow-uri", default=None, dest="mlflow_uri")
     parser.add_argument("--no-mlflow", action="store_true", dest="no_mlflow")
+    parser.add_argument(
+        "--exclude",
+        default="",
+        help="Comma-separated base-learner prefixes to drop (e.g. tft,xgb). "
+             "Phase 5: fantasy_ppr kill TFT; QB/RB also drop XGB on short history.",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -902,6 +917,8 @@ def main() -> None:
     if not args.oof and not args.oof_dir:
         parser.error("Provide --oof (explicit paths) or --oof-dir (auto-discover).")
 
+    exclude = {p.strip().lower() for p in args.exclude.split(",") if p.strip()}
+
     if args.oof_dir:
         oof_paths = _discover_oof_files(Path(args.oof_dir), args.target)
     else:
@@ -910,6 +927,19 @@ def main() -> None:
             if not p.exists():
                 logger.error("OOF file not found: %s", p)
                 raise SystemExit(1)
+
+    if exclude:
+        kept = []
+        for p in oof_paths:
+            prefix = p.name.split("_", 1)[0].lower()
+            if prefix in exclude:
+                logger.info("Excluding %s (--exclude %s)", p.name, ",".join(sorted(exclude)))
+                continue
+            kept.append(p)
+        oof_paths = kept
+        if len(oof_paths) < 2:
+            logger.error("After --exclude, need ≥2 OOF files; got %d", len(oof_paths))
+            raise SystemExit(1)
 
     mlflow_tracking_uri = "" if args.no_mlflow else args.mlflow_uri
     position_filter = None if (not args.position or args.position.lower() == "all") else args.position

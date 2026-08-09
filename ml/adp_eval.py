@@ -183,26 +183,75 @@ def spearman_vs_adp(
     return float(rho), float(pval), int(len(merged)), by_pos
 
 
+def load_stack_season_ppr(season: int, oof_dir: Path | None = None) -> pd.DataFrame:
+    """Sum weekly stack OOF y_pred → season fantasy_ppr ranks (model, not actuals)."""
+    root = oof_dir or (Path(__file__).resolve().parent / "oof")
+    frames: list[pd.DataFrame] = []
+    for pos in ("QB", "RB", "WR", "TE"):
+        paths = sorted(p for p in root.glob(f"stack_fantasy_ppr_{pos}_*.csv") if "_archive" not in str(p))
+        if not paths:
+            continue
+        path = max(paths, key=lambda p: p.stat().st_mtime)
+        df = pd.read_csv(path)
+        sub = df[df["season"].astype(int) == int(season)].copy()
+        if sub.empty:
+            continue
+        sub["position"] = pos
+        frames.append(sub)
+    if not frames:
+        return pd.DataFrame()
+    stack = pd.concat(frames, ignore_index=True)
+    out = (
+        stack.groupby("player_id", as_index=False)
+        .agg(fantasy_ppr=("y_pred", "sum"), position=("position", "first"))
+    )
+    # Names filled by caller via DB join when available; name_key from id fallback
+    out["player_name"] = out["player_id"].astype(str)
+    out["name_key"] = out["player_name"].map(_normalize_name)
+    return out
+
+
 def evaluate(
     season: int,
     source: str = "historical",
     scoring: str = "ppr",
     from_actuals: bool = False,
+    from_stack_oof: bool = False,
     database_url: str = DEFAULT_HOST_DATABASE_URL,
 ) -> AdpEvalResult:
     dsn = normalize_dsn(database_url)
     with psycopg2.connect(dsn) as conn:
         adp = load_adp(conn, season, source, scoring)
-        if from_actuals:
+        if from_stack_oof:
+            model = load_stack_season_ppr(season)
+            mode = "stack_oof"
+            if not model.empty:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT id, full_name FROM players")
+                    names = {r["id"]: r["full_name"] for r in cur.fetchall()}
+                model["player_name"] = model["player_id"].map(lambda i: names.get(i) or str(i))
+                model["name_key"] = model["player_name"].map(_normalize_name)
+            elif model.empty:
+                logger.warning("No stack OOF for %s", season)
+        elif from_actuals:
             model = load_season_actual_ppr(conn, season)
             mode = "actuals"
         else:
             model = load_season_projected_ppr(conn, season)
             mode = "projections"
             if model.empty:
-                logger.warning("No projections for %s; falling back to season actuals", season)
-                model = load_season_actual_ppr(conn, season)
-                mode = "actuals_fallback"
+                # Prefer stack OOF over actuals for draft-claim scoring
+                model = load_stack_season_ppr(season)
+                if not model.empty:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT id, full_name FROM players")
+                        names = {r["id"]: r["full_name"] for r in cur.fetchall()}
+                    model["player_name"] = model["player_id"].map(lambda i: names.get(i) or str(i))
+                    model["name_key"] = model["player_name"].map(_normalize_name)
+                    mode = "stack_oof_fallback"
+                else:
+                    logger.warning("No projections/stack for %s; refusing actuals fallback in evaluate()", season)
+                    mode = "unavailable"
 
     rho, pval, n, by_pos = spearman_vs_adp(model, adp)
 
@@ -233,6 +282,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--source", default="historical")
     p.add_argument("--scoring", default="ppr")
     p.add_argument("--from-actuals", action="store_true")
+    p.add_argument(
+        "--from-stack-oof",
+        action="store_true",
+        help="Rank from stack fantasy_ppr OOF season sums (preferred for model-vs-ADP).",
+    )
     p.add_argument("--database-url", default=DEFAULT_HOST_DATABASE_URL)
     args = p.parse_args(argv)
 
@@ -241,6 +295,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         source=args.source,
         scoring=args.scoring,
         from_actuals=args.from_actuals,
+        from_stack_oof=args.from_stack_oof,
         database_url=args.database_url,
     )
     _OUT.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-08-09T15:46:26.658590+00:00",
+  "holdout_season": 2024,
+  "position": "WR",
+  "target": "fantasy_ppr",
+  "candidate_source": "oof",
+  "candidate_mae": 5.241194793602187,
+  "ridge_floor_mae": 5.400079577482599,
+  "oof_mae": 5.241194793602187,
+  "baseline_mae": 5.241194793602187,
+  "promote": true,
+  "reasons": [],
+  "checks": [
+    {
+      "name": "vs_frozen_baseline",
+      "baseline_mae": 5.241194793602187,
+      "candidate_mae": 5.241194793602187,
+      "ok": true
+    },
+    {
+      "name": "oof_vs_ridge_floor",
+      "ridge_mae": 5.400079577482599,
+      "oof_mae": 5.241194793602187,
+      "ok": true
+    }
+  ]
+}
