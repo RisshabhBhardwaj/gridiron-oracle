@@ -1,0 +1,32 @@
+[
+  {
+    "target": "receiving_yards",
+    "position": "WR",
+    "beat_both": "5/5",
+    "artifact": "stack_receiving_yards_WR_20260809.csv"
+  },
+  {
+    "target": "receiving_yards",
+    "position": "TE",
+    "beat_both": "5/5",
+    "artifact": "stack_receiving_yards_TE_20260809.csv"
+  },
+  {
+    "target": "receiving_yards",
+    "position": "RB",
+    "beat_both": "5/5",
+    "artifact": "stack_receiving_yards_RB_20260809.csv"
+  },
+  {
+    "target": "rushing_yards",
+    "position": "RB",
+    "beat_both": "5/5",
+    "artifact": "stack_rushing_yards_RB_20260809.csv"
+  },
+  {
+    "target": "rushing_yards",
+    "position": "QB",
+    "beat_both": "4/5",
+    "artifact": "stack_rushing_yards_QB_20260809.csv"
+  }
+]

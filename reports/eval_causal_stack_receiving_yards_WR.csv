@@ -1,0 +1,6 @@
+stat,metric,n,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,season,position
+receiving_yards,mae,1818,25.59993297851131,27.58380697620618,27.779102105681368,True,True,True,2021,WR
+receiving_yards,mae,1768,25.1341794203735,26.557668855105288,28.084659322725418,True,True,True,2022,WR
+receiving_yards,mae,1802,25.126746201202455,26.550762034875053,28.217979315831343,True,True,True,2023,WR
+receiving_yards,mae,1793,24.289358939973763,27.66437527162823,27.711330935251798,True,True,True,2024,WR
+receiving_yards,mae,1783,24.026581997831066,26.3842794164103,26.35797626232146,True,True,True,2025,WR

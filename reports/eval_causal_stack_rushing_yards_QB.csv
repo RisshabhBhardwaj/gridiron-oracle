@@ -1,0 +1,6 @@
+stat,metric,n,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,season,position
+rushing_yards,mae,588,11.8235095164678,12.583829670324107,12.40895061728395,True,True,True,2021,QB
+rushing_yards,mae,583,12.89080359752163,12.949937835541476,13.503168567807352,True,True,True,2022,QB
+rushing_yards,mae,587,12.287633486568483,12.79851330279503,13.156114214773432,True,True,True,2023,QB
+rushing_yards,mae,586,13.593179246014342,12.24087396581151,14.724892174984594,False,True,True,2024,QB
+rushing_yards,mae,585,12.291130432599756,12.497153396369134,13.10760667903525,True,True,True,2025,QB

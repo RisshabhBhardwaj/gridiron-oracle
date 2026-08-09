@@ -1,0 +1,9 @@
+{
+  "candidate": "stack",
+  "candidate_mae": 17.150723417089885,
+  "incumbent_mae": 17.35306855483508,
+  "position": "TE",
+  "promotable": true,
+  "reason": "held-out improvement 1.17% exceeds 0.00%",
+  "target": "receiving_yards"
+}
