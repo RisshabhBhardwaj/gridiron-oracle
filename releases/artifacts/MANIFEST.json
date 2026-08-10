@@ -41,6 +41,14 @@
       "description": "Reprojection gate record. Audit C-08: these compare the candidate to itself and are not valid promotion evidence."
     },
     {
+      "path": "reports/POST_LEAK_FIX_COMPARISON.md",
+      "sha256": "cae7f3b6bce772b7312b55fd3d12f1bc2f70a86571ad056670c691fd49ff7cc5",
+      "bytes": 4796,
+      "status": "provisional",
+      "produced_by": "session 02 causal rebuild",
+      "description": "Post-leak-fix comparison: headline 74/75 -> 15/75. Provisional pending session 06 independent verification; the ablation control at ml/oof/rebuild_20260809T220500/ isolates the cohort channel."
+    },
+    {
       "path": "reports/adp_spearman_2024.json",
       "sha256": "11391864dbc5651dd8f629f944b95d9c79b46f4429ac046811be4cc6e18c8b1f",
       "bytes": 802,
