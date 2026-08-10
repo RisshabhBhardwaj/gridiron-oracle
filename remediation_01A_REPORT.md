@@ -243,3 +243,106 @@ session 04).
 - Manifest re-freeze at a clean `191e151`, run-ID registration, posterior policy (C-09) → 03A/04.
 - `_history_*.csv` and `promotion_*.json` remain unpinned (not read through the
   selection paths this session touched).
+
+---
+
+# Post-merge cleanup (main @ 6c17c43)
+
+## 1. Deleted — 47 items, all untracked/gitignored
+
+`ml/oof/` is gitignored, so none of these were reachable by `git rm`, and none
+existed in the 01A worktree (a fresh worktree has no untracked files). That is
+why the branch's "no `_20260807` on disk" check passed while main still held them.
+
+**The file named in the cleanup request, `ml/oof/xgb_fantasy_ppr_TE_20260807.csv`,
+does not exist** — anywhere in the repo. What existed was worse:
+
+| # | Deleted | Why |
+|---|---|---|
+| 3 + 3 sidecars | `ml/oof/stack_fantasy_ppr_{QB,RB,WR}_20260807.csv` | **Untracked four-learner poisoned stacks at `ml/oof/` top level.** Headers carry `xgb_pred` + `tft_pred`. WR is R1's collapsed file: 2022 `y_pred_std` = **0.059** (vs 4.292 in the clean `_20260809`). Byte-identical copies retained in `ml/oof/_archive_stack4_20260809T113730/`, so nothing was lost. |
+| 1 | `ml/oof/xgb_receiving_yards_all_20260809.csv` | Killed-learner OOF, test-generated. Proven to trip the allowlist before deletion (see below). |
+| 1 | `ml/oof/lgbm_receiving_yards_all_20260809.csv` | Legacy position-less shape, 120 rows, maps fold 0 → 2023 while the real WR file maps 0 → 2020. Discovery *would* glob it as an lgbm input; the fold-map check would have blocked session 02's restack with a confusing error. |
+| 4 | `ml/oof/manifests/xgb_fantasy_ppr_{QB,RB,WR,TE}_*.json` | Dead killed-learner run metadata; write-only, nothing reads it. |
+| 35 | `ml/checkpoints/done/{xgb,tft}_*.done` | Stale markers claiming killed-learner work is "done". |
+
+Kept, with reasons re-verified: `ml/oof/{lgbm,catboost}_fantasy_ppr_TE_20260807.csv`
+(only provenance for the serving TE stack), and the `_archive_stack4_*` /
+`_archive_collapsed_*` subdirectories (out of glob range — discovery is
+non-recursive — and they hold the only copies of the killed history).
+
+Full list with digests: scratchpad `deleted.txt`.
+
+### Allowlist proven against a real on-disk xgb OOF
+
+Before deleting it, the real file was run through discovery:
+
+```
+_discover_oof_files(Path('ml/oof'), 'receiving_yards')
+→ LearnerPolicyError: ml/oof contains OOF files for learner(s) not permitted
+  for target='receiving_yards': ['xgb_receiving_yards_all_20260809.csv']
+```
+
+So the guarantee does not rest on a synthetic fixture. Three **real-tree**
+invariants were then added, which is the durable protection for session 02:
+
+- `test_no_killed_learner_oof_is_on_disk_in_the_serving_directory` — top-level scan of `ml/oof/`, not `git ls-files`
+- `test_no_poisoned_stack_is_on_disk_in_the_serving_directory` — inspects CSV **headers** for killed-learner `*_pred` columns, so a future poisoned stack is caught under any filename
+- `test_every_stack_in_the_serving_directory_is_manifest_pinned`
+
+## 2. The two manifests
+
+Split enforced in code, not prose:
+
+| Manifest | Authoritative for | Enforced by |
+|---|---|---|
+| `releases/current_baseline.json` | **Serving artifact selection** — `ml/oof/` stacks resolved via `ml/artifact_manifest.py`, SHA-pinned, fail-closed | `guard_release_artifacts.py`, `freeze_baseline.py` |
+| `releases/artifacts/MANIFEST.json` | **Evidence drift** — gate records, eval/ADP reports. Detects drift; selects nothing | `verify_evidence_manifest.py` |
+
+Overlap was one path (`reports/serving_divergence_passing_yards_QB.json`), digests
+agreeing — a latent conflict, not yet an actual one. Three rules now hold:
+
+1. The evidence manifest may not list anything under `ml/oof/` (`DELEGATED_DIRS`).
+2. A serving-pinned path defers with `"sha256_authority": "releases/current_baseline.json"` instead of storing a second copy of the digest. **One digest, stored once** — they cannot disagree. The overlapping entry was converted.
+3. `verify_evidence_manifest.py` now also loads the serving manifest and resolves every pinned cell, so one command covers both. `--update` refuses to re-hash a deferred entry and points at `freeze_baseline.py`.
+
+`MANIFEST.json` gained a top-level `serving_manifest` block declaring the split.
+01C's `test_evidence_manifest_schema` required `sha256` on every entry, so it was
+reconciled to accept `sha256_authority` and to reject `ml/oof/` paths.
+
+```
+Serving manifest OK: 15 pinned cells resolve and match their SHA-256
+Evidence manifest OK: 25 entries, 30 non-blocking note(s)
+```
+
+## 3. Test result — `pytest backend/tests`
+
+**2 failed, 1082 passed, 19 skipped.** Exactly the two expected pre-existing
+failures: `TestSchemaSync` (C-12 → 03B) and `TestStackingInferenceHelpers`
+(C-04 → 03A).
+
+`test_xgb_model.py::TestParseSeasons` **passes — 4/4.** It was red pre-merge; 01C's
+raise-on-out-of-range fixed it and my edits to that file merged cleanly. No
+reconciliation needed, and no merge artifact.
+
+One failure I introduced and fixed: `test_repo_invariants.py::test_evidence_manifest_schema`,
+broken by the deferred-digest change (item 2).
+
+Serving artifacts: all 58 `_20260809.*` still byte-identical to the archive. The
+suite no longer writes fixtures into `ml/oof/`; no unpinned stack remains there.
+
+## 4. Session 02 prompt patched
+
+`remediation/02_CLAUDE-CODE_feature-contract-retrain.md` Part 5: the
+"identical counts = the retrain didn't happen" gate is replaced. It is ambiguous
+now — a correct retrain and a failed one produce the same symptom, because new
+artifacts are unreadable until 03A re-freezes the manifest, and that is the
+expected end state of 02.
+
+Replaced with three artifact-level checks: `feature_matrix` row-count/column diff,
+cohort-size change under the new eligibility rule, and `snap_pct_off` absence —
+plus new-stamp and `fold_idx → season` confirmation. Part 5 now instructs 02 to
+load new artifacts **by explicit path**, bypassing `get_manifest()` (which would
+hand back the old `_20260809` files or raise `ManifestEntryMissing`), with a worked
+example; notes that restacking is unaffected since only reader paths are
+manifest-gated; and tells 02 not to re-freeze, but to report new paths + digests
+for 03A to pin. Done criteria updated to match.

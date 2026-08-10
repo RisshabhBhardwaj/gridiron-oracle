@@ -18,6 +18,28 @@ ignored directories.
 
 Exit codes: 0 clean · 1 drift in a `frozen` entry (or any entry under
 `--strict`) · 2 manifest itself is malformed.
+
+Relationship to `releases/current_baseline.json`
+------------------------------------------------
+There are two manifests and they have different jobs. Two registries claiming
+the same job is how a repo ends up with two digests for one file and no rule for
+which wins, so the split is enforced here rather than described in prose:
+
+* **`releases/current_baseline.json`** is authoritative for **serving
+  artifacts** — the stacks under `ml/oof/` that `/draft`, materialization, ADP
+  eval and conformal calibration resolve through `ml/artifact_manifest.py`.
+  Selection there is SHA-pinned and fails closed.
+* **This manifest** is authoritative for **evidence** — gate records, eval
+  reports, ADP reports. It detects drift; it does not select anything.
+
+Enforced consequences:
+
+1. A path under a delegated directory (`ml/oof/`) may not appear here at all.
+2. A path already pinned by the serving manifest may appear here only with
+   ``"sha256_authority": "releases/current_baseline.json"`` in place of a literal
+   ``sha256`` — one digest, stored once, so the two can never disagree.
+3. Verification also asserts the serving manifest loads and every cell it pins
+   resolves, so a single command covers both registries.
 """
 
 from __future__ import annotations
@@ -30,13 +52,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 MANIFEST_PATH = REPO_ROOT / "releases" / "artifacts" / "MANIFEST.json"
+SERVING_MANIFEST_RELPATH = "releases/current_baseline.json"
 
 # Directories that .gitignore hides, so new files in them are invisible to
 # `git status`. Evidence living here must be manifest-listed.
 WATCHED_DIRS = ("reports", "ml/experiments")
 
+# Directories owned by the serving manifest. Evidence entries must not reach into
+# these; `ml/oof/` is pinned by releases/current_baseline.json and selected
+# through ml/artifact_manifest.py.
+DELEGATED_DIRS = ("ml/oof",)
+
 VALID_STATUSES = {"frozen", "provisional"}
+
+#: Sentinel a path may use instead of a literal digest when the serving manifest
+#: already pins it.
+AUTHORITY_KEY = "sha256_authority"
 
 
 def sha256(path: Path) -> str:
@@ -62,14 +97,95 @@ def load_manifest() -> dict:
     return manifest
 
 
-def validate_schema(manifest: dict) -> list[str]:
+def serving_digests() -> dict[str, str]:
+    """
+    Digests from the serving manifest — the other registry's authority.
+
+    Fails closed: if the serving manifest cannot be loaded, this verifier must
+    not silently fall back to treating evidence digests as the only truth.
+    """
+    from ml.artifact_manifest import ManifestError, load_manifest
+
+    try:
+        manifest = load_manifest(REPO_ROOT / SERVING_MANIFEST_RELPATH, root=REPO_ROOT)
+    except ManifestError as exc:
+        print(f"ERROR: serving manifest unreadable: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    return {k: v.lower() for k, v in manifest.digests.items()}
+
+
+def verify_serving_manifest() -> int:
+    """
+    Assert the serving manifest resolves every cell it pins.
+
+    Run from here so `make verify-evidence` covers both registries; a green
+    evidence check beside a broken serving manifest would be misleading.
+    """
+    from ml.artifact_manifest import ManifestError, clear_cache, load_manifest
+
+    clear_cache()
+    try:
+        manifest = load_manifest(REPO_ROOT / SERVING_MANIFEST_RELPATH, root=REPO_ROOT)
+        for stat, position in sorted(manifest.stack_index):
+            manifest.resolve_stack(stat, position)
+    except (ManifestError, FileNotFoundError) as exc:
+        print(f"SERVING MANIFEST FAILED: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"Serving manifest OK: {len(manifest.stack_index)} pinned cells resolve "
+        f"and match their SHA-256 ({SERVING_MANIFEST_RELPATH})."
+    )
+    return 0
+
+
+def validate_schema(manifest: dict, pinned: dict[str, str] | None = None) -> list[str]:
     problems: list[str] = []
     seen: set[str] = set()
+    pinned = pinned or {}
     for i, entry in enumerate(manifest["artifacts"]):
         where = f"artifacts[{i}]"
-        for field in ("path", "sha256", "status", "produced_by", "description"):
+        path_value = entry.get("path") or ""
+
+        # Rule 1: serving artifacts are not evidence entries.
+        if any(
+            path_value == d or path_value.startswith(d.rstrip("/") + "/")
+            for d in DELEGATED_DIRS
+        ):
+            problems.append(
+                f"{where}: {path_value!r} lives under a serving-manifest directory "
+                f"({', '.join(DELEGATED_DIRS)}). Serving artifacts are pinned in "
+                f"{SERVING_MANIFEST_RELPATH}; remove this entry rather than "
+                "maintaining a parallel list."
+            )
+
+        # Rule 2: a serving-pinned path defers its digest instead of copying it.
+        authority = entry.get(AUTHORITY_KEY)
+        if path_value in pinned:
+            if entry.get("sha256"):
+                problems.append(
+                    f"{where}: {path_value!r} is already pinned by "
+                    f"{SERVING_MANIFEST_RELPATH}, so it must not carry its own "
+                    f"'sha256'. Replace it with "
+                    f'"{AUTHORITY_KEY}": "{SERVING_MANIFEST_RELPATH}".'
+                )
+            elif authority != SERVING_MANIFEST_RELPATH:
+                problems.append(
+                    f"{where}: {path_value!r} must set "
+                    f'"{AUTHORITY_KEY}": "{SERVING_MANIFEST_RELPATH}".'
+                )
+        elif authority:
+            problems.append(
+                f"{where}: {path_value!r} sets {AUTHORITY_KEY} but "
+                f"{SERVING_MANIFEST_RELPATH} does not pin it."
+            )
+
+        required = ("path", "status", "produced_by", "description")
+        for field in required:
             if not entry.get(field):
                 problems.append(f"{where}: missing '{field}'")
+        if not entry.get("sha256") and not authority:
+            problems.append(f"{where}: missing 'sha256' (or {AUTHORITY_KEY})")
+
         status = entry.get("status")
         if status and status not in VALID_STATUSES:
             problems.append(f"{where}: status {status!r} not in {sorted(VALID_STATUSES)}")
@@ -82,15 +198,18 @@ def validate_schema(manifest: dict) -> list[str]:
 
 
 def verify(*, strict: bool) -> int:
+    serving_rc = verify_serving_manifest()
+    pinned = serving_digests()
+
     manifest = load_manifest()
-    problems = validate_schema(manifest)
+    problems = validate_schema(manifest, pinned)
     if problems:
         for p in problems:
             print(f"MANIFEST SCHEMA: {p}", file=sys.stderr)
         return 2
 
     listed: set[str] = set()
-    failures = 0
+    failures = serving_rc
     warnings = 0
 
     for entry in manifest["artifacts"]:
@@ -105,12 +224,21 @@ def verify(*, strict: bool) -> int:
             warnings += not blocking
             continue
 
+        # A deferred entry is checked against the serving manifest's digest, so
+        # there is exactly one recorded digest per file.
+        if entry.get(AUTHORITY_KEY):
+            expected = pinned[rel]
+            source = f" (authority: {SERVING_MANIFEST_RELPATH})"
+        else:
+            expected = entry["sha256"]
+            source = ""
+
         actual = sha256(path)
-        if actual != entry["sha256"]:
+        if actual != expected:
             label = "DRIFT" if blocking else "drift"
             print(
-                f"{label:9} {rel}\n"
-                f"            expected {entry['sha256']}\n"
+                f"{label:9} {rel}{source}\n"
+                f"            expected {expected}\n"
                 f"            actual   {actual}",
                 file=sys.stderr,
             )
@@ -153,8 +281,9 @@ def verify(*, strict: bool) -> int:
 
 
 def update() -> int:
+    pinned = serving_digests()
     manifest = load_manifest()
-    problems = validate_schema(manifest)
+    problems = validate_schema(manifest, pinned)
     if problems:
         for p in problems:
             print(f"MANIFEST SCHEMA: {p}", file=sys.stderr)
@@ -163,6 +292,11 @@ def update() -> int:
     changed = 0
     for entry in manifest["artifacts"]:
         path = REPO_ROOT / entry["path"]
+        if entry.get(AUTHORITY_KEY):
+            # Not ours to re-hash: re-freezing a serving artifact goes through
+            # scripts/freeze_baseline.py.
+            print(f"DEFER {entry['path']} (pinned by {SERVING_MANIFEST_RELPATH})")
+            continue
         if not path.exists():
             print(f"SKIP {entry['path']} (not on disk)", file=sys.stderr)
             continue

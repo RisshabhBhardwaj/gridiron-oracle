@@ -79,11 +79,40 @@ def test_evidence_manifest_schema() -> None:
     )
     assert isinstance(manifest["artifacts"], list)
     assert manifest["artifacts"], "manifest must list the shipped evidence"
+
+    # An entry carries either its own digest, or — when the serving manifest
+    # already pins that path — a `sha256_authority` pointer to it. Storing a
+    # second copy of a digest the serving manifest owns is what lets two
+    # registries disagree, so the schema permits exactly one of the two.
+    serving = json.loads(
+        (REPO_ROOT / "releases" / "current_baseline.json").read_text()
+    )
+    pinned = set(serving["artifact_digests"])
+
     for entry in manifest["artifacts"]:
-        for field in ("path", "sha256", "status", "produced_by", "description"):
+        for field in ("path", "status", "produced_by", "description"):
             assert entry.get(field), f"{entry.get('path')}: missing {field}"
         assert entry["status"] in {"frozen", "provisional"}
-        assert len(entry["sha256"]) == 64
+
+        path = entry["path"]
+        assert not path.startswith("ml/oof/"), (
+            f"{path}: serving artifacts belong to releases/current_baseline.json, "
+            "not the evidence registry"
+        )
+
+        if path in pinned:
+            assert entry.get("sha256_authority") == "releases/current_baseline.json", (
+                f"{path}: serving-pinned, so it must defer via sha256_authority"
+            )
+            assert not entry.get("sha256"), (
+                f"{path}: must not duplicate a digest the serving manifest owns"
+            )
+        else:
+            assert entry.get("sha256"), f"{path}: missing sha256"
+            assert len(entry["sha256"]) == 64
+            assert not entry.get("sha256_authority"), (
+                f"{path}: defers but is not pinned by the serving manifest"
+            )
 
 
 def test_evidence_manifest_verifies_clean() -> None:

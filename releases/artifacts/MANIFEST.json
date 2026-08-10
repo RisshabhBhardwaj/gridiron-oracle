@@ -1,6 +1,11 @@
 {
   "schema_version": 1,
   "updated_at": "2026-08-09T19:17:56.318961+00:00",
+  "serving_manifest": {
+    "path": "releases/current_baseline.json",
+    "authoritative_for": "serving artifact selection (ml/oof/ stacks)",
+    "note": "Serving artifacts are pinned there and resolved through ml/artifact_manifest.py, which fails closed on a missing entry or digest mismatch. This registry covers evidence only and must not list anything under ml/oof/ or duplicate a digest the serving manifest already records; entries for a serving-pinned path use \"sha256_authority\" instead. Enforced by scripts/verify_evidence_manifest.py."
+  },
   "note": "See releases/artifacts/README.md. Every entry is currently `provisional`: the audit found the evidence itself invalid (C-01 leakage), so nothing here is frozen. Entries flip to `frozen` when regenerated from a clean rebuild.",
   "artifacts": [
     {
@@ -189,11 +194,11 @@
     },
     {
       "path": "reports/serving_divergence_passing_yards_QB.json",
-      "sha256": "4c80c9db62f13fd7698032395331e14beae4d729236b64a49a5ecf2e1f7b3df2",
       "bytes": 334,
       "status": "provisional",
       "produced_by": "ad-hoc analysis",
-      "description": "DB-vs-source-CSV comparison for one cell."
+      "description": "DB-vs-source-CSV comparison for one cell.",
+      "sha256_authority": "releases/current_baseline.json"
     },
     {
       "path": "reports/yardage_diagnostic.json",

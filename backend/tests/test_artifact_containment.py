@@ -508,6 +508,80 @@ class TestDiscoveryHygiene:
         ]
         assert not offenders, f"killed-learner OOFs are still tracked: {offenders}"
 
+    def test_no_killed_learner_oof_is_on_disk_in_the_serving_directory(self):
+        """
+        The tracked-files check above is not sufficient.
+
+        ``ml/oof/`` is gitignored, so an untracked killed-learner OOF is invisible
+        to ``git ls-files`` *and* to ``git rm`` — and invisible to a fresh
+        worktree, which is how an earlier sweep of this repo missed several. What
+        matters for a restack is what is on disk in the discovery directory, since
+        ``_discover_oof_files`` globs it.
+
+        Top level only: ``_archive_*`` subdirectories are out of glob range
+        (discovery is non-recursive) and deliberately retain the killed history.
+        """
+        oof = REPO_ROOT / "ml" / "oof"
+        offenders = sorted(
+            p.name
+            for p in oof.glob("*.csv")
+            if am.learner_prefix_of(p.name) in am.killed_learners("any")
+        )
+        assert not offenders, (
+            f"killed-learner OOF(s) present in the serving directory: {offenders}. "
+            "A --oof-dir restack will refuse to run while these are here; remove "
+            "or archive them into a subdirectory."
+        )
+
+    def test_no_poisoned_stack_is_on_disk_in_the_serving_directory(self):
+        """
+        No multi-learner stack may sit in the serving directory.
+
+        Three untracked four-learner ``stack_fantasy_ppr_{QB,RB,WR}_20260807.csv``
+        files survived in this repo after the tracked TE one was removed — one of
+        them (WR) is the collapsed file, 2022 ``y_pred_std`` = 0.059. Checked by
+        *content* rather than by date stamp, so a future poisoned stack under any
+        name is caught too.
+        """
+        import csv
+
+        oof = REPO_ROOT / "ml" / "oof"
+        killed = am.killed_learners("any")
+        offenders = []
+        for path in sorted(oof.glob("stack_*.csv")):
+            with open(path, newline="") as handle:
+                header = next(csv.reader(handle), [])
+            present = {
+                c[: -len("_pred")]
+                for c in header
+                if c.endswith("_pred") and c != "y_pred"
+            }
+            if present & killed:
+                offenders.append(f"{path.name} carries {sorted(present & killed)}")
+        assert not offenders, (
+            "stack artifact(s) in the serving directory contain killed-learner "
+            f"predictions: {offenders}"
+        )
+
+    def test_every_stack_in_the_serving_directory_is_manifest_pinned(self):
+        """
+        An unpinned stack in the serving directory is a future mis-selection.
+
+        Selection is manifest-only, so an unpinned file cannot be *served* — but
+        it can still be picked up by a glob in a script or an eval heredoc, and it
+        is exactly the residue that made mtime selection dangerous.
+        """
+        am.clear_cache()
+        manifest = load_manifest(
+            REPO_ROOT / "releases" / "current_baseline.json", root=REPO_ROOT
+        )
+        pinned = {Path(p).name for p in manifest.protected_relpaths()}
+        on_disk = {p.name for p in (REPO_ROOT / "ml" / "oof").glob("stack_*.csv")}
+        assert not (on_disk - pinned), (
+            f"unpinned stack artifact(s) in the serving directory: "
+            f"{sorted(on_disk - pinned)}"
+        )
+
     def test_no_20260807_artifacts_are_tracked(self):
         tracked = subprocess.run(
             ["git", "ls-files", "ml/oof"],
@@ -817,6 +891,109 @@ class TestFreezeBaselinePreservesPins:
         src = (REPO_ROOT / "scripts" / "freeze_baseline.py").read_text()
         assert "artifact_digests" in src
         assert "_carry_forward_artifact_pins(payload" in src
+
+
+class TestManifestAuthoritySplit:
+    """
+    Two manifests, two jobs, one digest per file.
+
+    ``releases/current_baseline.json`` is authoritative for *serving artifact
+    selection*; ``releases/artifacts/MANIFEST.json`` is authoritative for
+    *evidence drift*. They coexisted after the merge with no rule stating which
+    owned what, which is the same failure as C-09/C-12 in a new place: two
+    registries claiming one job, free to disagree.
+    """
+
+    EVIDENCE = REPO_ROOT / "releases" / "artifacts" / "MANIFEST.json"
+    SERVING = REPO_ROOT / "releases" / "current_baseline.json"
+
+    def _evidence(self) -> dict:
+        return json.loads(self.EVIDENCE.read_text())
+
+    def test_evidence_manifest_points_at_the_serving_manifest(self):
+        block = self._evidence().get("serving_manifest")
+        assert block, "evidence manifest must declare the serving manifest"
+        assert block["path"] == "releases/current_baseline.json"
+
+    def test_evidence_manifest_lists_nothing_under_ml_oof(self):
+        """Serving artifacts are not evidence entries."""
+        offenders = [
+            a["path"] for a in self._evidence()["artifacts"]
+            if a["path"].startswith("ml/oof/")
+        ]
+        assert not offenders, (
+            f"evidence manifest reaches into the serving directory: {offenders}"
+        )
+
+    def test_no_path_carries_a_digest_in_both_manifests(self):
+        """
+        The overlap rule. A path pinned by the serving manifest defers via
+        ``sha256_authority`` instead of storing a second copy of the digest,
+        so the two can never disagree.
+        """
+        pinned = set(json.loads(self.SERVING.read_text())["artifact_digests"])
+        duplicated = [
+            a["path"] for a in self._evidence()["artifacts"]
+            if a["path"] in pinned and a.get("sha256")
+        ]
+        assert not duplicated, (
+            f"digest stored in both manifests for: {duplicated}"
+        )
+
+    def test_deferred_entries_name_the_serving_manifest(self):
+        pinned = set(json.loads(self.SERVING.read_text())["artifact_digests"])
+        for entry in self._evidence()["artifacts"]:
+            if entry["path"] in pinned:
+                assert entry.get("sha256_authority") == "releases/current_baseline.json", (
+                    f"{entry['path']} is serving-pinned but does not defer"
+                )
+            else:
+                assert not entry.get("sha256_authority"), (
+                    f"{entry['path']} defers but is not serving-pinned"
+                )
+
+    def test_evidence_verifier_enforces_the_split(self):
+        """The rule is code, not a comment."""
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        import verify_evidence_manifest as vem
+
+        assert vem.DELEGATED_DIRS == ("ml/oof",)
+        pinned = {"ml/oof/stack_fantasy_ppr_TE_20260809.csv": "ab" * 32}
+
+        # A serving artifact listed as evidence.
+        problems = vem.validate_schema(
+            {"artifacts": [{
+                "path": "ml/oof/stack_fantasy_ppr_TE_20260809.csv",
+                "sha256": "ab" * 32, "status": "frozen",
+                "produced_by": "x", "description": "y",
+            }]},
+            pinned,
+        )
+        assert any("serving-manifest directory" in p for p in problems)
+        assert any("must not carry its own" in p for p in problems)
+
+        # A deferred entry for a path the serving manifest does not pin.
+        problems = vem.validate_schema(
+            {"artifacts": [{
+                "path": "reports/whatever.json",
+                "sha256_authority": "releases/current_baseline.json",
+                "status": "frozen", "produced_by": "x", "description": "y",
+            }]},
+            pinned,
+        )
+        assert any("does not pin it" in p for p in problems)
+
+    def test_evidence_verifier_passes_on_the_real_tree(self):
+        result = subprocess.run(
+            [sys.executable, "scripts/verify_evidence_manifest.py"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Serving manifest OK" in result.stdout, (
+            "the evidence verifier must also validate the serving manifest"
+        )
 
 
 # ── C-20: conformal calibration is pinned ─────────────────────────────────────
