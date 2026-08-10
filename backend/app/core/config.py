@@ -23,7 +23,7 @@ class Settings:
             postgresql://oracle:oracle@localhost:15439/oracle
 
     Optional:
-        MLFLOW_TRACKING_URI: default http://localhost:5001
+        MLFLOW_TRACKING_URI: default http://localhost:15091 (host process)
         MODEL_VERSION:       tag stored in every /predict response
         PRODUCT_MODE:        artifact_backed | graceful_fallback
         SETTINGS_FILE:       path to user_config.json (weight overrides)
@@ -51,7 +51,7 @@ class Settings:
         )
 
         self.mlflow_tracking_uri: str = os.environ.get(
-            "MLFLOW_TRACKING_URI", "http://localhost:5001"
+            "MLFLOW_TRACKING_URI", "http://localhost:15091"
         )
         self.model_version: str = os.environ.get(
             "MODEL_VERSION", "latest"

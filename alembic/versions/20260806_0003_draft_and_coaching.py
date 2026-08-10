@@ -25,12 +25,15 @@ def upgrade() -> None:
         """
         CREATE TABLE IF NOT EXISTS team_coaching (
             season INTEGER NOT NULL,
-            team TEXT NOT NULL,
+            team TEXT NOT NULL REFERENCES teams(id),
             head_coach TEXT,
             offensive_coordinator TEXT,
             defensive_coordinator TEXT,
             scheme_pass_rate_prior FLOAT,
             notes TEXT,
+            source TEXT,
+            verified_by TEXT,
+            verified_on DATE,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (season, team)
         )
@@ -46,7 +49,7 @@ def upgrade() -> None:
             position TEXT,
             team TEXT,
             adp FLOAT NOT NULL,
-            player_id TEXT,
+            player_id TEXT REFERENCES players(id),
             imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (season, source, scoring, player_name)
         )
@@ -55,6 +58,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS fantasy_adp")
     op.execute("DROP TABLE IF EXISTS team_coaching")
     op.execute("ALTER TABLE players DROP COLUMN IF EXISTS draft_club")
     op.execute("ALTER TABLE players DROP COLUMN IF EXISTS draft_number")

@@ -45,13 +45,6 @@ def _dsn_for_psycopg2(url: str) -> str:
     return s
 
 
-def _ensure_prop_odds_table(conn) -> None:
-    """Create prop_odds table if not exists."""
-    from pipeline.schema import ensure_schema
-
-    ensure_schema(conn)
-
-
 def fetch_and_store_props(db_url: str, api_key: Optional[str] = None) -> int:
     """
     Fetch NFL player props from The Odds API and store in prop_odds.
@@ -86,7 +79,6 @@ def fetch_and_store_props(db_url: str, api_key: Optional[str] = None) -> int:
     import psycopg2
 
     conn = psycopg2.connect(_dsn_for_psycopg2(db_url))
-    _ensure_prop_odds_table(conn)
 
     stored = 0
     for evt in events[:16]:  # limit to 16 games to conserve quota

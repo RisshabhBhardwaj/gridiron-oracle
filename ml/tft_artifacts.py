@@ -63,7 +63,7 @@ def persist_training_artifacts(
     use_mlflow = mlflow_tracking_uri != ""
     if use_mlflow and mlflow_tracking_uri is None:
         mlflow_tracking_uri = os.environ.get(
-            "MLFLOW_TRACKING_URI", "http://localhost:5001"
+            "MLFLOW_TRACKING_URI", "http://localhost:15091"
         )
 
     if use_mlflow:

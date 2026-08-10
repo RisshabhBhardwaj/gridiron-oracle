@@ -121,13 +121,6 @@ CREATE INDEX IF NOT EXISTS idx_ftn_player_game_lookup
 """
 
 
-def _ensure_schema(conn) -> None:
-    from pipeline.schema import ensure_schema
-
-    ensure_schema(conn)
-    logger.info("pbp_features, pbp_matchups, ftn_player_game tables ensured via schema registry.")
-
-
 # ── PBP aggregation ────────────────────────────────────────────────────────────
 
 def _load_pbp_season(season: int) -> pd.DataFrame:
@@ -717,8 +710,8 @@ def _write_matchups(conn, matchups_df: pd.DataFrame) -> int:
 
 def _update_feature_matrix(conn, features_df: pd.DataFrame) -> None:
     """
-    Bulk-UPDATE Bucket 11 PBP columns in feature_matrix for every matching
-    (player_id, game_id) row. Adds columns if they don't exist yet.
+    Bulk-UPDATE Alembic-managed Bucket 11 PBP columns for every matching
+    (player_id, game_id) row.
     """
     cur = conn.cursor()
     pbp_cols = [
@@ -730,11 +723,7 @@ def _update_feature_matrix(conn, features_df: pd.DataFrame) -> None:
         "drop_rate", "ol_pressure_rate", "ol_sack_rate",
         "opp_pressure_rate_pbp", "opp_sack_rate_pbp",
         "opp_zone_pct", "opp_man_pct", "opp_blitz_rate",
-        "routes_run_per_game", "slot_rate",
     ]
-    for col in pbp_cols:
-        cur.execute(f"ALTER TABLE feature_matrix ADD COLUMN IF NOT EXISTS {col} FLOAT")
-    conn.commit()
 
     set_clause = ", ".join([f"{c} = %({c})s" for c in pbp_cols if c in features_df.columns])
     update_sql = f"""
@@ -791,8 +780,6 @@ def main() -> None:
 
     conn = _get_conn()
     try:
-        _ensure_schema(conn)
-
         total_features, total_matchups, total_ftn = 0, 0, 0
         all_features = []
 

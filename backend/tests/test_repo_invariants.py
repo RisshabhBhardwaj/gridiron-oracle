@@ -115,6 +115,82 @@ def test_evidence_manifest_schema() -> None:
             )
 
 
+def test_every_feature_row_field_is_created_by_a_migration() -> None:
+    """
+    Alembic must be able to build a database that `_upsert_feature_rows` can
+    write to (audit C-12).
+
+    `pipeline/feature_engineer._FM_COLS` is generated from `FeatureRow`'s
+    dataclass fields, and the INSERT names every one of them. So a FeatureRow
+    field with no migration is not a cosmetic drift — on a fresh database built
+    from `alembic upgrade head`, the first feature insert fails with
+    UndefinedColumn.
+
+    That is exactly how `prior_snap_share` shipped: session 02 added it to
+    FeatureRow and to FEATURE_COLS, the live database acquired the column
+    out-of-band, and no migration knew about it. The ORM/DDL check in
+    `TestSchemaSync` did not catch it either, because it compares FeatureRow to
+    the ORM rather than to the migrations.
+    """
+    import dataclasses
+    import importlib.util
+    import re
+
+    from pipeline.feature_engineer import FeatureRow
+
+    versions = REPO_ROOT / "alembic" / "versions"
+
+    # The migrations declare columns four ways, all of which must be recognised:
+    #   1. literal DDL bodies            "  is_home  SMALLINT,"
+    #   2. explicit ALTER statements      "ADD COLUMN IF NOT EXISTS x FLOAT"
+    #   3. (name, type) tuple lists       ('("prior_snap_share", "FLOAT")')
+    #   4. bare name lists applied in a loop (0004's _PHASE4_COLS)
+    _SQL_TYPE = (
+        r"FLOAT|INTEGER|SMALLINT|BIGINT|NUMERIC|REAL|DOUBLE|TEXT|VARCHAR|"
+        r"BOOLEAN|BOOL|JSONB|JSON|TIMESTAMPTZ|TIMESTAMP|DATE|SERIAL"
+    )
+
+    def _column_names(text: str) -> set[str]:
+        found = set(
+            re.findall(rf"^\s*([a-z][a-z0-9_]*)\s+(?:{_SQL_TYPE})\b", text, re.M)
+        )
+        found |= set(re.findall(r"ADD COLUMN IF NOT EXISTS ([a-z][a-z0-9_]*)", text))
+        found |= set(
+            re.findall(rf'\(\s*"([a-z][a-z0-9_]*)"\s*,\s*"(?:{_SQL_TYPE})"\s*\)', text)
+        )
+        # Bare-name lists: only trusted when the file actually applies them with
+        # an ALTER ... ADD COLUMN loop, so an arbitrary string literal elsewhere
+        # is not mistaken for a column.
+        if re.search(r"ADD COLUMN IF NOT EXISTS \{col", text):
+            found |= set(re.findall(r'^\s*"([a-z][a-z0-9_]*)",\s*$', text, re.M))
+        return found
+
+    declared: set[str] = set()
+    for path in sorted(versions.glob("*.py")):
+        declared |= _column_names(path.read_text())
+        # 0001 stores its DDL as a gzip+base85 snapshot so migration history
+        # cannot be rewritten by changing pipeline code. Use its own accessor
+        # rather than trying to read the compressed blob.
+        spec = importlib.util.spec_from_file_location(f"_mig_{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception:  # pragma: no cover - non-importable revision
+            continue
+        accessor = getattr(module, "_initial_schema_ddl", None)
+        if accessor is not None:
+            declared |= _column_names("\n".join(accessor()))
+
+    fields = {f.name for f in dataclasses.fields(FeatureRow)}
+    missing = sorted(fields - declared)
+    assert not missing, (
+        f"FeatureRow fields with no Alembic migration: {missing}\n"
+        "`_upsert_feature_rows` will INSERT these column names, so a database "
+        "built from `alembic upgrade head` would reject the first write. Add "
+        "them to a migration, not to runtime DDL."
+    )
+
+
 def test_evidence_manifest_verifies_clean() -> None:
     result = subprocess.run(
         [sys.executable, "scripts/verify_evidence_manifest.py"],

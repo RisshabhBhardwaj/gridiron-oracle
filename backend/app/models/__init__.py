@@ -5,7 +5,7 @@ Re-exports all SQLModel table definitions.
 Import from here in migrations, pipeline code, and API services.
 """
 
-from .production import FeatureMatrix, Game, GameLog, Player, Projection, Team
+from .production import FantasyADP, FeatureMatrix, Game, GameLog, Player, Projection, Team, TeamCoaching
 from .staging import DeadLetter, StagingNflReadPy
 
 __all__ = [
@@ -15,7 +15,9 @@ __all__ = [
     "Game",
     "GameLog",
     "FeatureMatrix",
+    "FantasyADP",
     "Projection",
+    "TeamCoaching",
     # Staging / ETL tables
     "StagingNflReadPy",
     "DeadLetter",

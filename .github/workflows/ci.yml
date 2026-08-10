@@ -78,6 +78,42 @@ jobs:
           export OTEL_TRACES_EXPORTER=none
           pytest backend/tests/ -v -m "not integration and not slow and not network"
 
+  schema-migrations:
+    name: Alembic upgrade-downgrade-upgrade
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: oracle
+          POSTGRES_PASSWORD: oracle
+          POSTGRES_DB: oracle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oracle"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://oracle:oracle@localhost:5432/oracle
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install migration dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Prove migration reversibility on an empty database
+        run: |
+          set -euo pipefail
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
   cpp:
     name: C++ build + tests
     runs-on: ubuntu-latest

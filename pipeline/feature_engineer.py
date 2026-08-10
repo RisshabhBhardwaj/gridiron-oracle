@@ -613,7 +613,6 @@ class FeatureEngineer:
         logger.info("FeatureEngineer: connecting…")
         self._conn = psycopg2.connect(dsn)
         self._conn.autocommit = False
-        self._ensure_table()
 
     def close(self) -> None:
         if self._conn and not self._conn.closed:
@@ -628,29 +627,6 @@ class FeatureEngineer:
             if exc_type:
                 self._conn.rollback()
             self.close()
-
-    def _ensure_table(self) -> None:
-        assert self._conn
-        from pipeline.schema import ensure_schema
-
-        ensure_schema(self._conn)
-        with self._conn.cursor() as cur:
-            # Auto-migrate all numeric fields defined in FeatureRow until a
-            # dedicated Alembic revision owns FeatureRow drift.
-            for f in dc_fields(FeatureRow):
-                if f.name in ("player_id", "game_id", "position", "team", "opponent_team", "season", "week"):
-                    continue
-                db_type = "FLOAT"
-                type_str = str(f.type) if not isinstance(f.type, str) else f.type
-                if "int" in type_str.lower() and "float" not in type_str.lower():
-                    db_type = "INTEGER"
-                cur.execute(f"ALTER TABLE feature_matrix ADD COLUMN IF NOT EXISTS {f.name} {db_type}")
-
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_feature_matrix_player_season "
-                "ON feature_matrix (player_id, season)"
-            )
-        self._conn.commit()
 
     def _fetch_season_rows(self, season: int) -> list[dict]:
         """Fetch all game_log rows for a season, joined with game context."""

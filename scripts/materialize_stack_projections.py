@@ -42,7 +42,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, get_manifest  # noqa: E402
-from pipeline.schema import ensure_schema, normalize_dsn  # noqa: E402
+from pipeline.schema import normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
 PIPELINE_RUN_ID = f"stack_materialize_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
@@ -231,7 +231,10 @@ def main() -> int:
     dsn = normalize_dsn(args.database_url)
     conn = psycopg2.connect(dsn)
     try:
-        ensure_schema(conn)
+        # No ensure_schema() here: Alembic is the sole schema authority (C-12).
+        # Runtime DDL from ~10 call sites meant fresh-database behaviour depended
+        # on the current checkout rather than on the migration history. Run
+        # `alembic upgrade head` before materializing.
         n = _upsert(conn, all_df)
         report["n_upserted"] = n
         out.write_text(json.dumps(report, indent=2) + "\n")

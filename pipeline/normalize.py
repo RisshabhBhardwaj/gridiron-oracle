@@ -509,8 +509,7 @@ class Normalizer:
         logger.info("Normalizer: connecting to PostgreSQL…")
         self._conn = psycopg2.connect(dsn)
         self._conn.autocommit = False
-        self._ensure_production_tables()
-        logger.info("Normalizer: connected and production tables verified.")
+        logger.info("Normalizer: connected; schema is managed by Alembic.")
 
     def close(self) -> None:
         if self._conn and not self._conn.closed:
@@ -525,27 +524,6 @@ class Normalizer:
             if exc_type:
                 self._conn.rollback()
             self.close()
-
-    # ── DDL ───────────────────────────────────────────────────────────────
-
-    def _ensure_production_tables(self) -> None:
-        assert self._conn
-        # Alembic-managed schema; CREATE IF NOT EXISTS remains as empty-DB bootstrap.
-        from pipeline.schema import ensure_schema
-
-        ensure_schema(self._conn)
-        with self._conn.cursor() as cur:
-            # Narrow backfills kept here until promoted into a dedicated revision.
-            cur.execute(
-                "ALTER TABLE game_logs ADD COLUMN IF NOT EXISTS receiving_fumbles INTEGER"
-            )
-            cur.execute(
-                "ALTER TABLE game_logs ADD COLUMN IF NOT EXISTS sack_fumbles INTEGER"
-            )
-            cur.execute(
-                "ALTER TABLE games ADD COLUMN IF NOT EXISTS precipitation_bucket SMALLINT"
-            )
-        self._conn.commit()
 
     # ── Staging reader ────────────────────────────────────────────────────
 

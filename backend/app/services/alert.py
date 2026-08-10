@@ -98,12 +98,13 @@ ON CONFLICT (id) DO NOTHING
 
 
 def _ensure_alerts_table(db_url: str) -> None:
-    """Create the alerts table if it doesn't exist."""
+    """Verify the Alembic-managed alerts table is available."""
     import psycopg2
-    from pipeline.schema import ensure_schema, normalize_dsn
+    from pipeline.schema import normalize_dsn
 
     with psycopg2.connect(normalize_dsn(db_url)) as conn:
-        ensure_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM alerts LIMIT 1")
 
 
 def _flush_alerts_to_db(db_url: str, alerts: list[Alert]) -> None:

@@ -57,24 +57,6 @@ _PLACEHOLDER = re.compile(
     re.IGNORECASE,
 )
 
-CREATE_TEAM_COACHING = """
-CREATE TABLE IF NOT EXISTS team_coaching (
-    season INTEGER NOT NULL,
-    team TEXT NOT NULL,
-    head_coach TEXT,
-    offensive_coordinator TEXT,
-    defensive_coordinator TEXT,
-    scheme_pass_rate_prior FLOAT,
-    notes TEXT,
-    source TEXT,
-    verified_by TEXT,
-    verified_on DATE,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, team)
-)
-"""
-
-
 class CoachingValidationError(ValueError):
     """Raised when a coaching CSV is internally inconsistent or unverified."""
 
@@ -226,7 +208,6 @@ def upsert_coaching(db_url: str, season: int) -> int:
     conn = psycopg2.connect(normalize_dsn(db_url))
     try:
         with conn.cursor() as cur:
-            cur.execute(CREATE_TEAM_COACHING)
             rows = [
                 (
                     int(r.season),

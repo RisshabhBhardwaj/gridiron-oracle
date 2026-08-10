@@ -1198,12 +1198,6 @@ class PipelineRunner:
         try:
             cur = conn.cursor()
 
-            # Alembic-managed schema; bootstrap CREATE IF NOT EXISTS for empty DBs.
-            from pipeline.schema import ensure_schema
-
-            ensure_schema(conn)
-            cur = conn.cursor()
-
             upsert_sql = """
                 INSERT INTO projections
                     (player_id, game_id, season, week, stat, position,
