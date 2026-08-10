@@ -67,7 +67,9 @@ from psycopg2.extras import execute_values
 
 from scraper.adapters.nflreadpy_adapter import _coerce_row, _psycopg2_dsn
 from ml.kalman_tracker import KalmanFeatureEngineer
-from ml.utils import MIN_SNAP_PCT
+# This threshold is legal only for *completed prior games* used in form
+# estimation.  It must never decide whether the target game enters a model.
+FORM_MIN_PRIOR_SNAP_PCT = 0.34
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,21 +136,24 @@ def build_feature_row(
     is_home_flag  = (team == game.get("home_team")) if team else None
     is_home_int   = int(is_home_flag) if is_home_flag is not None else None
 
-    # Filter prior_rows by snap participation for Kalman + season baseline.
+    # Filter completed prior rows by snap participation for Kalman + baseline.
     # Bench appearances (offense_pct < MIN_SNAP_PCT) produce high-variance noise
     # that drags Kalman estimates toward zero — excluded for form/baseline only.
     # Rows where offense_pct is None (seasons without snap counts: 2019-2021,2024)
     # are kept so that we do not drop entire seasons of history.
     snap_prior_rows = [
         r for r in prior_rows
-        if r.get("offense_pct") is None or (r.get("offense_pct") or 0.0) >= MIN_SNAP_PCT
+        if r.get("offense_pct") is None or (r.get("offense_pct") or 0.0) >= FORM_MIN_PRIOR_SNAP_PCT
     ]
     form    = KalmanFeatureEngineer().compute_kalman_form(snap_prior_rows, position=position)
     seas    = compute_season_baseline(snap_prior_rows)
     matchup = compute_matchup_stats(
         opponent_team or "", position, all_season_rows, week
     )
-    venue   = compute_venue_features(game)
+    # Historical game weather is observed postgame data, not a timestamped
+    # forecast.  Only immutable venue facts are presently approved.
+    raw_venue = compute_venue_features(game)
+    venue = {key: raw_venue.get(key) for key in ("is_dome", "surface_turf")}
     rest    = compute_rest_features(game, bool(is_home_flag))
     ctx     = compute_team_context(game, team or "")
     injury  = compute_injury_features(
@@ -161,14 +166,27 @@ def build_feature_row(
     # Combine is_home from team context (more reliable)
     is_home_int = ctx.pop("is_home", is_home_int)
 
-    # Snap participation (from target_row.offense_pct, set by snap_counts ETL pass)
-    snap_pct = target_row.get("offense_pct")
+    # Exactly one approved participation feature: previous completed game's
+    # snap share.  It never reads the target game row.
+    def _snap_fraction(row: dict) -> Optional[float]:
+        raw = row.get("offense_pct")
+        if raw is None:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if value != value:
+            return None
+        return value / 100.0 if value > 1.0 else value
+
+    prior_snap_share = _snap_fraction(prior_rows[-1]) if prior_rows else None
 
     # Bucket 9: scheme interactions — extend matchup dict with opp tendency fields
     # (opp_zone_pct, opp_man_pct, opp_blitz_rate, opp_pressure_rate are populated
     # by compute_matchup_stats once play-by-play coverage data is wired in Phase 4;
     # until then they are None and the interaction terms also evaluate to None)
-    scheme = compute_scheme_interactions(form, matchup, snap_pct)
+    scheme = compute_scheme_interactions(form, matchup)
 
     # ── TFT Static Covariates: physical profile (Item 0 fix) ─────────────────
     # nflreadpy game_logs carries player_height (inches), player_weight (lbs),
@@ -182,12 +200,8 @@ def build_feature_row(
         except (TypeError, ValueError):
             return None
 
-    height_val      = _coerce_float(
-        target_row.get("player_height") or target_row.get("height")
-    )
-    weight_val      = _coerce_float(
-        target_row.get("player_weight") or target_row.get("weight")
-    )
+    height_val = _coerce_float(target_row.get("player_height"))
+    weight_val = _coerce_float(target_row.get("player_weight"))
     draft_round_val = _coerce_float(
         target_row.get("draft_round") or target_row.get("draft_number")
     )
@@ -200,20 +214,6 @@ def build_feature_row(
     elif len(prior_rows) >= 2:
         ts_vals = [float(r.get("target_share") or 0.0) for r in prior_rows[-2:]]
         target_share_trend = ts_vals[-1] - ts_vals[0]
-
-    # ── Weather × position interaction terms ─────────────────────────────────
-    wind_bkt = venue.get("wind_bucket")
-    precip_bkt = game.get("precipitation_bucket")
-    is_qb_pos = 1 if (position or "").upper() == "QB" else 0
-    is_pass_pos = 1 if (position or "").upper() in ("QB", "WR", "TE") else 0
-    wind_x_qb: Optional[float] = (float(wind_bkt) * is_qb_pos) if wind_bkt is not None else None
-    wind_x_wr: Optional[float] = (float(wind_bkt) * is_pass_pos) if wind_bkt is not None else None
-    precip_x_pass: Optional[float] = (float(precip_bkt) * is_pass_pos) if precip_bkt is not None else None
-
-    # ── routes_run_pct from snap count data ──────────────────────────────────
-    routes_run_pct = _coerce_float(
-        target_row.get("offense_pct") or target_row.get("routes_run_pct")
-    )
 
     # ── Phase 4 feature groups (causal; prior weeks only) ────────────────────
     usage = compute_usage_shares(
@@ -255,8 +255,9 @@ def build_feature_row(
         **compute_rule_features(season),
         # Bucket 8 — Injury / Availability
         **injury,
-        # Snap participation (populated by snap_counts normalize pass)
-        snap_pct_off=snap_pct,
+        # Target-game participation is intentionally not materialized.
+        snap_pct_off=None,
+        prior_snap_share=prior_snap_share,
         # Bucket 9 — Defensive Tendency + Scheme Interactions
         **scheme,
         # Bucket 10 — Elo Ratings (populated lazily if elo system is fitted)
@@ -277,12 +278,11 @@ def build_feature_row(
         # in FeatureEngineer.run() via LEFT JOIN on pbp_features).
         # Velocity/trend features (computed above from prior_rows)
         target_share_trend=target_share_trend,
-        # Weather × position interactions (computed above)
-        wind_x_qb=wind_x_qb,
-        wind_x_wr=wind_x_wr,
-        precip_x_pass=precip_x_pass,
-        # Snap count proxy for routes run
-        routes_run_pct=routes_run_pct,
+        # Unproven weather and target-game routes are disabled pending causal sources.
+        wind_x_qb=None,
+        wind_x_wr=None,
+        precip_x_pass=None,
+        routes_run_pct=None,
         # Positional depth signal (e.g. 1.0 = WR1, 2.0 = WR2)
         team_pos_rank=pos_rank,
         # Phase 4 groups
@@ -679,7 +679,7 @@ class FeatureEngineer:
                     psp.height_inches AS player_height,
                     psp.weight_lbs AS player_weight,
                     p.draft_round,
-                    p.years_exp,
+                    p.entry_year,
                     p.birth_date
                 FROM game_logs gl
                 JOIN games g ON gl.game_id = g.id
@@ -726,12 +726,28 @@ class FeatureEngineer:
         self._conn.commit()
         return len(rows)
 
+    def clear_seasons(self, seasons: list[int]) -> int:
+        """Delete only the explicitly requested seasons before a clean rebuild."""
+        if not seasons:
+            return 0
+        assert self._conn
+        with self._conn.cursor() as cur:
+            cur.execute("DELETE FROM feature_matrix WHERE season = ANY(%s)", (seasons,))
+            deleted = cur.rowcount or 0
+        self._conn.commit()
+        logger.info("Deleted %d stale feature rows for clean rebuild seasons=%s", deleted, seasons)
+        return deleted
+
     def run(self, seasons: list[int]) -> int:
         """Build feature rows for all player-games in the given seasons."""
         total = 0
         for season in seasons:
             logger.info("Building features for season=%d…", season)
-            from pipeline.provenance import assert_player_profiles_asof
+            from pipeline.provenance import (
+                assert_player_profiles_asof,
+                record_missing_player_profiles_as_null,
+            )
+            record_missing_player_profiles_as_null(self._conn, season)
             assert_player_profiles_asof(self._conn, season)
             all_rows = self._fetch_season_rows(season)
             if not all_rows:
@@ -781,44 +797,45 @@ class FeatureEngineer:
             if feature_batch:
                 total += self._upsert_feature_rows(feature_batch)
 
-            # Enrich depth_chart_rank, avg_separation, avg_cushion from depth_charts + nextgen_stats
-            self._enrich_depth_nextgen(season)
+            # Target-week depth, NGS, PBP, weather, and embedding joins are
+            # disabled until they have a causal source contract.
+            self._clear_disabled_feature_values(season)
 
             logger.info("season=%d: %d feature rows written.", season, total)
 
         return total
 
-    def _enrich_depth_nextgen(self, season: int) -> None:
-        """Bulk UPDATE feature_matrix with depth_chart_rank and nextgen stats from DB."""
+    def _clear_disabled_feature_values(self, season: int) -> None:
+        """Clear legacy values that a causal rebuild must not retain."""
         if not self._conn:
             return
-        total = 0
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE feature_matrix fm
-                SET depth_chart_rank = dc.depth_rank
-                FROM depth_charts dc
-                WHERE fm.player_id = dc.player_id AND fm.season = dc.season
-                    AND fm.week = dc.week AND fm.season = %s AND dc.season = %s
-                """,
-                (season, season),
-            )
-            total += cur.rowcount or 0
-            cur.execute(
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'feature_matrix'
                 """
-                UPDATE feature_matrix fm
-                SET avg_separation = ng.avg_separation, avg_cushion = ng.avg_cushion
-                FROM nextgen_stats ng
-                WHERE fm.player_id = ng.player_id AND fm.season = ng.season
-                    AND fm.week = ng.week AND fm.season = %s AND ng.season = %s
-                """,
-                (season, season),
             )
-            total += cur.rowcount or 0
+            existing = {row[0] for row in cur.fetchall()}
+            disabled = {
+                "snap_pct_off", "routes_run_pct", "blitz_exposure",
+                "temp_f", "wind_mph", "temp_bucket", "wind_bucket",
+                "wind_x_qb", "wind_x_wr", "precip_x_pass", "injury_status_encoded",
+                "depth_chart_rank", "avg_separation", "avg_cushion",
+                "epa_per_play", "epa_per_target", "epa_per_rush", "qb_epa_per_dropback",
+                "adot", "yac_per_reception", "xyac_per_reception", "target_share_pbp",
+                "air_yards_share_pbp", "red_zone_targets", "end_zone_targets",
+                "red_zone_target_share", "drop_rate", "ol_pressure_rate", "ol_sack_rate",
+                "pass_left_rate", "pass_middle_rate", "pass_right_rate",
+                *(f"player_emb_{i}" for i in range(32)),
+            }
+            columns = sorted(disabled.intersection(existing))
+            if columns:
+                cur.execute(
+                    f"UPDATE feature_matrix SET {', '.join(f'{column} = NULL' for column in columns)} WHERE season = %s",
+                    (season,),
+                )
         self._conn.commit()
-        if total > 0:
-            logger.info("Enriched %d feature rows with depth/nextgen data", total)
 
 
 # ── Print helpers ─────────────────────────────────────────────────────────────
@@ -914,6 +931,8 @@ def main() -> None:
     parser.add_argument("--week", type=int, default=12,
                         help="Week number for --dry-run.")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--replace-existing", action="store_true",
+                        help="Delete the selected feature_matrix seasons before rebuilding them.")
     args = parser.parse_args()
 
     if args.verbose:
@@ -933,6 +952,8 @@ def main() -> None:
 
     seasons = args.seasons or [2025]
     with FeatureEngineer(db_url) as fe:
+        if args.replace_existing:
+            fe.clear_seasons(seasons)
         n = fe.run(seasons=seasons)
         print(f"\nFeature matrix: {n} rows written for seasons {seasons}\n")
 

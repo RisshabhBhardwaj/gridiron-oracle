@@ -29,6 +29,7 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error
 
 from ml.utils import FEATURE_COLS, FEATURE_GROUPS, TARGET_COL_MAP, load_feature_matrix
+from ml.feature_contract import assert_model_input_columns
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ def resolve_feature_cols(groups: Optional[list[str]] = None) -> list[str]:
         for c in FEATURE_GROUPS[name]:
             if c not in cols:
                 cols.append(c)
+    assert_model_input_columns(cols, consumer="feature-group experiment")
     return cols
 
 

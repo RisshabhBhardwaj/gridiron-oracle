@@ -26,26 +26,12 @@ import psycopg2
 import requests
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+from pipeline.adp_resolution import resolve_and_audit
 from pipeline.schema import normalize_dsn
 
 logger = logging.getLogger(__name__)
 
 _SLEEPER_BASE = "https://api.sleeper.app/v1"
-
-CREATE_FANTASY_ADP = """
-CREATE TABLE IF NOT EXISTS fantasy_adp (
-    season INTEGER NOT NULL,
-    source TEXT NOT NULL,
-    scoring TEXT NOT NULL,
-    player_name TEXT NOT NULL,
-    position TEXT,
-    team TEXT,
-    adp FLOAT NOT NULL,
-    player_id TEXT,
-    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, source, scoring, player_name)
-)
-"""
 
 
 def _get(path: str) -> Any:
@@ -126,6 +112,10 @@ def aggregate_adp(draft_ids: list[str]) -> pd.DataFrame:
             "adp": adp,
             "n_drafts": len(entries),
         })
+    if not rows:
+        return pd.DataFrame(columns=[
+            "player_name", "position", "team", "player_id", "adp", "n_drafts",
+        ])
     return pd.DataFrame(rows).sort_values("adp").reset_index(drop=True)
 
 
@@ -140,15 +130,20 @@ def upsert_adp(
     dsn = normalize_dsn(database_url)
     with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute(CREATE_FANTASY_ADP)
+            raw_rows = [row.to_dict() for _, row in df.iterrows()]
+            resolved = resolve_and_audit(conn, season=season, source="sleeper", scoring=scoring, rows=raw_rows)
             n = 0
-            for _, row in df.iterrows():
+            for row in resolved:
+                if not row["player_id"]:
+                    logger.warning("Unmatched Sleeper ADP row retained in audit: %s", row["player_name"])
+                    continue
                 cur.execute(
                     """
                     INSERT INTO fantasy_adp
                         (season, source, scoring, player_name, position, team, adp, player_id)
                     VALUES (%s, 'sleeper', %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (season, source, scoring, player_name) DO UPDATE SET
+                    ON CONFLICT (season, source, scoring, player_id) DO UPDATE SET
+                        player_name = EXCLUDED.player_name,
                         position = EXCLUDED.position,
                         team = EXCLUDED.team,
                         adp = EXCLUDED.adp,
@@ -191,6 +186,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     df = aggregate_adp(draft_ids)
     logger.info("Aggregated ADP for %d players across %d drafts", len(df), len(draft_ids))
+    if df.empty:
+        logger.error(
+            "No completed draft picks found for the supplied league/draft IDs. "
+            "Use a completed draft or provide additional completed draft IDs."
+        )
+        return 1
     if args.dry_run:
         print(df.head(30).to_string(index=False))
         return 0

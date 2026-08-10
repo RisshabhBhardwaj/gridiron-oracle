@@ -23,26 +23,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+from pipeline.adp_resolution import resolve_and_audit
 from pipeline.schema import normalize_dsn
 
 logger = logging.getLogger(__name__)
 _HIST_DIR = ROOT / "data" / "adp" / "historical"
-
-CREATE_FANTASY_ADP = """
-CREATE TABLE IF NOT EXISTS fantasy_adp (
-    season INTEGER NOT NULL,
-    source TEXT NOT NULL,
-    scoring TEXT NOT NULL,
-    player_name TEXT NOT NULL,
-    position TEXT,
-    team TEXT,
-    adp FLOAT NOT NULL,
-    player_id TEXT,
-    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, source, scoring, player_name)
-)
-"""
-
 
 def import_season(season: int, database_url: str) -> int:
     path = _HIST_DIR / f"adp_{season}.csv"
@@ -58,14 +43,23 @@ def import_season(season: int, database_url: str) -> int:
     n = 0
     with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute(CREATE_FANTASY_ADP)
-            for _, row in df.iterrows():
+            rows = [
+                {"player_name": str(row["player_name"]), "position": row.get("position"),
+                 "team": row.get("team"), "adp": float(row["adp"])}
+                for _, row in df.iterrows()
+            ]
+            resolved = resolve_and_audit(conn, season=season, source="historical", scoring="ppr", rows=rows)
+            for row in resolved:
+                if not row["player_id"]:
+                    logger.warning("Unmatched ADP row retained in adp_player_matches: %s", row["player_name"])
+                    continue
                 cur.execute(
                     """
                     INSERT INTO fantasy_adp
-                        (season, source, scoring, player_name, position, team, adp)
-                    VALUES (%s, 'historical', 'ppr', %s, %s, %s, %s)
-                    ON CONFLICT (season, source, scoring, player_name) DO UPDATE SET
+                        (season, source, scoring, player_name, position, team, adp, player_id)
+                    VALUES (%s, 'historical', 'ppr', %s, %s, %s, %s, %s)
+                    ON CONFLICT (season, source, scoring, player_id) DO UPDATE SET
+                        player_name = EXCLUDED.player_name,
                         position = EXCLUDED.position,
                         team = EXCLUDED.team,
                         adp = EXCLUDED.adp,
@@ -73,10 +67,11 @@ def import_season(season: int, database_url: str) -> int:
                     """,
                     (
                         season,
-                        str(row["player_name"]),
+                        row["player_name"],
                         row.get("position"),
                         row.get("team"),
-                        float(row["adp"]),
+                        row["adp"],
+                        row["player_id"],
                     ),
                 )
                 n += 1

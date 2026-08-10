@@ -8,12 +8,22 @@ Before changing models or promoting a run, answer these in order:
 
 1. **Causal?** Both prediction and baseline use only prior information (`require_causal_projections`, OOF or `max_train_season`).
 2. **Beat naive + trailing-3?** `python -m ml.eval_causal` / `make diagnose-backtest` on `fantasy_ppr` (and volume targets).
-3. **Beat ADP?** `python -m ml.adp_eval --season YYYY --from-actuals` (Spearman ρ of season ranks vs historical Full PPR ADP).
+3. **Draft-rank diagnostics?** `python -m ml.adp_eval --season YYYY` reports causal preseason ranks alongside actuals-oracle and prior-season gaps. It does not claim to “beat ADP.”
 4. **Feature groups?** Phase 4 groups stay off `FEATURE_COLS` until `python -m ml.feature_groups --group …` shows a held-out MAE win.
 5. **Model floor?** Stack layers only where they beat `python -m ml.model_floor`.
 6. **Promote?** `python scripts/reprojection_gate.py` then `make freeze-baseline` with `PRODUCT_MODE=artifact_backed`.
 
 Draft board UI: `/draft` (API `/draft/board`). ADP CSVs live under `data/adp/historical/` (Fantasy Football Calculator; see `PROVENANCE.md`).
+
+For a new draft season, import a licensed FantasyPros CSV or public Sleeper draft aggregate, then materialize a dated projection run:
+
+```bash
+python -m scraper.adapters.fantasypros_adp_importer --season 2026 --path data/adp/fantasypros/ppr_2026.csv
+python scripts/materialize_preseason_draft_projections.py --season 2026 --as-of 2026-08-01
+python scripts/regenerate_adp_diagnostics.py --seasons 2022 2023 2024 2025 2026
+```
+
+The import records every unresolved player in `adp_player_matches`; it never falls back to matching names at serving time.
 
 Gridiron Oracle ingests multi-source NFL data, tracks latent player ability with a Kalman filter, ensembles four base learners under a Bayesian uncertainty layer, validates with walk-forward backtesting, and feeds sized signals into a lock-free C++ engine.
 

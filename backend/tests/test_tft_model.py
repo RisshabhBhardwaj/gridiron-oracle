@@ -99,6 +99,7 @@ def _make_synthetic_nfl_df(
                 row["weight"]      = float(rng.normal(215.0, 25.0))
                 row["draft_round"] = float(rng.integers(1, 8))
                 row["snap_share"]  = float(rng.uniform(0.3, 0.9))
+                row["prior_snap_share"] = row["snap_share"]
 
             rows.append(row)
 
@@ -143,11 +144,11 @@ class TestCovariateGroupDefinitions:
         ]
 
     def test_time_varying_known_reals_count(self):
-        assert len(TFTDataset.TIME_VARYING_KNOWN_REALS) == 4
+        assert len(TFTDataset.TIME_VARYING_KNOWN_REALS) == 2
 
     def test_time_varying_known_reals_names(self):
         assert TFTDataset.TIME_VARYING_KNOWN_REALS == [
-            "week", "rest_days", "temp_bucket", "wind_bucket",
+            "week", "rest_days",
         ]
 
     def test_time_varying_unknown_reals_count(self):
@@ -168,7 +169,7 @@ class TestCovariateGroupDefinitions:
             "static_categoricals":             1,
             "static_reals":                    3,
             "time_varying_known_categoricals": 3,
-            "time_varying_known_reals":        4,
+            "time_varying_known_reals":        2,
             "time_varying_unknown_reals":      14,
         }
 
@@ -179,8 +180,8 @@ class TestCovariateGroupDefinitions:
     def test_total_covariate_count(self):
         counts = TFTDataset.covariate_counts()
         total = sum(counts.values())
-        # 1 + 3 + 3 + 4 + 14 = 25 covariate columns (+ target)
-        assert total == 25
+        # 1 + 3 + 3 + 2 + 14 = 23 covariate columns (+ target)
+        assert total == 23
 
     def test_group_id_is_player_id(self):
         assert TFTDataset.GROUP_ID == "player_id"
@@ -307,6 +308,7 @@ class TestPrepareDataFrame:
 
     def test_missing_height_weight_draft_filled_with_zero(self, ds):
         df = _make_synthetic_nfl_df(include_optional_cols=False)
+        df["prior_snap_share"] = 0.0
         prepared = ds.prepare_dataframe(df, target="receiving_yards")
         for col in ("height", "weight", "draft_round"):
             assert col in prepared.columns
@@ -314,11 +316,10 @@ class TestPrepareDataFrame:
                 f"Expected '{col}' to be filled with 0.0 when absent"
             )
 
-    def test_missing_snap_share_filled_with_zero(self, ds):
+    def test_missing_snap_share_requires_lagged_source(self, ds):
         df = _make_synthetic_nfl_df(include_optional_cols=False)
-        prepared = ds.prepare_dataframe(df, target="receiving_yards")
-        assert "snap_share" in prepared.columns
-        assert (prepared["snap_share"] == 0.0).all()
+        with pytest.raises(AssertionError, match="prior_snap_share"):
+            ds.prepare_dataframe(df, target="receiving_yards")
 
     # ── Categorical types ──────────────────────────────────────────────────────
 
@@ -429,8 +430,8 @@ class TestDatasetInstantiation:
         assert len(dataset.time_varying_known_categoricals) == 3
 
     def test_time_varying_known_reals_count_in_dataset(self, dataset):
-        """Known future reals: week, rest_days, temp_bucket, wind_bucket → 4 columns."""
-        assert len(dataset.time_varying_known_reals) == 4
+        """Known future reals: week and rest_days → 2 columns."""
+        assert len(dataset.time_varying_known_reals) == 2
 
     def test_time_varying_unknown_reals_count_in_dataset(self, dataset):
         """
@@ -790,6 +791,7 @@ def _make_tiny_train_df(
                     "weight":                   200.0,
                     "draft_round":              2.0,
                     "snap_share":               0.7,
+                    "prior_snap_share":         0.7,
                 })
     return pd.DataFrame(rows)
 

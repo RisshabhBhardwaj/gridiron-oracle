@@ -20,7 +20,14 @@ target_metadata = None  # DDL is managed explicitly in revisions.
 
 
 def get_url() -> str:
-    return normalize_dsn(os.environ.get("DATABASE_URL", DEFAULT_HOST_DATABASE_URL))
+    # ``pipeline.schema.upgrade_head(--db-url …)`` sets the Alembic config
+    # option directly.  Respect it when DATABASE_URL is not supplied; the old
+    # implementation discarded it and always migrated the localhost default.
+    return normalize_dsn(
+        os.environ.get("DATABASE_URL")
+        or config.get_main_option("sqlalchemy.url")
+        or DEFAULT_HOST_DATABASE_URL
+    )
 
 
 def run_migrations_offline() -> None:

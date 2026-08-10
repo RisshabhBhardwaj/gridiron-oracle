@@ -17,24 +17,10 @@ from pathlib import Path
 import pandas as pd
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+from pipeline.adp_resolution import resolve_and_audit
 from pipeline.schema import normalize_dsn
 
 logger = logging.getLogger(__name__)
-
-CREATE_FANTASY_ADP = """
-CREATE TABLE IF NOT EXISTS fantasy_adp (
-    season INTEGER NOT NULL,
-    source TEXT NOT NULL,
-    scoring TEXT NOT NULL,
-    player_name TEXT NOT NULL,
-    position TEXT,
-    team TEXT,
-    adp FLOAT NOT NULL,
-    player_id TEXT,
-    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, source, scoring, player_name)
-)
-"""
 
 # Common FantasyPros export headers → canonical names, in PRIORITY ORDER.
 #
@@ -116,20 +102,23 @@ def import_csv(
     conn = psycopg2.connect(normalize_dsn(db_url))
     try:
         with conn.cursor() as cur:
-            cur.execute(CREATE_FANTASY_ADP)
-            rows = [
-                (
-                    season,
-                    source,
-                    scoring,
-                    str(r.player_name),
-                    getattr(r, "position", None),
-                    getattr(r, "team", None),
-                    float(r.adp),
-                    None,
-                )
+            raw_rows = [
+                {"player_name": str(r.player_name), "position": getattr(r, "position", None),
+                 "team": getattr(r, "team", None), "adp": float(r.adp)}
                 for r in df.itertuples(index=False)
                 if pd.notna(r.adp)
+            ]
+            resolved = resolve_and_audit(conn, season=season, source=source, scoring=scoring, rows=raw_rows)
+            unmatched = [row for row in resolved if not row["player_id"]]
+            if unmatched:
+                logger.warning(
+                    "%d FantasyPros ADP rows were not imported; inspect adp_player_matches for audited candidates",
+                    len(unmatched),
+                )
+            rows = [
+                (season, source, scoring, row["player_name"], row.get("position"), row.get("team"),
+                 row["adp"], row["player_id"])
+                for row in resolved if row["player_id"]
             ]
             execute_values(
                 cur,
@@ -137,7 +126,8 @@ def import_csv(
                 INSERT INTO fantasy_adp
                     (season, source, scoring, player_name, position, team, adp, player_id)
                 VALUES %s
-                ON CONFLICT (season, source, scoring, player_name) DO UPDATE SET
+                ON CONFLICT (season, source, scoring, player_id) DO UPDATE SET
+                    player_name = EXCLUDED.player_name,
                     position = EXCLUDED.position,
                     team = EXCLUDED.team,
                     adp = EXCLUDED.adp,

@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from ml.baselines import attach_baselines, prev_season_mean, trailing_n_mean
-from ml.eval_cohort import normalize_offense_pct, passes_snap_filter
+from ml.eval_cohort import CohortSpec, filter_cohort_frame, normalize_offense_pct
 from ml.eval_metrics import poisson_deviance, primary_score
 from ml.stat_resolution import (
     VALID_POSITION_STATS,
@@ -76,13 +76,15 @@ def test_attach_baselines_columns() -> None:
     assert out.iloc[0]["rolling_baseline"] == pytest.approx(10.0)
 
 
-def test_snap_unit_normalization() -> None:
+def test_pregame_cohort_does_not_use_target_snap() -> None:
     assert normalize_offense_pct(85.0) == pytest.approx(0.85)
     assert normalize_offense_pct(0.85) == pytest.approx(0.85)
-    assert passes_snap_filter(85.0) is True
-    assert passes_snap_filter(20.0) is False  # 0.20 after /100
-    assert passes_snap_filter(0.20) is False
-    assert passes_snap_filter(None) is True
+    frame = pd.DataFrame({
+        "player_id": ["p", "p", "p"], "season": [2024] * 3,
+        "week": [1, 2, 3], "offense_pct": [0.99, 0.01, 0.99],
+    })
+    cohort = filter_cohort_frame(frame, spec=CohortSpec(min_prior_games=1))
+    assert cohort["week"].tolist() == [2, 3]
 
 
 def test_count_metric_uses_poisson_deviance() -> None:

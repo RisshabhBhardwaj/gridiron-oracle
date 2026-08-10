@@ -34,6 +34,11 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
+from ml.feature_contract import (
+    assert_model_frame_contract,
+    build_feature_registry,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,12 +127,10 @@ suppress_training_warnings()
 
 # ── Shared Definitions ────────────────────────────────────────────────────────
 
-# Minimum snap participation fraction for training data quality.
-# Players below this threshold are bench/mop-up duty and produce high-noise
-# observations that contaminate Kalman estimates and training signal.
-# 0.34 = ~17 snaps/game out of ~50 — filters out clear backups while keeping
-# role players (WR3, RB2, TE2) who average 40-55% snaps.
-MIN_SNAP_PCT: float = 0.34
+# Pregame eligibility: at least one completed player game in the current
+# season.  This deliberately does not condition on participation in the game
+# being predicted; `seas_games_played` is assembled before target kickoff.
+MIN_PRIOR_GAMES: int = 1
 
 FEATURE_COLS: list[str] = [
     # Bucket 1 — Kalman Form
@@ -151,22 +154,17 @@ FEATURE_COLS: list[str] = [
     "opp_avg_receiving_yards_allowed", "opp_avg_targets_allowed",
     "opp_avg_tds_allowed", "opp_avg_fantasy_ppr_allowed",
     "opp_avg_rushing_yards_allowed",
-    # Bucket 4 — Weather & Venue
-    "temp_f", "wind_mph", "is_dome", "surface_turf", "temp_bucket", "wind_bucket",
+    # Bucket 4 — immutable venue facts only. Historical weather needs a
+    # timestamped forecast source and is disabled until recaptured.
+    "is_dome", "surface_turf",
     # Bucket 5 — Team Context
     "game_total_line", "spread_line", "is_home",
     # Bucket 6 — Rest
     "days_rest", "is_short_week", "is_bye_prior",
     # Bucket 7 — Rule Coefficients
     "rule_coeff",
-    # Bucket 8 — Injury & Participation
-    # injury_status_encoded:  ESPN practice participation: 0=DNP/Out, 1=Doubtful,
-    #                         2=Questionable, 3=Limited, 4=Full. Pre-game signal.
-    # games_missed_streak:    consecutive games player has been absent (injury/IR).
-    #                         Predicts snap-limit risk on return from injury.
-    "injury_status_encoded",
-    "games_missed_streak",
-    "snap_pct_off",
+    # Bucket 8 — injury reports require an as-of publication timestamp.
+    "games_missed_streak", "prior_snap_share",
     # Bucket 9 — Defensive Tendency (NULL until Phase 4 play-by-play data wired)
     # XGB/LGB treat NaN as missing (skipped splits); TFT fills with median.
     # When populated: season-to-date opponent coverage shell tendencies per game-week.
@@ -187,71 +185,23 @@ FEATURE_COLS: list[str] = [
     "elo_matchup_diff", "elo_implied_win_prob",
     # TFT Static Covariates — physical profile (Item 0 fix)
     "height", "weight", "draft_round",
-    # Bucket 11 — PBP-Derived Features (NULL until pipeline/pbp_pipeline.py runs)
-    # Populated by pbp_pipeline.py after ETL; XGB/LGB treat NULL as missing splits.
-    # TFT median-fills. These become active after Phase 4 PBP ingestion.
-    #
-    # EPA (Expected Points Added) per play — most important single value in NFL analytics.
-    # Positive EPA = play gained more expected points than average.
-    "epa_per_play",          # player's avg EPA per snap (off)
-    "epa_per_target",        # EPA per target (WR/TE quality signal)
-    "epa_per_rush",          # EPA per carry (RB efficiency)
-    "qb_epa_per_dropback",   # QB EPA per dropback (QB efficiency, strongest QB predictor)
-    # Air yards & YAC (yards after catch)
-    "adot",                  # avg depth of target in yards (route profile)
-    "yac_per_reception",     # avg yards after catch (separation quality)
-    "xyac_per_reception",    # expected YAC from PBP model (scheme signal)
-    # Volume & usage from PBP
-    "target_share_pbp",      # targets / team_pass_attempts (game-level; more precise than seas_avg)
-    "air_yards_share_pbp",   # player air yards / team total air yards
-    "red_zone_targets",      # targets inside opp 20-yard-line
-    "end_zone_targets",      # targets inside opp 10-yard-line
-    "red_zone_target_share", # player rz targets / team rz targets
-    # Drops (zero-inflated; available from PBP incomplete_pass + receiver_player_id)
-    "drop_rate",             # drops / targets (0.0 = perfect hands; avg ~0.04)
-    # Offensive line / protection quality (from PBP qb_hit + sack columns)
-    "ol_pressure_rate",      # team's qb_hit rate (pressure per dropback) — OL quality proxy
-    "ol_sack_rate",          # team's sack rate per dropback
-    # Defensive pressure faced (opponent's tendencies against this team)
-    "opp_pressure_rate_pbp", # opp qb_hits_allowed per dropback (real PBP, not imputed)
-    "opp_sack_rate_pbp",     # opp sacks per dropback
-    # Pass direction distribution (WR alignment leverage)
-    "pass_left_rate",        # % of targets to left side of field
-    "pass_middle_rate",      # % of targets to middle
-    "pass_right_rate",       # % of targets to right side
-    # GNN matchup embeddings (Bucket 11 extension: Phase 4 PBP + gnn_matchup.py)
-    # gnn_def_pressure_score: per-offensive-player pressure score from GATNet (3-layer GAT)
-    # This is the primary GNN output used as a feature in tree models.
-    # Populated after pipeline/pbp_pipeline.py runs + gnn_matchup.py is trained.
-    # Zero-filled during pre-Phase-4 runs; XGB/LGB skip NaN splits gracefully.
     # Velocity / trend features (computed in feature_engineer.build_feature_row)
     # target_share_trend: 3-game delta in kalman target share (+ve = trending up in role)
     "target_share_trend",
-    # Weather × position interaction terms (wind/rain affects aerial game far more than running)
-    "wind_x_qb",      # wind_bucket × is_QB (0 when not QB)
-    "wind_x_wr",      # wind_bucket × is_WR_or_TE
-    "precip_x_pass",  # precipitation_bucket × is_passing_position
     # Positional depth signal — 1=WR1/RB1/TE1, 2=WR2, etc. (team rank by receiving volume)
     "team_pos_rank",
-    # Depth chart + Next Gen Stats (nflverse)
-    "depth_chart_rank",      # official depth chart (1=WR1, 2=WR2; from depth_charts)
-    "avg_separation",        # yards from defender at target (Next Gen)
-    "avg_cushion",          # pre-snap distance from defender (Next Gen)
-    # Player profile embeddings — first 8 PCA dims from PlayerProfileEmbedder
-    # (10 input features → 10 real PCA components → use top 8 for tree models)
-    "player_emb_0", "player_emb_1", "player_emb_2", "player_emb_3",
-    "player_emb_4", "player_emb_5", "player_emb_6", "player_emb_7",
 ]
+
+# Concrete, executable registry; a new default feature cannot bypass an as-of
+# declaration simply by being appended to FEATURE_COLS.
+FEATURE_REGISTRY = build_feature_registry(FEATURE_COLS)
 
 # Phase 4 A/B feature groups — NOT in FEATURE_COLS until held-out delta is positive.
 # Enable via ml.feature_groups.resolve_feature_cols(groups=[...]).
 FEATURE_GROUP_OPP_ADJ_USAGE: list[str] = [
     "carry_share",
-    "snap_share_trailing",
-    "snap_share_trend",
     "ts_vs_league",
     "rz_ts_vs_league",
-    "snap_vs_pos_avg",
     "carry_share_vs_league",
     "opp_adj_target_share",
 ]
@@ -373,21 +323,13 @@ def load_feature_matrix(
         return pd.DataFrame(columns=all_cols)
 
     df = pd.DataFrame([dict(r) for r in rows])
-    
-    # Prune zero-inflation by removing bench players below MIN_SNAP_PCT threshold.
-    # snap_pct_off is stored as [0.0, 1.0] (fraction); threshold = MIN_SNAP_PCT (0.34).
-    # Rows with NULL snap_pct_off (pre-ETL or unsupported seasons) are kept — we cannot
-    # determine participation for those and excluding them would drop entire seasons.
     original_len = len(df)
-    snap = df["snap_pct_off"]
-    df = df[
-        snap.isna() | (snap >= MIN_SNAP_PCT)
-    ].copy()
+    df = df[df["seas_games_played"].fillna(0) >= MIN_PRIOR_GAMES].copy()
     logger.info(
-        "  Pruned zero-inflation: removed %d players (<%.0f%% snaps). Remaining: %d",
-        original_len - len(df), MIN_SNAP_PCT * 100, len(df),
+        "  Applied pregame eligibility: removed %d rows (<%d completed prior games). Remaining: %d",
+        original_len - len(df), MIN_PRIOR_GAMES, len(df),
     )
-    
+    assert_model_frame_contract(df, FEATURE_COLS, consumer="load_feature_matrix")
     return df
 
 
@@ -454,11 +396,8 @@ def load_feature_matrix_prior(
         conn.close()
 
     df = pd.DataFrame([dict(r) for r in rows])
-    
-    # Keep constraint aligned with training data constraint (same as load_feature_matrix)
-    snap = df["snap_pct_off"]
-    df = df[snap.isna() | (snap >= 0.34)].copy()
-
+    df = df[df["seas_games_played"].fillna(0) >= MIN_PRIOR_GAMES].copy()
+    assert_model_frame_contract(df, FEATURE_COLS, consumer="load_feature_matrix_prior")
     return df
 
 

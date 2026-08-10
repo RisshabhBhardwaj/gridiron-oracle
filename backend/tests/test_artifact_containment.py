@@ -257,15 +257,11 @@ class TestArtifactPinning:
        the pre-fix draft selector returned ``stack_fantasy_ppr_TE_20260807.csv``.
     """
 
-    def test_draft_selects_pinned_not_newest(self, pinned_repo):
-        _, pinned, stale = pinned_repo
-        selected = _draft_stack_selector()("TE")
-        assert selected is not None, "pinned TE stack should resolve"
-        assert Path(selected).name == pinned.name, (
-            f"draft selected {Path(selected).name}; the manifest pins "
-            f"{pinned.name}. {stale.name} has the newer mtime, which must not "
-            "decide which artifact is served."
-        )
+    def test_draft_refuses_stack_artifacts_entirely(self, pinned_repo):
+        """C-03 supersedes pinning: a target-season OOF is not a draft input."""
+        from backend.app.api import draft
+        assert not hasattr(draft, "_pinned_stack_oof")
+        assert not hasattr(draft, "_latest_stack_oof")
 
     def test_materialize_selects_pinned_not_newest(self, pinned_repo):
         _, pinned, stale = pinned_repo
@@ -276,34 +272,15 @@ class TestArtifactPinning:
             f"{pinned.name} ({stale.name} is merely newer)."
         )
 
-    def test_adp_eval_reads_pinned_artifact(self, pinned_repo):
-        """
-        ADP evidence must come from the pinned artifact.
+    def test_adp_eval_refuses_target_season_stack_oof(self, pinned_repo):
+        from ml.adp_eval import evaluate
+        with pytest.raises(ValueError, match="forbidden"):
+            evaluate(2024, from_stack_oof=True)
 
-        Asserted on the *values*: the pinned stack's y_pred is 20.0 and the
-        stale one's is 99.0, so reading the wrong file is visible in the result
-        rather than only in a path.
-        """
-        from ml.adp_eval import load_stack_season_ppr
-
-        frame = load_stack_season_ppr(2024, manifest=load_manifest())
-        assert not frame.empty
-        # Six distinct players, one 2024 row each: every season sum is the
-        # pinned file's y_pred. The stale file's 99.0 must appear nowhere.
-        assert frame["fantasy_ppr"].tolist() == [pytest.approx(20.0)] * len(frame), (
-            f"adp_eval read values from a file other than the pinned stack: "
-            f"{frame['fantasy_ppr'].tolist()}"
-        )
-        assert 99.0 not in frame["fantasy_ppr"].values
-
-    def test_tied_mtimes_still_resolve_to_the_pinned_artifact(self, pinned_repo):
-        """Failure mode (b): equal mtimes must not make selection arbitrary."""
-        _, pinned, stale = pinned_repo
-        tied = pinned.stat().st_mtime_ns
-        for path in (pinned, stale):
-            os.utime(path, ns=(tied, tied))
-        assert pinned.stat().st_mtime == stale.stat().st_mtime
-        assert Path(_draft_stack_selector()("TE")).name == pinned.name
+    def test_draft_source_contains_no_oof_reader(self, pinned_repo):
+        code = (REPO_ROOT / "backend/app/api/draft.py").read_text().lower()
+        assert "read_csv" not in code
+        assert "stack_oof" not in code
 
     @pytest.mark.parametrize(
         "relpath",

@@ -132,6 +132,36 @@ def assert_player_profiles_asof(conn: Any, season: int) -> None:
         )
 
 
+def record_missing_player_profiles_as_null(conn: Any, season: int) -> int:
+    """Record an explicitly unavailable seasonal profile without reading ``players``.
+
+    A handful of historical player-game rows have no retained roster snapshot.
+    Their safe feature value is NULL, not a present-day height/weight fallback.
+    The placeholder is provenance for missingness only and permits the normal
+    as-of assertion to keep rejecting any accidental current-player join.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO player_season_profiles
+                (player_id, effective_season, height_inches, weight_lbs, source, source_captured_at)
+            SELECT DISTINCT gl.player_id, gl.season, NULL::FLOAT, NULL::FLOAT,
+                   'no_retained_season_roster_snapshot', NOW()
+            FROM game_logs gl
+            LEFT JOIN player_season_profiles psp
+              ON psp.player_id = gl.player_id AND psp.effective_season = gl.season
+            WHERE gl.season = %s AND psp.player_id IS NULL
+            ON CONFLICT (player_id, effective_season) DO NOTHING
+            """,
+            (season,),
+        )
+        inserted = cur.rowcount or 0
+    conn.commit()
+    if inserted:
+        logger.warning("Recorded %d NULL-only seasonal profile placeholders for %s", inserted, season)
+    return inserted
+
+
 def assert_depth_charts_pregame(conn: Any, season: int) -> None:
     """Reject depth-chart values whose source publication is missing or late."""
     with conn.cursor() as cur:

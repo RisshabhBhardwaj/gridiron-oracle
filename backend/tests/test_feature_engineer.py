@@ -349,8 +349,8 @@ class TestBuildFeatureRow:
         game = _game(roof="dome", temp=None, wind=None)
         fr = build_feature_row(_stat_row(), [], game, [])
         assert fr.is_dome    == 1
-        assert fr.temp_f     == pytest.approx(68.0)
-        assert fr.wind_mph   == pytest.approx(0.0)
+        assert fr.temp_f is None  # observed weather is disabled pending forecasts
+        assert fr.wind_mph is None
 
     def test_rest_features_in_row(self) -> None:
         game = _game(home_rest=4, away_rest=7, home_team="MIN")

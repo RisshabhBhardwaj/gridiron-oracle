@@ -506,7 +506,6 @@ def compute_rule_features(season: int) -> dict[str, Optional[float]]:
 def compute_scheme_interactions(
     kalman_form: dict,
     matchup_stats: dict,
-    snap_pct_off: Optional[float],
 ) -> dict[str, Optional[float]]:
     """
     Bucket 9 — scheme interaction features.
@@ -532,11 +531,6 @@ def compute_scheme_interactions(
         High when a high-volume receiver faces man coverage.
         Rewards separators who win 1-on-1.
 
-    blitz_exposure:
-        snap_pct_off × opp_blitz_rate
-        High when a high-snap receiver faces a heavy blitz team.
-        Blitz → quick routes → elevated short-target volume for slot receivers.
-
     separation_demand_score:
         kalman_est_target_share × opp_man_pct × (1 − opp_zone_pct)
         Three-way interaction. Non-zero only when all three signal simultaneously:
@@ -546,7 +540,6 @@ def compute_scheme_interactions(
     tgt_share   = kalman_form.get("kalman_est_target_share")
     zone_pct    = matchup_stats.get("opp_zone_pct")
     man_pct     = matchup_stats.get("opp_man_pct")
-    blitz_rate  = matchup_stats.get("opp_blitz_rate")
 
     def _safe_mul(*vals: Optional[float]) -> Optional[float]:
         """Return product of vals; None if any val is None."""
@@ -565,7 +558,6 @@ def compute_scheme_interactions(
 
     deep_matchup = _safe_mul_sub(air_share, zone_pct)
     coverage_matchup = _safe_mul(tgt_share, man_pct)
-    blitz_exp = _safe_mul(snap_pct_off, blitz_rate)
     sep_demand = _safe_mul_sub(
         _safe_mul(tgt_share, man_pct),
         zone_pct,
@@ -574,7 +566,10 @@ def compute_scheme_interactions(
     return {
         "deep_matchup_score":      deep_matchup,
         "coverage_matchup_score":  coverage_matchup,
-        "blitz_exposure":          blitz_exp,
+        # A target-game snap share used to feed this interaction.  Retain the
+        # storage column for rebuild compatibility, but keep it null until a
+        # separately registered causal interaction is designed.
+        "blitz_exposure":          None,
         "separation_demand_score": sep_demand,
     }
 
@@ -593,9 +588,9 @@ _GLOBAL_RUSH_AVG = 24.0
 class SeasonFeatureContext:
     """Precomputed causal aggregates for one season — build once, reuse per row."""
 
-    team_carries_by_game: dict[str, float]
-    team_pass_by_game: dict[str, float]
-    team_rush_by_game: dict[str, float]
+    team_carries_by_game: dict[tuple[str, str], float]
+    team_pass_by_game: dict[tuple[str, str], float]
+    team_rush_by_game: dict[tuple[str, str], float]
     league_ts: dict[int, dict[str, float]]
     league_snap: dict[int, dict[str, float]]
     league_carry: dict[int, dict[str, float]]
@@ -605,12 +600,11 @@ class SeasonFeatureContext:
 
 def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureContext:
     """Scan season rows once; return lookups keyed by week / game / team."""
-    team_carries_by_game: dict[str, float] = defaultdict(float)
-    team_pass_by_game: dict[str, float] = defaultdict(float)
-    team_rush_by_game: dict[str, float] = defaultdict(float)
-    team_targets_by_game: dict[str, float] = defaultdict(float)
-    game_week: dict[str, int] = {}
-    game_team: dict[str, str] = {}
+    team_carries_by_game: dict[tuple[str, str], float] = defaultdict(float)
+    team_pass_by_game: dict[tuple[str, str], float] = defaultdict(float)
+    team_rush_by_game: dict[tuple[str, str], float] = defaultdict(float)
+    team_targets_by_game: dict[tuple[str, str], float] = defaultdict(float)
+    game_week: dict[tuple[str, str], int] = {}
     by_player: dict[str, list[tuple]] = defaultdict(list)
     player_pos: dict[str, str] = {}
 
@@ -621,12 +615,12 @@ def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureCo
         pid = str(r.get("player_id") or "")
         pos = (r.get("position") or "").upper()
         if gid and team:
-            team_carries_by_game[gid] += float(r.get("carries") or 0)
-            team_pass_by_game[gid] += float(r.get("attempts") or r.get("pass_attempts") or 0)
-            team_rush_by_game[gid] += float(r.get("carries") or 0)
-            team_targets_by_game[gid] += float(r.get("targets") or 0)
-            game_week[gid] = week
-            game_team[gid] = team
+            key = (str(gid), str(team))
+            team_carries_by_game[key] += float(r.get("carries") or 0)
+            team_pass_by_game[key] += float(r.get("attempts") or r.get("pass_attempts") or 0)
+            team_rush_by_game[key] += float(r.get("carries") or 0)
+            team_targets_by_game[key] += float(r.get("targets") or 0)
+            game_week[key] = week
         if pid:
             player_pos[pid] = pos
             snap_raw = r.get("offense_pct")
@@ -636,19 +630,18 @@ def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureCo
                 snap = v / 100.0 if v > 1.0 else v
             ts = r.get("target_share")
             by_player[pid].append(
-                (week, float(ts) if ts is not None else None, snap, gid, float(r.get("carries") or 0))
+                (week, float(ts) if ts is not None else None, snap, gid, float(r.get("carries") or 0), team)
             )
 
     team_game_volume: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
     seen_team_game: set[tuple[str, str]] = set()
-    for gid, week in game_week.items():
-        team = game_team.get(gid, "")
+    for (gid, team), week in game_week.items():
         key = (team, gid)
         if key in seen_team_game:
             continue
         seen_team_game.add(key)
         team_game_volume[team].append(
-            (week, team_pass_by_game.get(gid, 0.0), team_rush_by_game.get(gid, 0.0))
+            (week, team_pass_by_game.get((gid, team), 0.0), team_rush_by_game.get((gid, team), 0.0))
         )
     for team in team_game_volume:
         team_game_volume[team].sort(key=lambda x: x[0])
@@ -672,7 +665,7 @@ def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureCo
                 if e[0] >= week:
                     continue
                 gid = e[3]
-                tc = team_carries_by_game.get(gid or "", 0.0)
+                tc = team_carries_by_game.get((str(gid or ""), str(e[5] or "")), 0.0)
                 if tc > 0:
                     cs_vals.append(e[4] / tc)
             if ts_vals:
@@ -690,7 +683,7 @@ def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureCo
         for pos, vals in pos_carry.items():
             if vals:
                 league_carry[week][pos] = sum(vals) / len(vals)
-        tgt_vals = [team_targets_by_game[gid] for gid, w in game_week.items() if w < week]
+        tgt_vals = [team_targets_by_game[key] for key, w in game_week.items() if w < week]
         if tgt_vals:
             league_tgt_allowed[week] = sum(tgt_vals) / len(tgt_vals)
 
@@ -722,17 +715,17 @@ def compute_usage_shares(
     if ctx is not None:
         team_carries_by_game = ctx.team_carries_by_game
     else:
-        team_carries_by_game = defaultdict(float)
+        team_carries_by_game: dict[tuple[str, str], float] = defaultdict(float)
         for r in all_season_rows:
             if r.get("team") == team and (r.get("week") or 0) < week:
                 gid = r.get("game_id")
                 if gid:
-                    team_carries_by_game[gid] += float(r.get("carries") or 0)
+                    team_carries_by_game[(str(gid), str(team))] += float(r.get("carries") or 0)
 
     player_carry_shares: list[float] = []
     for r in prior_rows:
         gid = r.get("game_id")
-        tc = team_carries_by_game.get(gid or "", 0.0)
+        tc = team_carries_by_game.get((str(gid or ""), str(team)), 0.0)
         if tc > 0:
             player_carry_shares.append(float(r.get("carries") or 0) / tc)
     carry_share = (
@@ -879,9 +872,13 @@ def compute_progression_priors(
     prior_rows: list[dict],
     season: int,
 ) -> dict[str, Optional[float]]:
-    years_exp = target_row.get("years_exp")
+    # `players.years_exp` is a mutable present-day snapshot.  Entry year is an
+    # immutable draft/roster fact, so season - entry_year is the only legal
+    # as-of experience estimate for the opt-in progression group.
+    years_exp = None
     try:
-        years_exp_f = float(years_exp) if years_exp is not None else None
+        entry_year = target_row.get("entry_year")
+        years_exp_f = max(float(season - int(entry_year)), 0.0) if entry_year is not None else None
     except (TypeError, ValueError):
         years_exp_f = None
 

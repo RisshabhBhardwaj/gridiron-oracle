@@ -1,114 +1,150 @@
-[
-  {
-    "season": 2022,
-    "mode": "stack_oof",
-    "n_matched": 142,
-    "spearman_rho": 0.45877162008192046,
-    "by_position": {
-      "QB": {
-        "n": 20,
-        "spearman_rho": 0.5353383458646617,
-        "pvalue": 0.014997129643632595
+{
+  "generated_by": "scripts/regenerate_adp_diagnostics.py",
+  "method": "causal_preseason_projection_vs_adp_with_oracle_and_prior_baselines",
+  "results": [
+    {
+      "season": 2022,
+      "source": "historical",
+      "scoring": "ppr",
+      "mode": "preseason_projections",
+      "n_matched": 143,
+      "spearman_rho": 0.6110684229802842,
+      "spearman_pvalue": 5.285798684523112e-16,
+      "by_position": {
+        "QB": {
+          "n": 20,
+          "spearman_rho": 0.7954887218045112,
+          "pvalue": 2.7534156851806372e-05
+        },
+        "RB": {
+          "n": 51,
+          "spearman_rho": 0.7365102231757228,
+          "pvalue": 7.266684213856778e-10
+        },
+        "TE": {
+          "n": 15,
+          "spearman_rho": 0.7928571428571427,
+          "pvalue": 0.0004220771851923509
+        },
+        "WR": {
+          "n": 57,
+          "spearman_rho": 0.7695377004307203,
+          "pvalue": 2.6674368696812747e-12
+        }
       },
-      "RB": {
-        "n": 50,
-        "spearman_rho": 0.5015606242496999,
-        "pvalue": 0.00020680164982927766
+      "actuals_oracle_rho": 0.513654961611928,
+      "prev_season_baseline_rho": 0.6001598893184037,
+      "gap_vs_actuals_oracle": 0.09741346136835616,
+      "gap_vs_prev_season_baseline": 0.010908533661880493,
+      "created_at": "2026-08-10T19:41:08.290823+00:00"
+    },
+    {
+      "season": 2023,
+      "source": "historical",
+      "scoring": "ppr",
+      "mode": "preseason_projections",
+      "n_matched": 175,
+      "spearman_rho": 0.6551908514139416,
+      "spearman_pvalue": 7.827174333210978e-23,
+      "by_position": {
+        "QB": {
+          "n": 24,
+          "spearman_rho": 0.7078260869565216,
+          "pvalue": 0.00010920452261464104
+        },
+        "RB": {
+          "n": 58,
+          "spearman_rho": 0.6511809322015861,
+          "pvalue": 3.1160889214459694e-08
+        },
+        "TE": {
+          "n": 20,
+          "spearman_rho": 0.8318917474349163,
+          "pvalue": 5.4373251912430654e-06
+        },
+        "WR": {
+          "n": 73,
+          "spearman_rho": 0.8001251939956273,
+          "pvalue": 2.0346869055603433e-17
+        }
       },
-      "TE": {
-        "n": 15,
-        "spearman_rho": 0.457142857142857,
-        "pvalue": 0.08667812662416981
+      "actuals_oracle_rho": 0.5547352642583281,
+      "prev_season_baseline_rho": 0.719523242542621,
+      "gap_vs_actuals_oracle": 0.10045558715561353,
+      "gap_vs_prev_season_baseline": -0.06433239112867939,
+      "created_at": "2026-08-10T19:41:08.779597+00:00"
+    },
+    {
+      "season": 2024,
+      "source": "historical",
+      "scoring": "ppr",
+      "mode": "preseason_projections",
+      "n_matched": 176,
+      "spearman_rho": 0.6258337340321403,
+      "spearman_pvalue": 1.5888251004277234e-20,
+      "by_position": {
+        "QB": {
+          "n": 27,
+          "spearman_rho": 0.722663543511327,
+          "pvalue": 2.070501323550215e-05
+        },
+        "RB": {
+          "n": 60,
+          "spearman_rho": 0.8140118872692717,
+          "pvalue": 2.6287210428386604e-15
+        },
+        "TE": {
+          "n": 19,
+          "spearman_rho": 0.7245614035087719,
+          "pvalue": 0.0004501976283496303
+        },
+        "WR": {
+          "n": 70,
+          "spearman_rho": 0.6699226871376887,
+          "pvalue": 2.2664869375485093e-10
+        }
       },
-      "WR": {
-        "n": 57,
-        "spearman_rho": 0.5963280453214438,
-        "pvalue": 9.841523131580821e-07
-      }
+      "actuals_oracle_rho": 0.5112423174601972,
+      "prev_season_baseline_rho": 0.6635366371224997,
+      "gap_vs_actuals_oracle": 0.11459141657194305,
+      "gap_vs_prev_season_baseline": -0.037702903090359396,
+      "created_at": "2026-08-10T19:41:09.375342+00:00"
+    },
+    {
+      "season": 2025,
+      "source": "historical",
+      "scoring": "ppr",
+      "mode": "preseason_projections",
+      "n_matched": 204,
+      "spearman_rho": 0.6341191632871079,
+      "spearman_pvalue": 2.4121688003023457e-24,
+      "by_position": {
+        "QB": {
+          "n": 29,
+          "spearman_rho": 0.7812693078541256,
+          "pvalue": 5.674835658058246e-07
+        },
+        "RB": {
+          "n": 64,
+          "spearman_rho": 0.6703426977729076,
+          "pvalue": 1.3697806139187994e-09
+        },
+        "TE": {
+          "n": 26,
+          "spearman_rho": 0.7053388503403615,
+          "pvalue": 5.714022090779186e-05
+        },
+        "WR": {
+          "n": 85,
+          "spearman_rho": 0.7502626038680975,
+          "pvalue": 1.4007109301328228e-16
+        }
+      },
+      "actuals_oracle_rho": 0.5351878515370779,
+      "prev_season_baseline_rho": 0.6854060569860154,
+      "gap_vs_actuals_oracle": 0.09893131175003,
+      "gap_vs_prev_season_baseline": -0.05128689369890749,
+      "created_at": "2026-08-10T19:41:10.108706+00:00"
     }
-  },
-  {
-    "season": 2023,
-    "mode": "stack_oof",
-    "n_matched": 170,
-    "spearman_rho": 0.4854323400188212,
-    "by_position": {
-      "QB": {
-        "n": 23,
-        "spearman_rho": 0.3873517786561265,
-        "pvalue": 0.06783171233563065
-      },
-      "RB": {
-        "n": 55,
-        "spearman_rho": 0.46378066378066385,
-        "pvalue": 0.00036216018808018943
-      },
-      "TE": {
-        "n": 19,
-        "spearman_rho": 0.20877192982456141,
-        "pvalue": 0.39103300709387917
-      },
-      "WR": {
-        "n": 73,
-        "spearman_rho": 0.672235720801677,
-        "pvalue": 7.409911009613382e-11
-      }
-    }
-  },
-  {
-    "season": 2024,
-    "mode": "stack_oof",
-    "n_matched": 171,
-    "spearman_rho": 0.4379440730489165,
-    "by_position": {
-      "QB": {
-        "n": 26,
-        "spearman_rho": 0.427008547008547,
-        "pvalue": 0.029582300883681335
-      },
-      "RB": {
-        "n": 55,
-        "spearman_rho": 0.6336333628982249,
-        "pvalue": 2.0758512199279255e-07
-      },
-      "TE": {
-        "n": 20,
-        "spearman_rho": 0.5488721804511278,
-        "pvalue": 0.012202217962291389
-      },
-      "WR": {
-        "n": 70,
-        "spearman_rho": 0.5340483606514331,
-        "pvalue": 1.9241482356925863e-06
-      }
-    }
-  },
-  {
-    "season": 2025,
-    "mode": "stack_oof",
-    "n_matched": 196,
-    "spearman_rho": 0.45504303786579425,
-    "by_position": {
-      "QB": {
-        "n": 29,
-        "spearman_rho": 0.055425545438271134,
-        "pvalue": 0.7752105240519576
-      },
-      "RB": {
-        "n": 59,
-        "spearman_rho": 0.6959189936305941,
-        "pvalue": 9.44617499243189e-10
-      },
-      "TE": {
-        "n": 26,
-        "spearman_rho": 0.31429550401645096,
-        "pvalue": 0.11788603014653747
-      },
-      "WR": {
-        "n": 82,
-        "spearman_rho": 0.542756391419336,
-        "pvalue": 1.3814850238799863e-07
-      }
-    }
-  }
-]
+  ]
+}

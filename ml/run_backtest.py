@@ -4,7 +4,7 @@ ml/run_backtest.py
 Manual backtest runner. Prefer OOF-based evaluation (`ml/eval_causal.py`) for
 causal model scores. This module still supports DB replay, but now:
   - baselines are true prev-season / trailing-3 (not Kalman proxies)
-  - cohort membership is explicit (GameLog + snap filter)
+  - cohort membership is explicit and pregame-knowable (prior games)
   - stat names resolve through STAT_COLUMN_MAP with startup asserts
   - projection rows must carry max_train_season < eval_season
 
@@ -102,8 +102,8 @@ def real_data_provider(
     """
     Load actual outcomes + causal baselines from the DB.
 
-    Cohort: GameLog rows for eval_season in `positions` that pass the snap
-    filter. Baselines: prev-season mean and trailing-3; Kalman is attached as
+    Cohort: GameLog rows for eval_season in `positions` with at least one
+    completed prior game. Baselines: prev-season mean and trailing-3; Kalman is attached as
     a third incumbent column when FeatureMatrix has the estimate.
     """
     from backend.app.models.production import FeatureMatrix

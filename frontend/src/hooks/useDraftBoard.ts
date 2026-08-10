@@ -20,12 +20,14 @@ export interface DraftBoardResponse {
   count: number
   players: DraftBoardPlayer[]
   spearman_rho: number | null
+  projection_source: string
+  as_of: string
   note: string
 }
 
 interface Params {
   season: number
-  source?: string
+  source?: string | null
   scoring?: string
   position?: string | null
 }
@@ -33,7 +35,7 @@ interface Params {
 async function fetchDraftBoard(params: Params): Promise<DraftBoardResponse> {
   const qs = new URLSearchParams()
   qs.set('season', String(params.season))
-  qs.set('source', params.source ?? 'historical')
+  if (params.source) qs.set('source', params.source)
   qs.set('scoring', params.scoring ?? 'ppr')
   if (params.position) qs.set('position', params.position)
   const res = await fetch(`/api/draft/board?${qs.toString()}`)

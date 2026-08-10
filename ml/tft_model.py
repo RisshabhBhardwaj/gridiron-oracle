@@ -119,6 +119,7 @@ import pandas as pd
 # and _parse_seasons are defined once in xgb_model and imported here so TFT
 # produces OOF files in the same schema as XGBoost and LightGBM.
 from ml.utils import TARGET_COL_MAP, FoldResult
+from ml.feature_contract import assert_model_input_columns
 
 logging.basicConfig(
     level=logging.INFO,
@@ -207,9 +208,7 @@ class TFTDataset:
 
     # TIME-VARYING KNOWN: available at prediction time (future context)
     TIME_VARYING_KNOWN_CATEGORICALS: list[str] = ["team_id", "opponent_team_id", "home_away"]
-    TIME_VARYING_KNOWN_REALS:        list[str] = [
-        "week", "rest_days", "temp_bucket", "wind_bucket",
-    ]
+    TIME_VARYING_KNOWN_REALS:        list[str] = ["week", "rest_days"]
 
     # TIME-VARYING UNKNOWN: only available up to current week (historical form).
     # Covers all stat families so TFT can learn from the relevant Kalman
@@ -351,20 +350,19 @@ class TFTDataset:
                 median = df[col].median()
                 df[col] = df[col].fillna(median if pd.notna(median) else 0.0)
 
-        # ── Snap share (Item 0 fix) ───────────────────────────────────────────
-        # feature_matrix stores snap_pct_off (from Bucket 8 snap_counts ETL).
-        # TFT's TIME_VARYING_UNKNOWN_REALS expects "snap_share" — map it here.
-        # Previously defaulted to 0.0 because this mapping was missing.
-        if "snap_share" not in df.columns:
-            if "snap_pct_off" in df.columns:
-                df["snap_share"] = df["snap_pct_off"].fillna(0.0)
-                logger.debug("snap_share ← snap_pct_off (mapped from feature_matrix).")
-            else:
-                logger.info(
-                    "Column 'snap_share' absent — defaulting to 0.0. "
-                    "snap_pct_off will be populated by normalize.py snap_counts ETL."
-                )
-                df["snap_share"] = 0.0
+        # ── Snap share ────────────────────────────────────────────────────────
+        # TFT may use only the registered prior-game snap feature.  A missing
+        # input is a contract failure, not a reason to turn a removed leak into
+        # a constant zero column.
+        if "prior_snap_share" not in df.columns:
+            raise AssertionError("TFT requires approved prior_snap_share; refusing raw/zero snap fallback")
+        df["snap_share"] = df["prior_snap_share"]
+        logger.debug("snap_share ← prior_snap_share (lagged participation).")
+
+        assert_model_input_columns(
+            [*cls.STATIC_REALS, *cls.TIME_VARYING_KNOWN_REALS, *cls.TIME_VARYING_UNKNOWN_REALS],
+            consumer="TFTDataset",
+        )
 
         # ── Opponent team (Item 0 fix) ────────────────────────────────────────
         # feature_matrix has opponent_team column (TEXT).

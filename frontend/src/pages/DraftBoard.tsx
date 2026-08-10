@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useDraftBoard, type DraftBoardPlayer } from '@/hooks/useDraftBoard'
-import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { SkeletonCard } from '@/components/shared/LoadingSpinner'
-import { CURRENT_SEASON, POSITIONS } from '@/lib/constants'
+import { POSITIONS } from '@/lib/constants'
 
 type SortKey = 'adp' | 'model_rank' | 'value_vs_adp' | 'model_fantasy_ppr'
 
@@ -12,15 +11,13 @@ const POS_CLASS: Record<string, string> = {
 }
 
 export function DraftBoard() {
-  const { data: seasonMeta } = useCurrentSeason()
-  const season = seasonMeta?.season ?? CURRENT_SEASON
+  const [season, setSeason] = useState(2026)
   const [position, setPosition] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('adp')
-  const [source, setSource] = useState('historical')
 
   const { data, isLoading, error, refetch, isFetching } = useDraftBoard({
     season,
-    source,
+    source: null,
     position,
   })
 
@@ -46,22 +43,23 @@ export function DraftBoard() {
         <p className="text-[11px] uppercase tracking-[0.18em] text-oracle-muted">Draft</p>
         <h1 className="font-display text-3xl text-oracle-white">Draft Board</h1>
         <p className="max-w-2xl text-sm text-oracle-muted">
-          Full PPR ADP vs model season ranks. Positive value = drafted later than model rank
-          (ADP undervalues). Spearman ρ measures rank agreement with ADP.
+          Preseason Full PPR projections vs the available ADP source. Positive value = drafted later
+          than model rank. The projection run is explicitly dated and never uses target-season results.
         </p>
       </header>
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs text-oracle-muted">
-          Source
+          Draft season
           <select
             className="ml-2 rounded-md border border-oracle-border bg-oracle-card px-2 py-1.5 text-sm text-oracle-white"
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
+            aria-label="Draft season"
+            value={season}
+            onChange={(e) => setSeason(Number(e.target.value))}
           >
-            <option value="historical">historical</option>
-            <option value="sleeper">sleeper</option>
-            <option value="fantasypros">fantasypros</option>
+            {[2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019].map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
           </select>
         </label>
 
@@ -116,8 +114,8 @@ export function DraftBoard() {
         </button>
 
         {data?.spearman_rho != null && (
-          <span className="ml-auto font-mono text-xs text-oracle-green">
-            Spearman ρ = {data.spearman_rho.toFixed(3)} · n={data.count}
+          <span className="ml-auto font-mono text-xs text-oracle-green" aria-label="Draft projection metadata">
+            {data.projection_source} · as of {data.as_of} · ρ={data.spearman_rho.toFixed(3)} · n={data.count}
           </span>
         )}
       </div>

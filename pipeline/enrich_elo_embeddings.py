@@ -221,7 +221,11 @@ def enrich_embeddings(conn) -> None:
     physical identity, which is critical for projecting rookies and low-sample
     players where historical stats are sparse.
     """
-    logger.info("Step 2: Building player physical profile embeddings...")
+    raise RuntimeError(
+        "Player embeddings are disabled by the as-of feature contract: the legacy "
+        "embedder uses CURRENT_DATE/current players snapshots and broadcasts them "
+        "over history. Implement dated causal embeddings before enabling this path."
+    )
 
     try:
         from ml.player_embeddings import EmbeddingStore, EMBED_DIM

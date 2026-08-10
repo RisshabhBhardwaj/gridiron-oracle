@@ -131,10 +131,11 @@ class FeatureRow:
     # target_week in the current season. 0 = played every game so far.
     games_missed_streak: Optional[int] = None
 
-    # Snap participation — populated by snap_counts normalize pass.
-    # snap_pct_off: offense snap participation rate [0.0, 1.0].
-    # None until snap_counts are processed for this player+game.
+    # Raw target-game participation is retained only as a cleared legacy column.
+    # It is never a model feature and is always written NULL during the rebuild.
     snap_pct_off: Optional[float] = None
+    # The sole approved participation feature: prior completed game snap share.
+    prior_snap_share: Optional[float] = None
 
     # Bucket 9 — Defensive Tendency (from nflreadpy pbp; stubbed 0.0 until Phase 4 data wired)
     # Opponent defensive formation/coverage tendencies accumulated to week-1.

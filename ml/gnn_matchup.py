@@ -76,6 +76,8 @@ from typing import Optional, Any
 import numpy as np
 import pandas as pd
 
+from ml.feature_contract import assert_model_input_columns
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,7 +90,7 @@ DEFENSIVE_POSITIONS = ["DT", "DE", "LB", "CB", "S", "FS", "SS", "ILB", "OLB"]
 OFF_NODE_FEATURES = [
     "kalman_est_receiving_yards",   # form estimate
     "kalman_est_targets",           # target volume
-    "snap_pct_off",                 # usage
+    "prior_snap_share",             # completed prior-game usage
     "height",                       # physical profile
     "weight",
     "draft_round",
@@ -185,6 +187,7 @@ class MatchupGraph:
         Returns:
             MatchupGraph
         """
+        assert_model_input_columns(OFF_NODE_FEATURES, consumer="GNN matchup graph")
         off_ids = off_players["player_id"].tolist()
         def_ids = def_players["player_id"].tolist()
 

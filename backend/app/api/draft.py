@@ -1,30 +1,20 @@
-"""
-backend/app/api/draft.py
-
-Draft board endpoints: ADP + optional season fantasy_ppr projections joined
-for rank comparison.
-"""
+"""Draft board endpoints backed exclusively by causal preseason projections."""
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from datetime import date
 from typing import Any, Optional
 
-import pandas as pd
 import psycopg2
 import psycopg2.extras
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.core.config import settings
-from ml.artifact_manifest import ManifestEntryMissing, get_manifest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["draft"])
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_OOF_DIR = _REPO_ROOT / "ml" / "oof"
 
 
 class DraftBoardPlayer(BaseModel):
@@ -33,259 +23,202 @@ class DraftBoardPlayer(BaseModel):
     team: Optional[str] = None
     adp: float
     player_id: Optional[str] = None
-    source: str
+    source: str  # ADP source
     model_rank: Optional[int] = None
     model_fantasy_ppr: Optional[float] = None
     adp_rank: Optional[int] = None
-    value_vs_adp: Optional[float] = None  # adp_rank - model_rank (>0 = undervalued by ADP)
+    value_vs_adp: Optional[float] = None
 
 
 class DraftBoardResponse(BaseModel):
     season: int
-    source: str
+    source: str  # ADP source
+    projection_source: str
+    as_of: date
     scoring: str
     count: int
     players: list[DraftBoardPlayer]
     spearman_rho: Optional[float] = None
-    model_source: Optional[str] = None
+    model_source: Optional[str] = None  # compatibility alias for older clients
     note: str = Field(
         default=(
-            "ADP from fantasy_adp; model ranks prefer stack OOF season sums, "
-            "then DB projections — never season actuals for value-vs-ADP."
+            "Ranks use a pre-draft fixed-universe projection: historical per-game PPR "
+            "multiplied by a historical games-played prior. Target-season OOF and actuals are refused."
         )
     )
 
 
-def _normalize_name(name: str) -> str:
-    s = (name or "").lower().strip()
-    for ch in (".", "'", "-", " jr", " sr", " iii", " ii", " iv"):
-        s = s.replace(ch, "")
-    return " ".join(s.split())
-
-
-def _fetch_adp(conn, season: int, source: str, scoring: str, position: Optional[str]) -> list[dict]:
+def _fetch_adp(conn: Any, season: int, source: Optional[str], scoring: str, position: Optional[str]) -> list[dict]:
     sql = """
         SELECT player_name, position, team, adp, player_id, source
         FROM fantasy_adp
-        WHERE season = %s AND source = %s AND scoring = %s
+        WHERE season = %s AND scoring = %s AND player_id IS NOT NULL
     """
-    params: list[Any] = [season, source, scoring]
+    params: list[Any] = [season, scoring]
+    if source:
+        sql += " AND source = %s"
+        params.append(source)
     if position:
         sql += " AND UPPER(position) = %s"
         params.append(position.upper())
-    sql += " ORDER BY adp ASC"
+    else:
+        # The preseason projection contract has a fixed QB/RB/WR/TE universe.
+        # Do not show K/DEF rows with a misleading blank model rank.
+        sql += " AND UPPER(position) IN ('QB', 'RB', 'WR', 'TE')"
+    sql += " ORDER BY source ASC, adp ASC, player_id ASC"
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(sql, params)
-        return [dict(r) for r in cur.fetchall()]
+        return [dict(row) for row in cur.fetchall()]
 
 
-def _pinned_stack_oof(position: str) -> Optional[Path]:
-    """
-    The release-manifest-pinned fantasy_ppr stack for *position*, SHA-verified.
-
-    Deliberately not a glob over ``ml/oof/``: selecting by mtime served the
-    poisoned four-learner ``_20260807`` stack whenever it was touched, or
-    whenever the filesystem's timestamp granularity tied it against the clean
-    one. Returns None only when the cell is genuinely unpinned; an integrity
-    failure raises, because serving a mismatched artifact is worse than 404.
-    """
-    try:
-        return get_manifest().resolve_stack("fantasy_ppr", position)
-    except ManifestEntryMissing:
-        logger.warning("No manifest-pinned fantasy_ppr stack for position=%s", position)
-        return None
-
-
-def _fetch_stack_season_ppr(conn, season: int) -> tuple[dict[str, dict], Optional[str]]:
-    """
-    Season fantasy_ppr from Phase-5 stack OOF (sum of weekly y_pred).
-    Returns (name→row map, artifact_label) or ({}, None) if missing.
-    """
-    frames: list[pd.DataFrame] = []
-    used: list[str] = []
-    for pos in ("QB", "RB", "WR", "TE"):
-        path = _pinned_stack_oof(pos)
-        if path is None:
-            continue
-        df = pd.read_csv(path)
-        if "season" not in df.columns or "y_pred" not in df.columns:
-            continue
-        sub = df[df["season"].astype(int) == int(season)].copy()
-        if sub.empty:
-            continue
-        sub["position"] = pos
-        frames.append(sub)
-        used.append(path.name)
-    if not frames:
-        return {}, None
-
-    stack = pd.concat(frames, ignore_index=True)
-    season_sum = (
-        stack.groupby("player_id", as_index=False)
-        .agg(fantasy_ppr=("y_pred", "sum"), position=("position", "first"))
-    )
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("SELECT id, full_name, team FROM players")
-        players = {r["id"]: r for r in cur.fetchall()}
-
+def _unique_projection_map(rows: list[dict], *, source: str) -> dict[str, dict]:
     out: dict[str, dict] = {}
-    for row in season_sum.to_dict(orient="records"):
-        pid = row["player_id"]
-        p = players.get(pid) or {}
-        name = p.get("full_name") or str(pid)
-        out[_normalize_name(name)] = {
-            "player_id": pid,
-            "player_name": name,
-            "position": row.get("position") or p.get("position"),
-            "team": p.get("team"),
-            "fantasy_ppr": float(row["fantasy_ppr"]),
-        }
-    label = "stack_oof:" + ",".join(used)
-    return out, label
+    for row in rows:
+        player_id = str(row["player_id"])
+        if player_id in out:
+            raise ValueError(f"{source} returned duplicate preseason projections for player_id={player_id}")
+        if row.get("fantasy_ppr") is None:
+            continue
+        out[player_id] = row
+    return out
 
 
-def _fetch_db_projections_ppr(conn, season: int) -> dict[str, dict]:
-    """Map normalized name → projection row from DB (no actuals fallback)."""
+def _fetch_preseason_projection_ppr(
+    conn: Any, season: int, as_of: Optional[date] = None
+) -> tuple[dict[str, dict], Optional[str], Optional[date]]:
+    """Read an explicitly as-of, materialized preseason projection run only."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'projections'
-            """
+            WITH latest AS (
+                SELECT MAX(as_of) AS as_of
+                FROM draft_preseason_projections
+                WHERE season = %s AND as_of <= COALESCE(%s, CURRENT_DATE)
+            )
+            SELECT player_id, player_name, position, team, projection AS fantasy_ppr,
+                   source AS projection_source, as_of
+            FROM draft_preseason_projections dp
+            JOIN latest USING (as_of)
+            WHERE dp.season = %s
+            """,
+            (season, as_of, season),
         )
-        cols = {r["column_name"] for r in cur.fetchall()}
-        mean_col = "mean" if "mean" in cols else ("projected_mean" if "projected_mean" in cols else None)
-        if not (mean_col and "stat" in cols):
-            return {}
+        rows = [dict(row) for row in cur.fetchall()]
+    if not rows:
+        return {}, None, None
+    metadata = rows[0]
+    return _unique_projection_map(rows, source="draft_preseason_projections"), metadata["projection_source"], metadata["as_of"]
+
+
+def _fetch_db_projections_ppr(
+    conn: Any, season: int
+) -> tuple[dict[str, dict], Optional[str], Optional[date]]:
+    """Compatibility fallback for materialized *week-0* records only.
+
+    ``projection`` is the schema's point estimate.  Summing it makes this
+    source use the same season-total scale as the dedicated preseason table.
+    Regular-season weekly rows are deliberately excluded: they are not draft
+    inputs, regardless of whether their values originated in an OOF artifact.
+    """
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            f"""
-            SELECT pr.player_id,
-                   COALESCE(p.full_name, pr.player_id) AS player_name,
+            """
+            SELECT pr.player_id, COALESCE(p.full_name, pr.player_id) AS player_name,
                    COALESCE(pr.position, p.position) AS position,
                    COALESCE(pr.team, p.team) AS team,
-                   AVG(pr.{mean_col}) AS fantasy_ppr
+                   SUM(pr.projection) AS fantasy_ppr,
+                   MAX(pr.created_at)::date AS as_of
             FROM projections pr
-            LEFT JOIN players p ON pr.player_id = p.id
-            WHERE pr.season = %s AND pr.stat = 'fantasy_ppr'
+            LEFT JOIN players p ON p.id = pr.player_id
+            WHERE pr.season = %s AND pr.week = 0 AND pr.stat = 'fantasy_ppr'
+              AND pr.projection IS NOT NULL
             GROUP BY pr.player_id, p.full_name, pr.position, p.position, pr.team, p.team
             """,
             (season,),
         )
-        rows = [dict(r) for r in cur.fetchall()]
-    return {_normalize_name(r["player_name"]): r for r in rows} if rows else {}
+        rows = [dict(row) for row in cur.fetchall()]
+    if not rows:
+        return {}, None, None
+    return _unique_projection_map(rows, source="projections"), "preseason_projection_rows", rows[0]["as_of"]
 
 
-def _fetch_model_ppr(conn, season: int) -> tuple[dict[str, dict], str]:
-    """Prefer stack OOF season sums; else DB projections. Never season actuals."""
-    stack_map, label = _fetch_stack_season_ppr(conn, season)
-    if stack_map:
-        return stack_map, label or "stack_oof"
-    db_map = _fetch_db_projections_ppr(conn, season)
-    if db_map:
-        return db_map, "db_projections"
-    return {}, "unavailable"
+def _fetch_model_ppr(conn: Any, season: int, as_of: Optional[date]) -> tuple[dict[str, dict], str, date]:
+    try:
+        values, source, resolved_as_of = _fetch_preseason_projection_ppr(conn, season, as_of)
+    except psycopg2.errors.UndefinedTable:
+        # Supports installs awaiting the accompanying migration; still only
+        # permits explicit week-0 records, never target-season weekly OOF.
+        conn.rollback()
+        values, source, resolved_as_of = {}, None, None
+    if values and source and resolved_as_of:
+        return values, source, resolved_as_of
+    values, source, resolved_as_of = _fetch_db_projections_ppr(conn, season)
+    if values and source and resolved_as_of:
+        return values, source, resolved_as_of
+    raise LookupError("No causal preseason projection run is available")
 
 
 @router.get("/draft/board", response_model=DraftBoardResponse)
 def draft_board(
     season: int = Query(..., ge=2010, le=2030),
-    source: str = Query("historical", description="fantasy_adp.source"),
+    source: Optional[str] = Query(None, description="Optional fantasy_adp.source; defaults to an available source"),
     scoring: str = Query("ppr"),
     position: Optional[str] = Query(None, description="QB|RB|WR|TE"),
+    as_of: Optional[date] = Query(None, description="Use a preseason run published on or before this ISO date"),
 ) -> DraftBoardResponse:
     try:
         conn = psycopg2.connect(settings.database_url)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"DB unavailable: {exc}") from exc
-
     try:
         adp_rows = _fetch_adp(conn, season, source, scoring, position)
         if not adp_rows:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No ADP rows for season={season} source={source} scoring={scoring}",
-            )
-        model_by_name, model_source = _fetch_model_ppr(conn, season)
-        if not model_by_name:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"No model season ranks for season={season} "
-                    "(need stack OOF under ml/oof/ or DB projections). "
-                    "Season actuals are intentionally not used for value-vs-ADP."
-                ),
-            )
+            raise HTTPException(status_code=404, detail=f"No resolved ADP rows for season={season} source={source or 'any'} scoring={scoring}")
+        selected_source = str(adp_rows[0]["source"])
+        # An automatic lookup must not merge sources (their ADP scales and
+        # sampling methods differ).  Pick the first available source.
+        adp_rows = [row for row in adp_rows if row["source"] == selected_source]
+        try:
+            model_by_id, projection_source, projection_as_of = _fetch_model_ppr(conn, season, as_of)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-        # ADP ranks
-        for i, row in enumerate(adp_rows, start=1):
-            row["adp_rank"] = i
-
-        # Model ranks among ADP pool that match
-        matched = []
-        for row in adp_rows:
-            key = _normalize_name(row["player_name"])
-            m = model_by_name.get(key)
-            if m and m.get("fantasy_ppr") is not None:
-                matched.append((key, float(m["fantasy_ppr"])))
-        matched.sort(key=lambda x: -x[1])
-        model_rank_map = {k: i + 1 for i, (k, _) in enumerate(matched)}
-        model_val_map = {k: v for k, v in matched}
+        matched = [(str(row["player_id"]), float(model_by_id[str(row["player_id"])]["fantasy_ppr"]))
+                   for row in adp_rows if str(row["player_id"]) in model_by_id]
+        matched.sort(key=lambda item: (-item[1], item[0]))
+        model_rank = {player_id: index for index, (player_id, _) in enumerate(matched, start=1)}
+        model_value = dict(matched)
 
         players: list[DraftBoardPlayer] = []
-        pairs_adp: list[float] = []
-        pairs_model: list[float] = []
-        for row in adp_rows:
-            key = _normalize_name(row["player_name"])
-            m_rank = model_rank_map.get(key)
-            m_val = model_val_map.get(key)
-            adp_rank = int(row["adp_rank"])
-            value = (adp_rank - m_rank) if m_rank is not None else None
-            if m_rank is not None:
-                pairs_adp.append(float(adp_rank))
-                pairs_model.append(float(m_rank))
-            players.append(
-                DraftBoardPlayer(
-                    player_name=row["player_name"],
-                    position=row.get("position"),
-                    team=row.get("team"),
-                    adp=float(row["adp"]),
-                    player_id=row.get("player_id"),
-                    source=row.get("source") or source,
-                    model_rank=m_rank,
-                    model_fantasy_ppr=m_val,
-                    adp_rank=adp_rank,
-                    value_vs_adp=float(value) if value is not None else None,
-                )
-            )
-
-        spearman_rho = None
-        if len(pairs_adp) >= 5:
-            try:
-                from scipy.stats import spearmanr
-
-                spearman_rho = float(spearmanr(pairs_adp, pairs_model).correlation)
-            except Exception:
-                spearman_rho = None
-
+        adp_values: list[float] = []
+        rank_values: list[float] = []
+        for adp_rank, row in enumerate(adp_rows, start=1):
+            player_id = str(row["player_id"])
+            rank = model_rank.get(player_id)
+            value = float(adp_rank - rank) if rank is not None else None
+            if rank is not None:
+                adp_values.append(float(adp_rank))
+                rank_values.append(float(rank))
+            players.append(DraftBoardPlayer(
+                player_name=row["player_name"], position=row.get("position"), team=row.get("team"),
+                adp=float(row["adp"]), player_id=player_id, source=row.get("source") or selected_source,
+                model_rank=rank, model_fantasy_ppr=model_value.get(player_id), adp_rank=adp_rank,
+                value_vs_adp=value,
+            ))
+        rho = None
+        if len(adp_values) >= 5:
+            from scipy.stats import spearmanr
+            rho = float(spearmanr(adp_values, rank_values).correlation)
         return DraftBoardResponse(
-            season=season,
-            source=source,
-            scoring=scoring,
-            count=len(players),
-            players=players,
-            spearman_rho=spearman_rho,
-            model_source=model_source,
+            season=season, source=selected_source, scoring=scoring, count=len(players), players=players,
+            spearman_rho=rho, projection_source=projection_source, model_source=projection_source,
+            as_of=projection_as_of,
         )
     finally:
         conn.close()
 
 
 @router.get("/adp", response_model=DraftBoardResponse)
-def list_adp(
-    season: int = Query(..., ge=2010, le=2030),
-    source: str = Query("historical"),
-    scoring: str = Query("ppr"),
-    position: Optional[str] = Query(None),
-) -> DraftBoardResponse:
-    """Thin alias — same payload as /draft/board."""
-    return draft_board(season=season, source=source, scoring=scoring, position=position)
+def list_adp(**kwargs: Any) -> DraftBoardResponse:
+    """Thin alias — retained for clients that used the original endpoint."""
+    return draft_board(**kwargs)

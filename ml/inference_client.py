@@ -29,8 +29,11 @@ import numpy as np
 import pandas as pd
 
 from ml.utils import FEATURE_COLS, run_onnx_inference, _ONNX_DIR
+from ml.feature_contract import assert_model_input_columns
 
 logger = logging.getLogger(__name__)
+
+assert_model_input_columns(FEATURE_COLS, consumer="inference client")
 
 
 class InferenceClient:

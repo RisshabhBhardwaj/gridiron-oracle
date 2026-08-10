@@ -11,6 +11,7 @@ from ml.utils import FEATURE_COLS, FEATURE_GROUP_OPP_ADJ_USAGE, FEATURE_GROUPS
 from ml.win_eval import actual_wins_from_schedule, brier_score, evaluate_win_projections
 from pipeline.feature_engineer import build_feature_row
 from pipeline.features.buckets import (
+    build_season_feature_context,
     compute_opp_adj_usage,
     compute_pace_script,
     compute_progression_priors,
@@ -46,6 +47,18 @@ def _stat_row(**kwargs) -> dict:
 
 
 class TestPhase4Buckets:
+    def test_team_game_aggregates_do_not_combine_opponents(self) -> None:
+        # Both teams share game_id.  C-18 keyed only by game_id and incorrectly
+        # divided MIN's carries by the two teams' combined total.
+        prior = [_stat_row(player_id="RB1", game_id="g1", week=1, team="MIN", carries=10)]
+        rows = prior + [
+            _stat_row(player_id="RB2", game_id="g1", week=1, team="MIN", carries=10),
+            _stat_row(player_id="GB1", game_id="g1", week=1, team="GB", carries=35),
+        ]
+        ctx = build_season_feature_context(rows)
+        out = compute_usage_shares(prior, rows, "RB1", "MIN", 2, "RB", ctx=ctx)
+        assert out["carry_share"] == 0.5
+
     def test_carry_share_causal(self) -> None:
         prior = [
             _stat_row(week=1, game_id="g1", carries=10),
@@ -75,13 +88,13 @@ class TestPhase4Buckets:
         assert out["expected_pass_attempts"] > 0
 
     def test_progression_exp_bucket(self) -> None:
-        row = {"years_exp": 0, "birth_date": "2003-05-01", "draft_round": 1}
+        row = {"entry_year": 2024, "birth_date": "2003-05-01", "draft_round": 1}
         out = compute_progression_priors(row, prior_rows=[], season=2024)
         assert out["exp_bucket"] == 0.0
         assert out["age"] == 21.0
         assert out["career_games"] == 0.0
 
-        row2 = {"years_exp": 5}
+        row2 = {"entry_year": 2019}
         assert compute_progression_priors(row2, [{}] * 4, 2024)["exp_bucket"] == 2.0
 
     def test_opp_adj_target_share_scales_with_defense(self) -> None:
@@ -118,7 +131,7 @@ class TestBuildFeatureRowPhase4:
         ]
         target = _stat_row(
             week=3, game_id="2024_03_MIN_DET", opponent_team="DET",
-            years_exp=4, birth_date="1998-01-01", draft_round=2,
+            entry_year=2020, birth_date="1998-01-01", draft_round=2,
         )
         all_rows = list(prior) + [
             _stat_row(player_id="TEAMMATE", week=1, game_id="2024_01_MIN_GB",

@@ -11,9 +11,9 @@ LOG="ml/logs/feature_rebuild_phase4_seq.log"
 mkdir -p ml/logs
 exec > >(tee -a "$LOG") 2>&1
 echo "=== sequential feature rebuild start $(date) ==="
-for y in 2020 2021 2022 2023 2024 2025; do
+for y in 2019 2020 2021 2022 2023 2024 2025; do
   echo ">>> season $y $(date)"
-  $PY -m pipeline.feature_engineer --seasons "$y"
+  $PY -m pipeline.feature_engineer --seasons "$y" --replace-existing
   echo "<<< season $y done $(date)"
 done
 echo "=== sequential feature rebuild complete $(date) ==="
