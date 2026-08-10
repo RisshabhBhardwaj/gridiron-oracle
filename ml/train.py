@@ -76,6 +76,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 from dataclasses import dataclass
@@ -236,6 +237,11 @@ class PipelineRunner:
         self.fast = fast
         # MLflow run ID for current run() call; None outside run().
         self._run_id: Optional[str] = None
+        # A pipeline execution identifier exists even when MLflow is down.  It
+        # is the provenance attached to a graceful fallback; it must never be
+        # confused with a normal model-backed projection.
+        self._pipeline_run_id: Optional[str] = None
+        self._degraded_cells: dict[tuple[str, str], str] = {}
         # One-time MLflow reachability flag — checked once on first stacking call,
         # then cached. Avoids 7 retries × N stat/pos/model lookups when server is down.
         self._mlflow_reachable: Optional[bool] = None
@@ -335,6 +341,11 @@ class PipelineRunner:
           3. _run_bayesian_step — once per (stat, position)
           4. _run_mc_step       — once per (stat, position)
         """
+        self._degraded_cells = {}
+        self._pipeline_run_id = (
+            None if dry_run_mode else f"pipeline_{uuid.uuid4().hex}"
+        )
+
         with start_span(
             "pipeline.execute",
             attributes={
@@ -552,6 +563,9 @@ class PipelineRunner:
 
         id_map = pos_df.set_index("player_id")["game_id"].to_dict()
         mc_df["game_id"] = mc_df["player_id"].map(id_map)
+        fallback_reason = self._degraded_cells.get((stat, position))
+        mc_df["degraded"] = fallback_reason is not None
+        mc_df["pipeline_run_id"] = self._pipeline_run_id
 
         # Attach first 500 posterior draws for CRPS storage (accurate yet compact).
         mc_df["posterior_samples"] = mc_df["player_id"].map(
@@ -735,12 +749,30 @@ class PipelineRunner:
         Returns:
             np.ndarray of shape (n_players,) — stacked estimates.
         """
-        # Fast path: no MLflow configured (covers dry_run and default CLI runs).
-        if not self.mlflow_tracking_uri:
+        artifact_backed = os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed"
+
+        def fallback(reason: str) -> np.ndarray:
+            """Return an explicitly marked graceful-mode fallback only."""
+            self._degraded_cells[(stat, position)] = reason
+            logger.warning(
+                "Stacking inference degraded for stat=%s position=%s: %s; "
+                "using kalman proxy with pipeline_run_id=%s.",
+                stat, position, reason, self._pipeline_run_id,
+            )
             col = f"kalman_est_{stat}"
             if col in kalman_df.columns:
                 return kalman_df[col].fillna(0.0).values.astype(float)
             return np.zeros(len(kalman_df), dtype=float)
+
+        # Fast path: no MLflow configured. Artifact-backed serving must not
+        # silently turn this into Kalman/zero projections.
+        if not self.mlflow_tracking_uri:
+            if artifact_backed:
+                raise RuntimeError(
+                    "PRODUCT_MODE=artifact_backed requires MLFLOW_TRACKING_URI; "
+                    "refusing Kalman fallback."
+                )
+            return fallback("MLFLOW_TRACKING_URI is not configured")
 
         # One-time connectivity check — avoids 7 retries × N lookups when MLflow is down.
         if self._mlflow_reachable is None:
@@ -759,10 +791,12 @@ class PipelineRunner:
                 )
 
         if not self._mlflow_reachable:
-            col = f"kalman_est_{stat}"
-            if col in kalman_df.columns:
-                return kalman_df[col].fillna(0.0).values.astype(float)
-            return np.zeros(len(kalman_df), dtype=float)
+            if artifact_backed:
+                raise RuntimeError(
+                    "MLflow is unreachable while PRODUCT_MODE=artifact_backed; "
+                    "refusing Kalman fallback."
+                )
+            return fallback("MLflow is unreachable")
 
         try:
             with start_span(
@@ -780,15 +814,17 @@ class PipelineRunner:
                     season=season, week=week, dry_run_mode=dry_run_mode,
                 )
         except Exception as exc:
+            if artifact_backed:
+                raise RuntimeError(
+                    f"Artifact-backed stacking failed for stat={stat} position={position}; "
+                    "refusing Kalman fallback."
+                ) from exc
             logger.warning(
                 "Stacking inference failed for stat=%s (%s) — "
                 "falling back to kalman_est_%s proxy.",
                 stat, exc, stat,
             )
-            col = f"kalman_est_{stat}"
-            if col in kalman_df.columns:
-                return kalman_df[col].fillna(0.0).values.astype(float)
-            return np.zeros(len(kalman_df), dtype=float)
+            return fallback(str(exc))
 
     def _load_and_run_stacking(
         self,
@@ -1227,7 +1263,7 @@ class PipelineRunner:
                     _float_or_none(row.get("fantasy_projection")),
                     _float_or_none(row.get("fantasy_floor")),
                     _float_or_none(row.get("fantasy_ceiling")),
-                    self._run_id,
+                    self._run_id or row.get("pipeline_run_id") or self._pipeline_run_id,
                     samples_json,
                     int(max_train_season),
                 ))
@@ -1455,6 +1491,8 @@ _PROJECTION_COLUMNS: list[str] = [
     "fantasy_floor",
     "fantasy_ceiling",
     "n_samples",
+    "degraded",
+    "pipeline_run_id",
 ]
 
 

@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 
 from backend.app.core.config import settings
 from backend.app.services.runtime_status import RuntimeStatusService
+from ml.artifact_manifest import REQUIRED_SERVING_CELLS
 
 
 def _git(args: list[str]) -> str:
@@ -90,6 +91,32 @@ def _carry_forward_artifact_pins(payload: dict, current_path: Path) -> None:
         )
 
 
+def _materialize_run_id() -> str:
+    """Read the just-completed, full-matrix materialization provenance."""
+    report_path = ROOT / "reports" / "materialize_stack_projections.json"
+    try:
+        report = json.loads(report_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Materialization report is required and unreadable: {exc}") from exc
+
+    cells = {
+        (str(cell.get("stat")), str(cell.get("position")))
+        for cell in report.get("cells", [])
+    }
+    run_id = str(report.get("pipeline_run_id") or "").strip()
+    if (
+        report.get("dry_run")
+        or report.get("git_commit") != _git(["rev-parse", "HEAD"])
+        or cells != set(REQUIRED_SERVING_CELLS)
+        or not run_id
+    ):
+        raise RuntimeError(
+            "Materialization report is not a complete run for this HEAD; "
+            "materialize all 15 manifest-pinned cells before freezing."
+        )
+    return run_id
+
+
 def main() -> int:
     root = ROOT
     baselines_dir = root / "releases" / "baselines"
@@ -115,6 +142,12 @@ def main() -> int:
         for run_id in os.environ.get("APPROVED_PIPELINE_RUN_IDS", "").split(",")
         if run_id.strip()
     ]
+    if not approved_pipeline_run_ids:
+        try:
+            approved_pipeline_run_ids = [_materialize_run_id()]
+        except RuntimeError as exc:
+            print(f"Refusing to freeze baseline: {exc}", file=sys.stderr)
+            return 2
 
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -137,7 +170,9 @@ def main() -> int:
         },
         "projection_policy": {
             "approved_pipeline_run_ids": approved_pipeline_run_ids,
-            "require_posterior_samples": True,
+            # Stack OOF materialization intentionally leaves percentile fields
+            # null until a real per-player posterior is available.
+            "require_posterior_samples": False,
             "require_interval_columns": True,
         },
     }

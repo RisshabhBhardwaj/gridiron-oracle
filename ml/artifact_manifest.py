@@ -73,6 +73,19 @@ MIN_BASE_LEARNERS = 2
 
 POSITIONS: frozenset[str] = frozenset({"QB", "RB", "WR", "TE"})
 
+# The promoted serving matrix. A release may only omit a cell by making an
+# explicit, reviewed manifest policy change; silent materializer drift is not
+# an allowed state.
+REQUIRED_SERVING_CELLS: tuple[tuple[str, str], ...] = (
+    ("fantasy_ppr", "QB"), ("fantasy_ppr", "RB"),
+    ("fantasy_ppr", "WR"), ("fantasy_ppr", "TE"),
+    ("targets", "WR"), ("targets", "TE"), ("targets", "RB"),
+    ("carries", "RB"), ("pass_attempts", "QB"), ("passing_yards", "QB"),
+    ("receiving_yards", "WR"), ("receiving_yards", "TE"),
+    ("receiving_yards", "RB"), ("rushing_yards", "QB"),
+    ("rushing_yards", "RB"),
+)
+
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
 

@@ -67,9 +67,9 @@ class StatProjection(BaseModel):
 
 
 class Percentiles(BaseModel):
-    p10: float
+    p10: Optional[float] = None
     p50: float
-    p90: float
+    p90: Optional[float] = None
 
 
 class SHAPFactor(BaseModel):
@@ -87,6 +87,9 @@ class PredictResponse(BaseModel):
     stat:                    str
     projection:              StatProjection
     percentiles:             Percentiles
+    interval_method:          str
+    degraded:                 bool = False
+    pipeline_run_id:          Optional[str] = None
     confidence_score:        Optional[float] = None
     kalman_ability_estimate: Optional[float] = None
     kalman_uncertainty:      Optional[float] = None
@@ -106,8 +109,11 @@ class WeekPlayerProjection(BaseModel):
     team:               Optional[str] = None
     stat:               str
     projection:         float
-    floor:              float
-    ceiling:            float
+    floor:              Optional[float] = None
+    ceiling:            Optional[float] = None
+    interval_method:    str
+    degraded:           bool = False
+    pipeline_run_id:    Optional[str] = None
     p5:                 Optional[float] = None
     p25:                Optional[float] = None
     p75:                Optional[float] = None
@@ -223,6 +229,9 @@ def predict(
             p50=result.projection,
             p90=result.ceiling,
         ),
+        interval_method=result.interval_method,
+        degraded=result.degraded,
+        pipeline_run_id=result.pipeline_run_id,
         confidence_score=result.confidence_score,
         kalman_ability_estimate=result.kalman_ability_estimate,
         kalman_uncertainty=result.kalman_uncertainty,
@@ -267,6 +276,9 @@ def projections_for_week(
             projection=r.projection,
             floor=r.floor,
             ceiling=r.ceiling,
+            interval_method=r.interval_method,
+            degraded=r.degraded,
+            pipeline_run_id=r.pipeline_run_id,
             boom_probability=r.boom_probability,
             bust_probability=r.bust_probability,
             fantasy_projection=r.fantasy_projection,

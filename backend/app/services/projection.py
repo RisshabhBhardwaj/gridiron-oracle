@@ -68,8 +68,8 @@ class ProjectionResult:
     season:                  int
     stat:                    str
     projection:              float
-    floor:                   float
-    ceiling:                 float
+    floor:                   Optional[float]
+    ceiling:                 Optional[float]
     boom_probability:        Optional[float]
     bust_probability:        Optional[float]
     fantasy_projection:      Optional[float]
@@ -81,6 +81,9 @@ class ProjectionResult:
     prop_comparison:         Optional[PropComparison]
     data_freshness:          datetime
     model_version:           str
+    interval_method:         str = "unavailable"
+    degraded:                bool = False
+    pipeline_run_id:         Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +158,11 @@ class ProjectionService:
                 season=season,
                 stat=stat,
                 projection=_f(row.get("projection", 0.0)),
-                floor=_f(row.get("floor", 0.0)),
-                ceiling=_f(row.get("ceiling", 0.0)),
+                floor=_interval_value(row, "floor"),
+                ceiling=_interval_value(row, "ceiling"),
+                interval_method=_interval_method(row),
+                degraded=bool(row.get("degraded", False)),
+                pipeline_run_id=row.get("pipeline_run_id"),
                 boom_probability=_opt(row.get("boom_probability")),
                 bust_probability=_opt(row.get("bust_probability")),
                 fantasy_projection=_opt(row.get("fantasy_projection")),
@@ -196,6 +202,7 @@ class ProjectionService:
                        p.position, p.projection, p.floor, p.ceiling,
                        p.boom_probability, p.bust_probability,
                        p.fantasy_projection, p.fantasy_floor, p.fantasy_ceiling,
+                       p.posterior_samples, p.pipeline_run_id,
                        pl.full_name, pl.team
                 FROM   projections p
                 LEFT JOIN players pl ON pl.id = p.player_id
@@ -242,8 +249,10 @@ class ProjectionService:
                 season=season,
                 stat=stat,
                 projection=_f(r.get("projection", 0.0)),
-                floor=_f(r.get("floor", 0.0)),
-                ceiling=_f(r.get("ceiling", 0.0)),
+                floor=_interval_value(r, "floor"),
+                ceiling=_interval_value(r, "ceiling"),
+                interval_method=_interval_method(r),
+                pipeline_run_id=r.get("pipeline_run_id"),
                 boom_probability=_opt(r.get("boom_probability")),
                 bust_probability=_opt(r.get("bust_probability")),
                 fantasy_projection=_opt(r.get("fantasy_projection")),
@@ -482,6 +491,8 @@ class ProjectionService:
                 projection=pr.projection,
                 floor=pr.floor,
                 ceiling=pr.ceiling,
+                interval_method="scenario_monte_carlo",
+                pipeline_run_id=None,
                 boom_probability=pr.boom_probability,
                 bust_probability=pr.bust_probability,
                 fantasy_projection=pr.fantasy_projection,
@@ -588,7 +599,7 @@ class ProjectionService:
                 SELECT projection, floor, ceiling,
                        boom_probability, bust_probability,
                        fantasy_projection, fantasy_floor, fantasy_ceiling,
-                       position, created_at
+                       posterior_samples, pipeline_run_id, position, created_at
                 FROM   projections
                 WHERE  player_id = %s AND week = %s AND season = %s AND stat = %s
                 ORDER BY created_at DESC
@@ -671,6 +682,9 @@ class ProjectionService:
                     "fantasy_projection": r.get("fantasy_projection"),
                     "fantasy_floor":      r.get("fantasy_floor"),
                     "fantasy_ceiling":    r.get("fantasy_ceiling"),
+                    "posterior_samples":  r.get("posterior_samples"),
+                    "degraded":           bool(r.get("degraded", False)),
+                    "pipeline_run_id":    r.get("pipeline_run_id"),
                     "position":           position,
                 }
         except Exception as exc:
@@ -730,6 +744,24 @@ def _opt(v) -> Optional[float]:
         return None if f != f else f
     except (TypeError, ValueError):
         return None
+
+
+def _interval_method(row: dict) -> str:
+    """Only label intervals as percentiles when backed by real posterior draws."""
+    samples = row.get("posterior_samples")
+    if isinstance(samples, str):
+        # psycopg2 normally decodes JSONB, but a JSON string is still usable.
+        try:
+            import json
+            samples = json.loads(samples)
+        except (TypeError, ValueError):
+            samples = None
+    return "posterior_samples" if isinstance(samples, list) and samples else "unavailable"
+
+
+def _interval_value(row: dict, field: str) -> Optional[float]:
+    """Never expose legacy residual bands as p10/p90 values."""
+    return _opt(row.get(field)) if _interval_method(row) == "posterior_samples" else None
 
 
 def _confidence(kalman_variance: Optional[float]) -> Optional[float]:

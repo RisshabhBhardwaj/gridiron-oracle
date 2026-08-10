@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import numbers
 import os
 from pathlib import Path
 from typing import Callable, Optional
@@ -143,7 +145,27 @@ class InferenceClient:
                 f"{len(base_preds)} for stat={stat!r} position={position!r}. "
                 "Refusing silent equal-weight fallback."
             )
-        stacked = sum(w * p for w, p in zip(coefs, base_preds)) + intercept
+        checked_preds: list[np.ndarray] = []
+        for learner, prediction in zip(learner_order, base_preds):
+            values = np.asarray(prediction, dtype=float)
+            if values.shape != (n_rows,):
+                raise ValueError(
+                    f"Learner={learner!r} returned shape {values.shape}; expected "
+                    f"({n_rows},) for stat={stat!r} position={position!r}."
+                )
+            if not np.isfinite(values).all():
+                raise ValueError(
+                    f"Learner={learner!r} returned non-finite predictions for "
+                    f"stat={stat!r} position={position!r}."
+                )
+            checked_preds.append(values)
+
+        stacked = sum(w * p for w, p in zip(coefs, checked_preds)) + intercept
+        if not np.isfinite(stacked).all():
+            raise ValueError(
+                f"Stacked output contains non-finite values for stat={stat!r} "
+                f"position={position!r}."
+            )
 
         logger.info(
             "Stacked estimates for stat=%s learners=%s: n=%d mean=%.2f std=%.2f",
@@ -463,8 +485,12 @@ class InferenceClient:
           1. ml/oof/ridge_{stat}_{position}_coefs.json when position is given
           2. ml/oof/ridge_{stat}_coefs.json only for non-positioned callers
 
-        The file is written by stacking_ensemble.py.
-        Format: {"xgb": 0.4, "lgbm": 0.35, ..., "intercept": 1.2}.
+        The file is written by stacking_ensemble.py. Its schema is deliberately
+        explicit and closed:
+        ``{"learner_order": ["lgbm", "catboost"], "weights": {...},
+        "intercept": 1.2}``.  A coefficient artifact is executable serving
+        configuration, so malformed, partial, or non-finite files raise rather
+        than being converted into an implicit equal-weight fallback.
 
         Returns (coefs_list, intercept, learner_order) or None when no file is found.
         learner_order is the subset of [xgb, lgbm, catboost, tft] present in the
@@ -479,22 +505,54 @@ class InferenceClient:
         for coef_path in candidates:
             if not coef_path.exists():
                 continue
+            def _reject_json_constant(value: str):
+                raise ValueError(f"JSON non-finite constant {value!r} is forbidden")
+
             try:
                 with open(coef_path) as f:
-                    data = json.load(f)
-                intercept = float(data.pop("intercept", 0.0))
-                learner_keys = ["xgb", "lgbm", "catboost", "tft"]
-                learner_order = [k for k in learner_keys if k in data]
-                coefs = [float(data[k]) for k in learner_order]
-                if not coefs:
-                    continue
-                logger.debug(
-                    "Loaded Ridge coefs from %s learners=%s",
-                    coef_path.name, learner_order,
+                    data = json.load(f, parse_constant=_reject_json_constant)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise ValueError(f"Invalid Ridge coefficient JSON at {coef_path}: {exc}") from exc
+
+            expected_keys = {"learner_order", "weights", "intercept"}
+            if not isinstance(data, dict) or set(data) != expected_keys:
+                raise ValueError(
+                    f"Invalid Ridge coefficient schema at {coef_path}: expected exactly "
+                    f"{sorted(expected_keys)}, got {sorted(data) if isinstance(data, dict) else type(data).__name__}."
                 )
-                return coefs, intercept, learner_order
-            except Exception as exc:
-                logger.debug(
-                    "Could not load Ridge coefs from %s: %s", coef_path, exc
+
+            learner_order = data["learner_order"]
+            weights = data["weights"]
+            if (
+                not isinstance(learner_order, list)
+                or not learner_order
+                or not all(isinstance(learner, str) for learner in learner_order)
+                or len(set(learner_order)) != len(learner_order)
+            ):
+                raise ValueError(f"Invalid learner_order in Ridge coefficients at {coef_path}")
+            if not isinstance(weights, dict) or set(weights) != set(learner_order):
+                raise ValueError(
+                    f"Ridge weights at {coef_path} must name exactly learner_order; "
+                    f"got weights={sorted(weights) if isinstance(weights, dict) else type(weights).__name__}."
                 )
+
+            raw_values = [weights[learner] for learner in learner_order] + [data["intercept"]]
+            if any(isinstance(value, bool) or not isinstance(value, numbers.Real) for value in raw_values):
+                raise ValueError(f"Ridge coefficients at {coef_path} must be JSON numbers, not strings/bools")
+
+            try:
+                from ml.artifact_manifest import assert_learner_policy
+                assert_learner_policy(stat, learner_order, context=f"Ridge coefficients {coef_path}")
+                coefs = [float(weights[learner]) for learner in learner_order]
+                intercept = float(data["intercept"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Ridge coefficients at {coef_path} must be numeric: {exc}") from exc
+
+            if not all(math.isfinite(value) for value in [*coefs, intercept]):
+                raise ValueError(f"Ridge coefficients at {coef_path} must all be finite")
+
+            logger.debug(
+                "Loaded Ridge coefs from %s learners=%s", coef_path.name, learner_order,
+            )
+            return coefs, intercept, learner_order
         return None
