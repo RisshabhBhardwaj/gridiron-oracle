@@ -16,11 +16,13 @@ CLAUDE.md §6: OPENWEATHER_API_KEY in .env. Rate limit: 1s between requests.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import time
-from datetime import date
-from typing import Optional
+from datetime import date, datetime, time as dt_time, timezone
+from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,22 @@ STADIUM_COORDS: dict[str, tuple[float, float]] = {
     "GEHA Field at Arrowhead Stadium": (39.0489, -94.4839),
 }
 
+# ``gametime`` in nflverse schedules is local stadium time.  A stored UTC
+# kickoff is required to prove that a forecast snapshot predates the game.
+TEAM_TIMEZONES: dict[str, str] = {
+    "ARI": "America/Phoenix", "ATL": "America/New_York", "BAL": "America/New_York",
+    "BUF": "America/New_York", "CAR": "America/New_York", "CHI": "America/Chicago",
+    "CIN": "America/New_York", "CLE": "America/New_York", "DAL": "America/Chicago",
+    "DEN": "America/Denver", "DET": "America/New_York", "GB": "America/Chicago",
+    "HOU": "America/Chicago", "IND": "America/Indiana/Indianapolis", "JAX": "America/New_York",
+    "KC": "America/Chicago", "LV": "America/Los_Angeles", "LAC": "America/Los_Angeles",
+    "LAR": "America/Los_Angeles", "MIA": "America/New_York", "MIN": "America/Chicago",
+    "NE": "America/New_York", "NO": "America/Chicago", "NYG": "America/New_York",
+    "NYJ": "America/New_York", "PHI": "America/New_York", "PIT": "America/New_York",
+    "SEA": "America/Los_Angeles", "SF": "America/Los_Angeles", "TB": "America/New_York",
+    "TEN": "America/Chicago", "WAS": "America/New_York",
+}
+
 
 def _precipitation_bucket_from_weather(weather_main: Optional[str], pop: Optional[float]) -> int:
     """
@@ -77,6 +95,136 @@ def _precipitation_bucket_from_weather(weather_main: Optional[str], pop: Optiona
     return 0
 
 
+def _find_coords(stadium: str) -> Optional[tuple[float, float]]:
+    if not stadium:
+        return None
+    stadium = stadium.strip()
+    if stadium in STADIUM_COORDS:
+        return STADIUM_COORDS[stadium]
+    return next((coords for name, coords in STADIUM_COORDS.items() if stadium in name or name in stadium), None)
+
+
+def _kickoff_at(gameday: date, gametime: Optional[str], home_team: Optional[str]) -> Optional[datetime]:
+    """Convert nflverse's local stadium ``gameday``/``gametime`` to UTC."""
+    if not gameday or not gametime or not home_team or home_team not in TEAM_TIMEZONES:
+        return None
+    try:
+        local_time = dt_time.fromisoformat(str(gametime))
+    except ValueError:
+        return None
+    return datetime.combine(gameday, local_time, ZoneInfo(TEAM_TIMEZONES[home_team])).astimezone(timezone.utc)
+
+
+def fetch_forecast_snapshot(
+    api_key: str, stadium: str, kickoff_at: datetime, roof: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Fetch one OpenWeather 5-day forecast record nearest to a future kickoff."""
+    roof_lower = (roof or "").lower()
+    if any(value in roof_lower for value in ("dome", "closed")):
+        return {"forecast_for": kickoff_at, "temp_f": None, "wind_mph": 0.0, "precipitation_bucket": 0, "raw_payload": {"roof": roof}}
+    coords = _find_coords(stadium)
+    if not coords:
+        return None
+    if kickoff_at <= datetime.now(timezone.utc):
+        return None
+    try:
+        import requests
+    except ImportError:
+        logger.warning("requests not installed; skipping OpenWeather forecast capture")
+        return None
+    lat, lon = coords
+    url = (
+        "https://api.openweathermap.org/data/2.5/forecast"
+        f"?lat={lat}&lon={lon}&appid={api_key}&units=metric"
+    )
+    time.sleep(1.05)
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        payload = response.json()
+        choices = payload.get("list") or []
+        selected = min(
+            choices,
+            key=lambda item: abs(datetime.fromtimestamp(item["dt"], timezone.utc) - kickoff_at),
+        )
+    except (Exception, ValueError, KeyError) as exc:
+        logger.warning("OpenWeather forecast fetch failed for %s: %s", stadium, exc)
+        return None
+    main = selected.get("main") or {}
+    wind = selected.get("wind") or {}
+    weather_main = ((selected.get("weather") or [{}])[0]).get("main")
+    return {
+        "forecast_for": datetime.fromtimestamp(selected["dt"], timezone.utc),
+        "temp_f": _celsius_to_fahrenheit(main.get("temp")),
+        "wind_mph": _meters_per_second_to_mph(wind.get("speed")),
+        "precipitation_bucket": _precipitation_bucket_from_weather(weather_main, selected.get("pop")),
+        "raw_payload": selected,
+    }
+
+
+def capture_pregame_weather_forecasts(db_url: str, api_key: Optional[str] = None) -> int:
+    """Persist real forecast snapshots for upcoming games; never backfill history."""
+    api_key = api_key or os.environ.get("OPENWEATHER_API_KEY")
+    if not api_key:
+        logger.info("OPENWEATHER_API_KEY not set; skipping pregame forecast capture")
+        return 0
+    import psycopg2
+
+    captured_at = datetime.now(timezone.utc)
+    with psycopg2.connect(_dsn_for_psycopg2(db_url)) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, stadium, gameday, gametime, home_team, roof
+                FROM games
+                WHERE gameday BETWEEN CURRENT_DATE AND CURRENT_DATE + 5
+                  AND home_score IS NULL AND stadium IS NOT NULL
+                ORDER BY gameday, gametime
+                """
+            )
+            games = cur.fetchall()
+        persisted = 0
+        for game_id, stadium, gameday, gametime, home_team, roof in games:
+            kickoff = _kickoff_at(gameday, gametime, home_team)
+            if kickoff is None or kickoff <= captured_at:
+                logger.warning("Skipping %s: no future timezone-aware kickoff", game_id)
+                continue
+            forecast = fetch_forecast_snapshot(api_key, stadium, kickoff, roof)
+            if forecast is None:
+                continue
+            with conn.cursor() as cur:
+                cur.execute("UPDATE games SET kickoff_at = %s WHERE id = %s", (kickoff, game_id))
+                cur.execute(
+                    """
+                    INSERT INTO weather_forecasts
+                      (game_id, provider, kickoff_at, forecast_for, temp_f, wind_mph,
+                       precipitation_bucket, captured_at, raw_payload)
+                    VALUES (%s, 'openweather_5day', %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (game_id, provider, captured_at) DO NOTHING
+                    """,
+                    (game_id, kickoff, forecast["forecast_for"], forecast["temp_f"],
+                     forecast["wind_mph"], forecast["precipitation_bucket"], captured_at,
+                     json.dumps(forecast["raw_payload"])),
+                )
+            persisted += 1
+    logger.info("Captured %d pregame weather forecasts", persisted)
+    return persisted
+
+
+def _celsius_to_fahrenheit(value: Any) -> Optional[float]:
+    try:
+        return float(value) * 9 / 5 + 32
+    except (TypeError, ValueError):
+        return None
+
+
+def _meters_per_second_to_mph(value: Any) -> Optional[float]:
+    try:
+        return float(value) * 2.236936
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_precipitation_bucket(
     api_key: str,
     stadium: str,
@@ -91,18 +239,7 @@ def fetch_precipitation_bucket(
     if any(r in roof_lower for r in ("dome", "closed", "retractable")):
         return 0
 
-    def _find_coords(s: str) -> Optional[tuple[float, float]]:
-        if not s:
-            return None
-        s = s.strip()
-        if s in STADIUM_COORDS:
-            return STADIUM_COORDS[s]
-        for name, c in STADIUM_COORDS.items():
-            if s in name or name in s:
-                return c
-        return None
-
-    coords = _find_coords(stadium) if stadium else None
+    coords = _find_coords(stadium)
     if not coords:
         return None
 
@@ -218,10 +355,14 @@ def enrich_games_precipitation(db_url: str, api_key: Optional[str] = None) -> in
 def main() -> None:
     parser = argparse.ArgumentParser(description="Enrich games with precipitation from OpenWeatherMap")
     parser.add_argument("--db-url", default=os.environ.get("DATABASE_URL"))
+    parser.add_argument("--capture-forecasts", action="store_true", help="store pre-kickoff forecast snapshots for the next five days")
     args = parser.parse_args()
     if not args.db_url:
         parser.error("--db-url or DATABASE_URL required")
-    enrich_games_precipitation(args.db_url)
+    if args.capture_forecasts:
+        capture_pregame_weather_forecasts(args.db_url)
+    else:
+        enrich_games_precipitation(args.db_url)
 
 
 if __name__ == "__main__":

@@ -54,9 +54,9 @@ cure within-game leakage.
 
 ## 01B as-of audit findings — paste block
 
-**Audit basis:** commit `191e151`, read-only DB/code trace.  Treat every
-`UNPROVEN` item as illegal until the implementation proves a timestamped,
-pre-kickoff source snapshot.  `LATENT LEAK` items are null/inert in the current
+**Audit basis:** commit `191e151`, read-only DB/code trace.  `01D` has resolved
+the former `UNPROVEN` rows; use its decided list below, not a blanket deletion.
+`LATENT LEAK` items are null/inert in the current
 feature matrix but become illegal as soon as their existing refresh/enrichment
 path populates them.
 
@@ -110,6 +110,27 @@ path populates them.
 | `routes_run_pct` (non-default) | `feature_engineer.py:213-215,285` | target game | LEAK | Another direct copy of `target_row.offense_pct`; prohibit it or create an explicitly lagged substitute. |
 | TFT `snap_share` consumer | `ml/tft_model.py:355-367` | target game | LEAK | Maps `snap_pct_off.fillna(0)` into TFT time-varying input. |
 | GNN `snap_pct_off` node feature | `ml/gnn_matchup.py:85-103` | target game | LEAK | Explicit GNN feature-list consumer outside `FEATURE_COLS`. |
+
+### 01D provenance decisions — mandatory 02 disposition
+
+Keep `height` and `weight`: revision `20260809_0005` backfilled
+`player_season_profiles` from nflreadpy season rosters and the feature join is
+now `(player_id, effective_season = season)`. Retain the
+`assert_player_profiles_asof` check in the feature contract; do not fall back to
+the current `players` row.
+
+Remove from the historical 2021–2025 rebuild: `temp_f`, `wind_mph`,
+`temp_bucket`, `wind_bucket`, `wind_x_qb`, `wind_x_wr`, `precip_x_pass`, and
+`depth_chart_rank`. Schedule weather is observed game weather, while the
+retained depth data has no publication timestamp; neither can prove a value was
+available before kickoff. Treat these eight as **remove-and-recapture**, not as
+proxies. `weather_forecasts` and timestamped `depth_charts.published_at` support
+future use only after their respective pre-kickoff assertions pass.
+
+Remove `injury_status_encoded` from this rebuild: it is **MOOT**, with zero
+populated feature-matrix values because `FeatureEngineer.run()` never supplies
+an injury dataframe. Reintroducing it later requires dated practice reports and
+a pre-kickoff selection rule.
 
 ### Required additions to Part 1: TFT and GNN are not fixed by changing `FEATURE_COLS` alone
 

@@ -558,7 +558,7 @@ class Normalizer:
             if seasons:
                 cur.execute(
                     """
-                    SELECT id, raw_data FROM staging_nflreadpy
+                    SELECT id, raw_data, ingested_at FROM staging_nflreadpy
                     WHERE source_type = %s AND NOT processed AND season = ANY(%s)
                     ORDER BY id
                     """,
@@ -567,7 +567,7 @@ class Normalizer:
             else:
                 cur.execute(
                     """
-                    SELECT id, raw_data FROM staging_nflreadpy
+                    SELECT id, raw_data, ingested_at FROM staging_nflreadpy
                     WHERE source_type = %s AND NOT processed
                     ORDER BY id
                     """,
@@ -692,6 +692,46 @@ class Normalizer:
             )
         self._conn.commit()
         return len(player_dicts)
+
+    def _upsert_player_season_profiles(self, staging_rows: list[dict]) -> int:
+        """Store the season-effective roster profile; current ``players`` is not causal."""
+        from pipeline.provenance import height_to_inches
+
+        profiles: dict[tuple[str, int], tuple] = {}
+        for sr in staging_rows:
+            raw = sr["raw_data"]
+            player_id = raw.get("gsis_id") or raw.get("player_id")
+            season = raw.get("season")
+            if not player_id or season is None:
+                continue
+            try:
+                weight = float(raw["weight"]) if raw.get("weight") is not None else None
+            except (TypeError, ValueError):
+                weight = None
+            profiles[(str(player_id), int(season))] = (
+                str(player_id), int(season), height_to_inches(raw.get("height")), weight,
+                "nflreadpy.load_rosters", sr["ingested_at"],
+            )
+        if not profiles:
+            return 0
+        assert self._conn
+        with self._conn.cursor() as cur:
+            execute_values(
+                cur,
+                """
+                INSERT INTO player_season_profiles
+                    (player_id, effective_season, height_inches, weight_lbs, source, source_captured_at)
+                VALUES %s
+                ON CONFLICT (player_id, effective_season) DO UPDATE SET
+                    height_inches = EXCLUDED.height_inches,
+                    weight_lbs = EXCLUDED.weight_lbs,
+                    source = EXCLUDED.source,
+                    source_captured_at = EXCLUDED.source_captured_at
+                """,
+                list(profiles.values()),
+            )
+        self._conn.commit()
+        return len(profiles)
 
     def _upsert_player_stubs_from_stats(self, staging_rows: list[dict]) -> int:
         """
@@ -936,6 +976,7 @@ class Normalizer:
         players_deduped = list(by_id.values())
 
         summary.players_upserted += self._upsert_players(players_deduped)
+        self._upsert_player_season_profiles(staging_rows)
         summary.staging_rows_processed += len(staging_ids)
         if staging_ids:
             self._mark_processed(staging_ids)
@@ -1167,7 +1208,13 @@ class Normalizer:
             except (TypeError, ValueError):
                 rank = 1.0
             position = raw.get("position") or raw.get("pos_abb")
-            rows.append((gsis_id, season, week, team, position, rank))
+            published_at = (
+                raw.get("published_at") or raw.get("timestamp") or raw.get("last_updated")
+            )
+            rows.append((
+                gsis_id, season, week, team, position, rank, published_at,
+                "nflreadpy.load_depth_charts" if published_at else None,
+            ))
 
         # Deduplicate: keep best (lowest) depth_rank per (player_id, season, week)
         seen: dict[tuple, tuple] = {}
@@ -1190,12 +1237,24 @@ class Normalizer:
             execute_values(
                 cur,
                 """
-                INSERT INTO depth_charts (player_id, season, week, team, position, depth_rank)
+                INSERT INTO depth_charts
+                    (player_id, season, week, team, position, depth_rank, published_at, source)
                 VALUES %s
                 ON CONFLICT (player_id, season, week) DO UPDATE SET
                     team = EXCLUDED.team,
                     position = EXCLUDED.position,
-                    depth_rank = EXCLUDED.depth_rank
+                    depth_rank = EXCLUDED.depth_rank,
+                    published_at = EXCLUDED.published_at,
+                    source = EXCLUDED.source
+                WHERE EXCLUDED.published_at IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1 FROM games g
+                    WHERE g.season = EXCLUDED.season
+                      AND g.week = EXCLUDED.week
+                      AND (g.home_team = EXCLUDED.team OR g.away_team = EXCLUDED.team)
+                      AND g.kickoff_at > EXCLUDED.published_at
+                  )
+                  AND (depth_charts.published_at IS NULL OR EXCLUDED.published_at > depth_charts.published_at)
                 """,
                 rows,
             )

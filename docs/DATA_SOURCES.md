@@ -30,6 +30,31 @@ entirely from FTN — a feature-contract change, not a documentation change.
 key. Supplies play-by-play, game logs, rosters, schedules, snap counts,
 participation, NGS, depth charts, and (as above) PFR advanced stats.
 
+### Provenance rules for roster, depth, and weather features
+
+`nflreadpy.load_rosters(seasons=...)` is retained as a season-scoped roster
+source. Revision `20260809_0005` stores its physical values in
+`player_season_profiles` with `effective_season`; feature construction must join
+on `(player_id, effective_season = season)`, never `players.height` or
+`players.weight`. The as-of assertion rejects a game without such a profile.
+
+The retained historical depth-chart staging data (2019–2026) has no source
+publication timestamp. It therefore cannot certify a historical depth chart as
+pregame. New timestamped source rows are preserved as `depth_charts.published_at`
+and are usable only when that value is strictly before `games.kickoff_at`.
+
+The `temp` and `wind` fields returned by `load_schedules` are game-condition
+observations, not archived forecasts; they must not become historical pregame
+features. The legacy `precipitation_bucket` update likewise has no retained
+forecast capture time. `weather_forecasts` is the forward-only replacement:
+run `python -m scraper.adapters.weather_adapter --capture-forecasts` ahead of
+each slate (with `OPENWEATHER_API_KEY`) to store OpenWeather 5-day forecast
+snapshots, including `captured_at`, `forecast_for`, and a timezone-aware
+`kickoff_at`. The API scheduler runs the same capture every six hours when that
+key is configured. The as-of contract permits only snapshots with
+`captured_at < kickoff_at`. It intentionally does not manufacture 2021–2025
+forecast history.
+
 ## ADP
 
 | Source | Access | Status |
@@ -44,6 +69,12 @@ participation, NGS, depth charts, and (as above) PFR advanced stats.
 endpoints for practice participation, depth charts, and inactives. These are not
 a public API and may break without notice. `espn_adapter.py` is the companion
 adapter. Treat availability as best-effort.
+
+`injury_status_encoded` is not presently a data-source feature: the feature
+engineer never provides an injury dataframe, so the materialized column is
+entirely NULL. If it is wired in later, preserve dated ESPN/NFL practice reports
+and select a report published before each game kickoff; a same-week label alone
+is not sufficient provenance.
 
 ## Keyed third-party APIs (optional)
 

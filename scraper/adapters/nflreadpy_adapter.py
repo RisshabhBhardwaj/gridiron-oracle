@@ -293,6 +293,11 @@ class DepthChartRow(BaseModel):
     pos_abb: Optional[str] = None    # 2025+ column
     depth_position: Optional[str] = None
     formation: Optional[str] = None
+    # nflverse/ESPN's date-based feed supplies one of these on newer rows.
+    # Preserve it verbatim so normalization can prove pre-kickoff publication.
+    published_at: Optional[datetime] = None
+    timestamp: Optional[datetime] = None
+    last_updated: Optional[datetime] = None
 
 
 class NextGenStatsRow(BaseModel):

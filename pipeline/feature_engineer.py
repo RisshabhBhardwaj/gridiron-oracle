@@ -676,14 +676,16 @@ class FeatureEngineer:
                     g.temp, g.wind, g.total_line, g.spread_line,
                     g.home_rest, g.away_rest,
                     g.precipitation_bucket,
-                    p.height AS player_height,
-                    p.weight AS player_weight,
+                    psp.height_inches AS player_height,
+                    psp.weight_lbs AS player_weight,
                     p.draft_round,
                     p.years_exp,
                     p.birth_date
                 FROM game_logs gl
                 JOIN games g ON gl.game_id = g.id
                 LEFT JOIN players p ON gl.player_id = p.id
+                LEFT JOIN player_season_profiles psp
+                  ON psp.player_id = gl.player_id AND psp.effective_season = gl.season
                 WHERE gl.season = %s
                 ORDER BY gl.player_id, gl.week
                 """,
@@ -729,6 +731,8 @@ class FeatureEngineer:
         total = 0
         for season in seasons:
             logger.info("Building features for season=%d…", season)
+            from pipeline.provenance import assert_player_profiles_asof
+            assert_player_profiles_asof(self._conn, season)
             all_rows = self._fetch_season_rows(season)
             if not all_rows:
                 logger.warning("No game_log rows found for season=%d", season)

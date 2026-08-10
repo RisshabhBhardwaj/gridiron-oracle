@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
@@ -210,6 +211,16 @@ def _start_scheduler():
             replace_existing=True,
         )
 
+        # Forecasts are useful only when their capture timestamp is retained.
+        # The job is a no-op unless OPENWEATHER_API_KEY is configured.
+        scheduler.add_job(
+            _capture_pregame_weather_forecasts,
+            "interval",
+            hours=6,
+            id="pregame_weather_forecasts",
+            replace_existing=True,
+        )
+
         scheduler.start()
         logger.info("APScheduler started with %d jobs", len(scheduler.get_jobs()))
         return scheduler
@@ -265,6 +276,25 @@ async def _check_data_freshness() -> None:
         await asyncio.to_thread(_sync_check_data_freshness)
     except Exception as exc:
         logger.debug("Data freshness check failed (DB may not be ready): %s", exc)
+
+
+def _sync_capture_pregame_weather_forecasts() -> int:
+    """Persist timestamped forecast snapshots for games in the provider window."""
+    if not os.environ.get("OPENWEATHER_API_KEY"):
+        return 0
+    from scraper.adapters.weather_adapter import capture_pregame_weather_forecasts
+
+    return capture_pregame_weather_forecasts(settings.database_url)
+
+
+async def _capture_pregame_weather_forecasts() -> None:
+    """Run weather capture off the event loop; failure must not stop the API."""
+    try:
+        captured = await asyncio.to_thread(_sync_capture_pregame_weather_forecasts)
+        if captured:
+            logger.info("Captured %d pregame weather forecast snapshots", captured)
+    except Exception as exc:
+        logger.warning("Pregame weather forecast capture failed: %s", exc)
 
 
 def _sync_prune_old_alerts() -> int:

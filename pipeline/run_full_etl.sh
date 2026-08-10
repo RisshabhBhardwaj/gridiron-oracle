@@ -110,12 +110,12 @@ $PYTHON -m pipeline.injury_pipeline \
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo "  STEP 5b — Weather + Odds enrichment (optional; needs API keys)"
-echo "  Populates: games.precipitation_bucket (OpenWeatherMap)"
+echo "  STEP 5b — Pregame weather forecast + odds enrichment (optional; needs API keys)"
+echo "  Populates: weather_forecasts (timestamped OpenWeather snapshots)"
 echo "             prop_odds (The Odds API)"
 echo "════════════════════════════════════════════════════════════════"
-$PYTHON -m scraper.adapters.weather_adapter --db-url "$DATABASE_URL" \
-  || { require_artifact_source "Weather enrichment"; echo "  (Weather skipped — set OPENWEATHER_API_KEY for precipitation)"; }
+$PYTHON -m scraper.adapters.weather_adapter --db-url "$DATABASE_URL" --capture-forecasts \
+  || { require_artifact_source "Weather forecast capture"; echo "  (Weather skipped — set OPENWEATHER_API_KEY for forecast capture)"; }
 $PYTHON -m scraper.adapters.odds_adapter --db-url "$DATABASE_URL" \
   || { require_artifact_source "Odds enrichment"; echo "  (Odds skipped — set ODDS_API_KEY for prop lines)"; }
 
