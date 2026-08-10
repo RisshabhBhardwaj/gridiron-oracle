@@ -42,11 +42,11 @@ def _make_oof_pair(
     n_folds: int,
     n_per_fold: int,
     seed: int = 0,
-    xgb_noise: float = 5.0,
+    catboost_noise: float = 5.0,
     lgbm_noise: float = 7.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Create paired XGB and LGBM OOF DataFrames.
+    Create paired CatBoost and LGBM OOF DataFrames.
 
     Each fold gets unique player_ids and game_ids of the form:
       player_id = "p_f{fold_idx}_{i:03d}"
@@ -58,12 +58,12 @@ def _make_oof_pair(
     in (player_id, game_id) space.
     """
     rng = np.random.default_rng(seed)
-    xgb_rows: list[dict] = []
+    catboost_rows: list[dict] = []
     lgbm_rows: list[dict] = []
 
     for fold_idx in range(n_folds):
         y_trues    = rng.normal(50.0, 20.0, n_per_fold)
-        xgb_preds  = y_trues + rng.normal(0.0, xgb_noise, n_per_fold)
+        catboost_preds  = y_trues + rng.normal(0.0, catboost_noise, n_per_fold)
         lgbm_preds = y_trues + rng.normal(0.0, lgbm_noise, n_per_fold)
 
         for i in range(n_per_fold):
@@ -75,10 +75,10 @@ def _make_oof_pair(
                 "y_true":    float(y_trues[i]),
                 "fold_idx":  fold_idx,
             }
-            xgb_rows.append({**base,  "y_pred": float(xgb_preds[i])})
+            catboost_rows.append({**base,  "y_pred": float(catboost_preds[i])})
             lgbm_rows.append({**base, "y_pred": float(lgbm_preds[i])})
 
-    return pd.DataFrame(xgb_rows), pd.DataFrame(lgbm_rows)
+    return pd.DataFrame(catboost_rows), pd.DataFrame(lgbm_rows)
 
 
 def _write_oof_files(
@@ -86,18 +86,18 @@ def _write_oof_files(
     n_folds: int = 3,
     n_per_fold: int = 40,
     seed: int = 42,
-    xgb_noise: float = 5.0,
+    catboost_noise: float = 5.0,
     lgbm_noise: float = 7.0,
 ) -> tuple[Path, Path]:
-    xgb_oof, lgbm_oof = _make_oof_pair(
+    catboost_oof, lgbm_oof = _make_oof_pair(
         n_folds=n_folds, n_per_fold=n_per_fold, seed=seed,
-        xgb_noise=xgb_noise, lgbm_noise=lgbm_noise,
+        catboost_noise=catboost_noise, lgbm_noise=lgbm_noise,
     )
-    xgb_path  = tmp_path / "xgb_receiving_yards_abc12345.csv"
+    catboost_path  = tmp_path / "catboost_receiving_yards_abc12345.csv"
     lgbm_path = tmp_path / "lgbm_receiving_yards_def67890.csv"
-    xgb_oof.to_csv(xgb_path, index=False)
+    catboost_oof.to_csv(catboost_path, index=False)
     lgbm_oof.to_csv(lgbm_path, index=False)
-    return xgb_path, lgbm_path
+    return catboost_path, lgbm_path
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -126,23 +126,23 @@ class TestLoadAndAlignOofs:
 
     def test_y_pred_renamed_to_prefix_pred(self, aligned):
         aligned_df, _, _ = aligned
-        assert "xgb_pred"  in aligned_df.columns
+        assert "catboost_pred"  in aligned_df.columns
         assert "lgbm_pred" in aligned_df.columns
         assert "y_pred"    not in aligned_df.columns
 
     def test_pred_cols_list(self, aligned):
         _, pred_cols, _ = aligned
-        assert pred_cols == ["xgb_pred", "lgbm_pred"]
+        assert pred_cols == ["catboost_pred", "lgbm_pred"]
 
     def test_prefixes_list(self, aligned):
         _, _, prefixes = aligned
-        assert prefixes == ["xgb", "lgbm"]
+        assert prefixes == ["catboost", "lgbm"]
 
     def test_inner_join_keeps_all_rows_when_identical_keys(self, aligned, oof_files):
         # Both OOFs have the same (player_id, game_id) → inner join = all rows
-        xgb_oof = pd.read_csv(oof_files[0])
+        catboost_oof = pd.read_csv(oof_files[0])
         aligned_df, _, _ = aligned
-        assert len(aligned_df) == len(xgb_oof)
+        assert len(aligned_df) == len(catboost_oof)
 
     # ── Error cases ────────────────────────────────────────────────────────────
 
@@ -151,16 +151,16 @@ class TestLoadAndAlignOofs:
             load_and_align_oofs([oof_files[0]])
 
     def test_duplicate_prefix_raises(self, tmp_path):
-        xgb_oof, _ = _make_oof_pair(n_folds=2, n_per_fold=10)
-        p1 = tmp_path / "xgb_receiving_yards_aaa.csv"
-        p2 = tmp_path / "xgb_rushing_yards_bbb.csv"    # same "xgb" prefix
-        xgb_oof.to_csv(p1, index=False)
-        xgb_oof.to_csv(p2, index=False)
+        catboost_oof, _ = _make_oof_pair(n_folds=2, n_per_fold=10)
+        p1 = tmp_path / "catboost_receiving_yards_aaa.csv"
+        p2 = tmp_path / "catboost_rushing_yards_bbb.csv"    # same "catboost" prefix
+        catboost_oof.to_csv(p1, index=False)
+        catboost_oof.to_csv(p2, index=False)
         with pytest.raises(ValueError, match="Duplicate"):
             load_and_align_oofs([p1, p2])
 
     def test_missing_columns_raises(self, tmp_path):
-        bad = tmp_path / "xgb_receiving_yards_abc.csv"
+        bad = tmp_path / "catboost_receiving_yards_abc.csv"
         lgbm = tmp_path / "lgbm_receiving_yards_abc.csv"
         # Missing season, week, y_true, fold_idx
         pd.DataFrame({"player_id": ["p1"], "game_id": ["g1"], "y_pred": [10.0]}).to_csv(bad, index=False)
@@ -170,19 +170,25 @@ class TestLoadAndAlignOofs:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 1b. Three-way alignment (XGB + LGBM + TFT)
+# 1b. N-way alignment, and the two-learner policy that sits above it
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestThreeWayAlignment:
     """
-    Verifies that load_and_align_oofs() works correctly when given three OOF
-    files (xgb, lgbm, tft). Stacking accepts N≥2, so adding TFT requires no
-    code changes — this class is the acceptance test confirming 3-way alignment.
+    ``load_and_align_oofs`` is learner-agnostic and still aligns N≥2 files —
+    that mechanism is worth keeping tested. What changed is the layer above it:
+    ``stack()`` now enforces the Phase-5 two-learner allowlist, so a three-way
+    *stack* is refused even though the three-way *alignment* succeeds.
+
+    This class used to assert that a four-learner stack was fine, which is the
+    configuration the Phase-5 kill removed. The final test below inverts that
+    assertion instead of deleting it, so the contract is locked rather than
+    merely unstated.
     """
 
     @pytest.fixture(scope="class")
     def three_oof_files(self, tmp_path_factory):
-        """Create xgb, lgbm, and tft OOF files with the same (player_id, game_id) keys."""
+        """Create catboost, lgbm, and tft OOF files with the same (player_id, game_id) keys."""
         tmp = tmp_path_factory.mktemp("three_way")
         rng = np.random.default_rng(99)
         rows = []
@@ -199,16 +205,16 @@ class TestThreeWayAlignment:
                 })
         base_df = pd.DataFrame(rows)
 
-        xgb_path  = tmp / "xgb_receiving_yards_aaa11111.csv"
+        catboost_path  = tmp / "catboost_receiving_yards_aaa11111.csv"
         lgbm_path = tmp / "lgbm_receiving_yards_bbb22222.csv"
         tft_path  = tmp / "tft_receiving_yards_ccc33333.csv"
 
-        for path, noise in [(xgb_path, 5.0), (lgbm_path, 7.0), (tft_path, 6.0)]:
+        for path, noise in [(catboost_path, 5.0), (lgbm_path, 7.0), (tft_path, 6.0)]:
             df = base_df.copy()
             df["y_pred"] = df["y_true"] + rng.normal(0.0, noise, len(df))
             df.to_csv(path, index=False)
 
-        return xgb_path, lgbm_path, tft_path
+        return catboost_path, lgbm_path, tft_path
 
     @pytest.fixture(scope="class")
     def three_way_aligned(self, three_oof_files):
@@ -216,15 +222,15 @@ class TestThreeWayAlignment:
 
     def test_returns_three_pred_cols(self, three_way_aligned):
         _, pred_cols, _ = three_way_aligned
-        assert pred_cols == ["xgb_pred", "lgbm_pred", "tft_pred"]
+        assert pred_cols == ["catboost_pred", "lgbm_pred", "tft_pred"]
 
     def test_returns_three_prefixes(self, three_way_aligned):
         _, _, prefixes = three_way_aligned
-        assert prefixes == ["xgb", "lgbm", "tft"]
+        assert prefixes == ["catboost", "lgbm", "tft"]
 
     def test_all_three_pred_cols_in_dataframe(self, three_way_aligned):
         aligned_df, _, _ = three_way_aligned
-        for col in ("xgb_pred", "lgbm_pred", "tft_pred"):
+        for col in ("catboost_pred", "lgbm_pred", "tft_pred"):
             assert col in aligned_df.columns, f"'{col}' missing from aligned DataFrame"
 
     def test_y_pred_column_not_present(self, three_way_aligned):
@@ -234,10 +240,10 @@ class TestThreeWayAlignment:
     def test_inner_join_keeps_all_rows_when_keys_identical(
         self, three_oof_files, three_way_aligned
     ):
-        xgb_path, _, _ = three_oof_files
-        n_xgb = len(pd.read_csv(xgb_path))
+        catboost_path, _, _ = three_oof_files
+        n_catboost = len(pd.read_csv(catboost_path))
         aligned_df, _, _ = three_way_aligned
-        assert len(aligned_df) == n_xgb
+        assert len(aligned_df) == n_catboost
 
     def test_all_pred_cols_are_finite(self, three_way_aligned):
         aligned_df, pred_cols, _ = three_way_aligned
@@ -254,32 +260,59 @@ class TestThreeWayAlignment:
         ]
         df_all = pd.DataFrame(rows_all)
 
-        xgb_path  = tmp_path / "xgb_ry_xxx.csv"
+        catboost_path  = tmp_path / "catboost_ry_xxx.csv"
         lgbm_path = tmp_path / "lgbm_ry_yyy.csv"
         tft_path  = tmp_path / "tft_ry_zzz.csv"
 
-        df_all.assign(y_pred=df_all["y_true"] + 1.0).to_csv(xgb_path, index=False)
+        df_all.assign(y_pred=df_all["y_true"] + 1.0).to_csv(catboost_path, index=False)
         df_all.assign(y_pred=df_all["y_true"] + 2.0).to_csv(lgbm_path, index=False)
         # TFT only has rows 0-9 (half the data)
         df_all.iloc[:10].assign(y_pred=df_all["y_true"].iloc[:10] + 3.0).to_csv(tft_path, index=False)
 
-        aligned_df, _, _ = load_and_align_oofs([xgb_path, lgbm_path, tft_path])
+        aligned_df, _, _ = load_and_align_oofs([catboost_path, lgbm_path, tft_path])
         assert len(aligned_df) == 10
 
-    def test_stack_accepts_three_oof_files(self, three_oof_files, tmp_path):
-        """End-to-end: stack() runs without error given 3 OOF files."""
+    def test_stack_refuses_a_killed_learner(self, three_oof_files, tmp_path):
+        """
+        Phase-5 contract: stack() must refuse a TFT (or XGB) input.
+
+        The previous version of this test asserted the opposite — that a
+        three-learner stack ran fine and produced ``tft_pred`` coefficients. That
+        made the test suite lock in the exact configuration the Phase-5 kill was
+        meant to remove, so one run of the documented recovery path would rewrite
+        the clean coef files and inference would begin executing killed learners.
+
+        Enforcement lives inside stack() rather than behind ``--exclude tft,xgb``
+        so that forgetting a CLI flag cannot widen the served learner set.
+        """
+        from ml.artifact_manifest import LearnerPolicyError
+
+        with pytest.raises(LearnerPolicyError) as exc:
+            stack(
+                list(three_oof_files),
+                target="receiving_yards",
+                mlflow_tracking_uri="",
+                out_dir=tmp_path,
+            )
+        assert "tft" in str(exc.value)
+        assert not list(tmp_path.glob("ridge_*_coefs.json")), (
+            "a refused stack must not leave a coef file behind"
+        )
+
+    def test_stack_accepts_the_shipped_two_learner_pair(self, three_oof_files, tmp_path):
+        """The allowed pair still stacks end-to-end."""
+        catboost_path, lgbm_path, _ = three_oof_files
         result = stack(
-            list(three_oof_files),
+            [catboost_path, lgbm_path],
             target="receiving_yards",
             mlflow_tracking_uri="",
             out_dir=tmp_path,
         )
-        assert result.oof_df is not None
-        assert len(result.oof_df) > 0
-        assert "xgb_pred"  in result.oof_df.columns
+        assert result.oof_df is not None and len(result.oof_df) > 0
+        assert "catboost_pred" in result.oof_df.columns
         assert "lgbm_pred" in result.oof_df.columns
-        assert "tft_pred"  in result.oof_df.columns
-        assert result.ridge_coefs.keys() >= {"xgb_pred", "lgbm_pred", "tft_pred"}
+        assert "tft_pred" not in result.oof_df.columns
+        assert result.ridge_coefs.keys() == {"catboost_pred", "lgbm_pred"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -291,8 +324,8 @@ class TestMetaWalkForwardCV:
     @pytest.fixture(scope="class")
     def cv_inputs(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("metacv")
-        xgb_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=10)
-        aligned_df, pred_cols, _ = load_and_align_oofs([xgb_path, lgbm_path])
+        catboost_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=10)
+        aligned_df, pred_cols, _ = load_and_align_oofs([catboost_path, lgbm_path])
         return aligned_df, pred_cols
 
     @pytest.fixture(scope="class")
@@ -337,7 +370,7 @@ class TestMetaWalkForwardCV:
 
     def test_oof_has_base_pred_columns(self, cv_result):
         _, meta_oof_df, _ = cv_result
-        assert "xgb_pred"  in meta_oof_df.columns
+        assert "catboost_pred"  in meta_oof_df.columns
         assert "lgbm_pred" in meta_oof_df.columns
 
     def test_requires_at_least_2_base_folds(self):
@@ -347,12 +380,12 @@ class TestMetaWalkForwardCV:
             "season":    [2020] * 10,
             "week":      [1] * 10,
             "y_true":    np.ones(10) * 50,
-            "xgb_pred":  np.ones(10) * 48,
+            "catboost_pred":  np.ones(10) * 48,
             "lgbm_pred": np.ones(10) * 51,
             "fold_idx":  [0] * 10,
         })
         with pytest.raises(ValueError, match="≥2"):
-            _meta_walk_forward_cv(single_fold_df, ["xgb_pred", "lgbm_pred"])
+            _meta_walk_forward_cv(single_fold_df, ["catboost_pred", "lgbm_pred"])
 
     def test_all_meta_fold_maes_are_positive_finite(self, cv_result):
         meta_fold_results, _, _ = cv_result
@@ -383,8 +416,8 @@ class TestMetaLeakageProof:
     @pytest.fixture(scope="class")
     def setup(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("leakage")
-        xgb_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=42)
-        oof_paths = [xgb_path, lgbm_path]
+        catboost_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=42)
+        oof_paths = [catboost_path, lgbm_path]
 
         result = stack(oof_paths, target="receiving_yards",
                        mlflow_tracking_uri="", out_dir=tmp)
@@ -463,9 +496,9 @@ class TestStackResult:
     @pytest.fixture(scope="class")
     def result(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("stack_result")
-        xgb_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=7)
+        catboost_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=7)
         return stack(
-            [xgb_path, lgbm_path],
+            [catboost_path, lgbm_path],
             target="receiving_yards",
             mlflow_tracking_uri="",
             out_dir=tmp,
@@ -482,15 +515,15 @@ class TestStackResult:
         assert result.stacked_rmse >= result.stacked_mae
 
     def test_base_maes_has_both_prefixes(self, result):
-        assert "xgb"  in result.base_maes
+        assert "catboost"  in result.base_maes
         assert "lgbm" in result.base_maes
 
     def test_base_rmses_has_both_prefixes(self, result):
-        assert "xgb"  in result.base_rmses
+        assert "catboost"  in result.base_rmses
         assert "lgbm" in result.base_rmses
 
     def test_ridge_coefs_for_both_pred_cols(self, result):
-        assert "xgb_pred"  in result.ridge_coefs
+        assert "catboost_pred"  in result.ridge_coefs
         assert "lgbm_pred" in result.ridge_coefs
 
     def test_final_alpha_is_from_ridge_alphas_list(self, result):
@@ -513,9 +546,9 @@ class TestStackingImprovement:
     @pytest.fixture(scope="class")
     def result(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("improvement")
-        xgb_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=99)
+        catboost_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=99)
         return stack(
-            [xgb_path, lgbm_path],
+            [catboost_path, lgbm_path],
             target="receiving_yards",
             mlflow_tracking_uri="",
             out_dir=tmp,
@@ -528,11 +561,11 @@ class TestStackingImprovement:
 
     def test_warning_emitted_iff_not_improved(self, tmp_path):
         """UserWarning is raised iff stacking_improved is False."""
-        xgb_path, lgbm_path = _write_oof_files(tmp_path, n_folds=3, n_per_fold=40, seed=77)
+        catboost_path, lgbm_path = _write_oof_files(tmp_path, n_folds=3, n_per_fold=40, seed=77)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             result = stack(
-                [xgb_path, lgbm_path],
+                [catboost_path, lgbm_path],
                 target="receiving_yards",
                 mlflow_tracking_uri="",
                 out_dir=tmp_path,
@@ -573,9 +606,9 @@ class TestOofOutput:
     @pytest.fixture(scope="class")
     def result(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("oof_format")
-        xgb_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=5)
+        catboost_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=5)
         return stack(
-            [xgb_path, lgbm_path],
+            [catboost_path, lgbm_path],
             target="receiving_yards",
             mlflow_tracking_uri="",
             out_dir=tmp,
@@ -586,7 +619,7 @@ class TestOofOutput:
             assert col in result.oof_df.columns, f"Missing standard OOF column: '{col}'"
 
     def test_oof_has_base_pred_columns(self, result):
-        assert "xgb_pred"  in result.oof_df.columns
+        assert "catboost_pred"  in result.oof_df.columns
         assert "lgbm_pred" in result.oof_df.columns
 
     def test_oof_saved_with_stack_prefix(self, result):
@@ -608,9 +641,9 @@ class TestOofOutput:
         assert len(saved) == len(result.oof_df)
 
     def test_mlflow_disabled_run_id_is_none(self, tmp_path):
-        xgb_path, lgbm_path = _write_oof_files(tmp_path, n_folds=3, n_per_fold=40, seed=3)
+        catboost_path, lgbm_path = _write_oof_files(tmp_path, n_folds=3, n_per_fold=40, seed=3)
         result = stack(
-            [xgb_path, lgbm_path],
+            [catboost_path, lgbm_path],
             target="receiving_yards",
             mlflow_tracking_uri="",    # disabled
             out_dir=tmp_path,
@@ -627,10 +660,10 @@ class TestMLflowLogging:
     @pytest.fixture(scope="class")
     def mlflow_result(self, tmp_path_factory):
         tmp = tmp_path_factory.mktemp("mlflow_stack")
-        xgb_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=55)
+        catboost_path, lgbm_path = _write_oof_files(tmp, n_folds=3, n_per_fold=40, seed=55)
         mlflow_tracking_uri = f"file://{tmp / 'mlruns'}"
         result = stack(
-            [xgb_path, lgbm_path],
+            [catboost_path, lgbm_path],
             target="receiving_yards",
             mlflow_tracking_uri=mlflow_tracking_uri,
             mlflow_experiment="test_stack_receiving_yards",
@@ -644,7 +677,7 @@ class TestMLflowLogging:
         assert len(result.run_id) > 0
 
     def test_required_metrics_logged(self, mlflow_result):
-        """stacked_mae, stacked_rmse, xgb_mae, lgbm_mae must be logged."""
+        """stacked_mae, stacked_rmse, catboost_mae, lgbm_mae must be logged."""
         result, mlflow_uri = mlflow_result
         import mlflow
         client = mlflow.tracking.MlflowClient(tracking_uri=mlflow_uri)
@@ -655,7 +688,7 @@ class TestMLflowLogging:
 
         run = next(r for r in runs if r.info.run_id == result.run_id)
         metrics = run.data.metrics
-        for required in ("stacked_mae", "stacked_rmse", "xgb_mae", "lgbm_mae"):
+        for required in ("stacked_mae", "stacked_rmse", "catboost_mae", "lgbm_mae"):
             assert required in metrics, f"MLflow metric '{required}' not logged"
 
     def test_stacking_improved_tag_logged(self, mlflow_result):
@@ -734,11 +767,11 @@ class TestTemporalOrderingProperty:
                     "week":      1,
                     "y_true":    y,
                     "fold_idx":  fold_idx,
-                    "xgb_pred":  y + float(rng.normal(0.0, 5.0)),
+                    "catboost_pred":  y + float(rng.normal(0.0, 5.0)),
                     "lgbm_pred": y + float(rng.normal(0.0, 7.0)),
                 })
         df = pd.DataFrame(rows)
-        meta_results, _, _ = _meta_walk_forward_cv(df, ["xgb_pred", "lgbm_pred"])
+        meta_results, _, _ = _meta_walk_forward_cv(df, ["catboost_pred", "lgbm_pred"])
 
         for mf in meta_results:
             assert max(mf.train_base_folds) < mf.val_base_fold, (
@@ -763,11 +796,11 @@ class TestTemporalOrderingProperty:
                     "week":      1,
                     "y_true":    y,
                     "fold_idx":  fold_idx,
-                    "xgb_pred":  y + float(rng.normal(0.0, 5.0)),
+                    "catboost_pred":  y + float(rng.normal(0.0, 5.0)),
                     "lgbm_pred": y + float(rng.normal(0.0, 7.0)),
                 })
         df = pd.DataFrame(rows)
-        meta_results, _, _ = _meta_walk_forward_cv(df, ["xgb_pred", "lgbm_pred"])
+        meta_results, _, _ = _meta_walk_forward_cv(df, ["catboost_pred", "lgbm_pred"])
 
         for mf in meta_results:
             assert mf.val_base_fold not in mf.train_base_folds, (
@@ -791,9 +824,9 @@ class TestTemporalOrderingProperty:
                     "week":      1,
                     "y_true":    y,
                     "fold_idx":  fold_idx,
-                    "xgb_pred":  y + float(rng.normal(0.0, 5.0)),
+                    "catboost_pred":  y + float(rng.normal(0.0, 5.0)),
                     "lgbm_pred": y + float(rng.normal(0.0, 7.0)),
                 })
         df = pd.DataFrame(rows)
-        meta_results, _, _ = _meta_walk_forward_cv(df, ["xgb_pred", "lgbm_pred"])
+        meta_results, _, _ = _meta_walk_forward_cv(df, ["catboost_pred", "lgbm_pred"])
         assert len(meta_results) == n_folds - 1

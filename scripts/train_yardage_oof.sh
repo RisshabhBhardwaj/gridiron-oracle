@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Phase-5 yardage repair: receiving_yards (WR/TE/RB) + rushing_yards (RB/QB).
-# Trees = lgbm+catboost only; stack excludes tft,xgb; then causal eval.
-set -uo pipefail
+# Trees = lgbm+catboost only. The allowlist is a checked invariant inside
+# ml.stacking_ensemble (ml/artifact_manifest.py), not a CLI flag here.
+set -euo pipefail
 cd "$(dirname "$0")/.."
 export DATABASE_URL="${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/oracle}"
 export PYTHONPATH=.
@@ -17,47 +18,74 @@ mkdir -p ml/logs ml/oof ml/checkpoints/done reports
 exec >>"$LOG" 2>&1
 echo "=== yardage OOF start $(date) ==="
 
+CELLS=("WR:receiving_yards" "TE:receiving_yards" "RB:receiving_yards" "RB:rushing_yards" "QB:rushing_yards")
+FAILED=()
+
+# Latest OOF by dated filename, not mtime. `ls -t` ordered by modification time,
+# so a `touch` on a stale OOF — or a fresh checkout, where every file carries the
+# checkout timestamp — silently changed which predictions got stacked.
+latest_by_name() {
+  compgen -G "$1" 2>/dev/null | sort | tail -1
+}
+
 run_tree() {
   local model="$1" target="$2" pos="$3"
   local ck="${model}_${target}_${pos}"
-  if [[ -f "ml/checkpoints/done/${ck}.done" ]] && ls ml/oof/${model}_${target}_${pos}_*.csv >/dev/null 2>&1; then
+  local glob="ml/oof/${model}_${target}_${pos}_*.csv"
+  if [[ -f "ml/checkpoints/done/${ck}.done" ]] && compgen -G "$glob" >/dev/null 2>&1; then
     echo "SKIP $ck"; return 0
   fi
   rm -f "ml/checkpoints/done/${ck}.done"
   echo ">>> $model $target/$pos $(date)"
   if $PY -m "ml.${model}_model" --seasons "$SEASONS" --target "$target" --position "$pos" \
       --n-trials "$TRIALS" --out-dir ml/oof --no-mlflow; then
-    touch "ml/checkpoints/done/${ck}.done"
-    echo "OK $ck $(date)"
+    # Validate output before checkpointing, never the other way round.
+    if compgen -G "$glob" >/dev/null 2>&1; then
+      touch "ml/checkpoints/done/${ck}.done"
+      echo "OK $ck $(date)"
+    else
+      echo "FAILED $ck: trainer exited 0 but wrote no artifact matching $glob"
+      FAILED+=("$ck (no artifact)")
+    fi
   else
     echo "FAILED $ck exit=$?"
+    FAILED+=("$ck")
   fi
 }
 
 for model in lgbm catboost; do
-  for pos in WR TE RB; do run_tree "$model" receiving_yards "$pos"; done
-  for pos in RB QB; do run_tree "$model" rushing_yards "$pos"; done
+  for pair in "${CELLS[@]}"; do
+    run_tree "$model" "${pair##*:}" "${pair%%:*}"
+  done
 done
 
-for pair in "WR:receiving_yards" "TE:receiving_yards" "RB:receiving_yards" "RB:rushing_yards" "QB:rushing_yards"; do
+for pair in "${CELLS[@]}"; do
   pos="${pair%%:*}"; target="${pair##*:}"
   ck="stack_${target}_${pos}"
-  if [[ -f "ml/checkpoints/done/${ck}.done" ]] && ls ml/oof/stack_${target}_${pos}_*.csv >/dev/null 2>&1; then
+  if [[ -f "ml/checkpoints/done/${ck}.done" ]] && compgen -G "ml/oof/stack_${target}_${pos}_*.csv" >/dev/null 2>&1; then
     echo "SKIP $ck"; continue
   fi
   rm -f "ml/checkpoints/done/${ck}.done"
-  lgbm=$(ls -t ml/oof/lgbm_${target}_${pos}_*.csv 2>/dev/null | head -1)
-  catb=$(ls -t ml/oof/catboost_${target}_${pos}_*.csv 2>/dev/null | head -1)
+  lgbm=$(latest_by_name "ml/oof/lgbm_${target}_${pos}_*.csv")
+  catb=$(latest_by_name "ml/oof/catboost_${target}_${pos}_*.csv")
   if [[ -z "$lgbm" || -z "$catb" ]]; then
-    echo "FAILED $ck missing trees"; continue
+    echo "FAILED $ck missing trees"
+    FAILED+=("$ck (missing tree OOF)")
+    continue
   fi
   echo ">>> stack $target/$pos $(date)"
   if $PY -m ml.stacking_ensemble --oof "$lgbm" "$catb" --target "$target" --position "$pos" \
       --out-dir ml/oof --no-mlflow; then
-    touch "ml/checkpoints/done/${ck}.done"
-    echo "OK $ck $(date)"
+    if compgen -G "ml/oof/stack_${target}_${pos}_*.csv" >/dev/null 2>&1; then
+      touch "ml/checkpoints/done/${ck}.done"
+      echo "OK $ck $(date)"
+    else
+      echo "FAILED $ck: stacker exited 0 but wrote no artifact"
+      FAILED+=("$ck (no artifact)")
+    fi
   else
     echo "FAILED $ck exit=$?"
+    FAILED+=("$ck")
   fi
 done
 
@@ -103,4 +131,31 @@ Path("reports/eval_causal_yardage_summary.json").write_text(json.dumps(summary, 
 print("saved reports/eval_causal_yardage_summary.json")
 PY
 
+# ── Expected-cell matrix ──────────────────────────────────────────────────────
+MISSING=()
+for pair in "${CELLS[@]}"; do
+  pos="${pair%%:*}"; target="${pair##*:}"
+  for model in lgbm catboost; do
+    compgen -G "ml/oof/${model}_${target}_${pos}_*.csv" >/dev/null 2>&1 \
+      || MISSING+=("${model}_${target}_${pos}")
+  done
+  compgen -G "ml/oof/stack_${target}_${pos}_*.csv" >/dev/null 2>&1 \
+    || MISSING+=("stack_${target}_${pos}")
+done
+
 echo "=== yardage OOF done $(date) ==="
+
+if (( ${#FAILED[@]} > 0 )); then
+  echo "FAILURES (${#FAILED[@]}):"
+  printf '  %s\n' "${FAILED[@]}"
+fi
+if (( ${#MISSING[@]} > 0 )); then
+  echo "MISSING CELLS (${#MISSING[@]}):"
+  printf '  %s\n' "${MISSING[@]}"
+  echo "Refusing to report success with an incomplete cell matrix."
+  exit 1
+fi
+if (( ${#FAILED[@]} > 0 )); then
+  exit 1
+fi
+echo "All declared yardage cells present."

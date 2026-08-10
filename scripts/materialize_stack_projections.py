@@ -9,7 +9,8 @@ Writes weekly rows for:
   - pass_attempts × QB
   - passing_yards × QB (if stack present)
 
-Source of truth: newest ml/oof/stack_{stat}_{pos}_*.csv (y_pred).
+Source of truth: the SHA-256-pinned stack artifact for each cell in
+releases/current_baseline.json (y_pred). Never "newest by mtime".
 Floor/ceiling are simple ± residual MAD proxies so /predict percentiles
 are non-null; Bayesian posteriors remain None until full pipeline re-run.
 
@@ -37,11 +38,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from ml.artifact_manifest import get_manifest  # noqa: E402
 from ml.season_constants import LAST_COMPLETE_SEASON  # noqa: E402
 from pipeline.schema import ensure_schema, normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
-OOF_DIR = ROOT / "ml" / "oof"
 PIPELINE_RUN_ID = f"stack_materialize_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
 CELLS: list[tuple[str, str]] = [
@@ -58,21 +59,21 @@ CELLS: list[tuple[str, str]] = [
 ]
 
 
-def _latest_stack(stat: str, position: str) -> Path | None:
-    paths = [
-        p
-        for p in OOF_DIR.glob(f"stack_{stat}_{position}_*.csv")
-        if "_archive" not in str(p)
-    ]
-    if not paths:
-        return None
-    return max(paths, key=lambda p: p.stat().st_mtime)
+def _pinned_stack(stat: str, position: str) -> Path:
+    """
+    The release-manifest-pinned stack for a cell, SHA-verified.
+
+    Materialization writes straight into ``projections``, so choosing the wrong
+    file here puts wrong numbers in front of users. Selection is manifest-only:
+    a missing entry or a digest mismatch raises rather than falling back to
+    newest-by-mtime, which is how the four-learner ``_20260807`` TE stack became
+    servable.
+    """
+    return get_manifest().resolve_stack(stat, position)
 
 
 def _load_cell(stat: str, position: str) -> pd.DataFrame:
-    path = _latest_stack(stat, position)
-    if path is None:
-        raise FileNotFoundError(f"No stack OOF for {stat}/{position}")
+    path = _pinned_stack(stat, position)
     df = pd.read_csv(path)
     required = {"player_id", "game_id", "season", "week", "y_pred"}
     missing = required - set(df.columns)

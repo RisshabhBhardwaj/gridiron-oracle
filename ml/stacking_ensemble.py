@@ -91,6 +91,15 @@ from sklearn.linear_model import ElasticNetCV, RidgeCV
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from ml.artifact_manifest import (
+    MIN_BASE_LEARNERS,
+    LearnerPolicyError,
+    allowed_learners,
+    assert_coef_keys_allowed,
+    assert_learner_policy,
+    killed_learners,
+    learner_prefix_of,
+)
 from ml.utils import TARGET_COL_MAP, _compute_metrics
 from ml.reliability import promotion_gate
 
@@ -113,6 +122,11 @@ ENET_ALPHAS: list[float] = [0.001, 0.01, 0.1, 1.0, 10.0]
 _OOF_STANDARD_COLS = [
     "player_id", "game_id", "season", "week", "position", "y_true", "y_pred", "fold_idx"
 ]
+
+#: Per-prefix concatenations of multi-position OOF runs are staging artifacts,
+#: not release artifacts. They live in a subdirectory so they are never picked
+#: up by a discovery glob over the serving directory.
+_COMBINED_SUBDIR = "_combined_staging"
 
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
@@ -451,6 +465,31 @@ def _compute_base_metrics(
 
 # ── OOF saving ────────────────────────────────────────────────────────────────
 
+def _sha256_file(path: Path | str, *, chunk_size: int = 1 << 20) -> str:
+    """Streaming SHA-256 hex digest of a file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_csv_atomic(df: pd.DataFrame, path: Path) -> Path:
+    """
+    Write *df* to *path* via a temp file + rename.
+
+    A crash midway through a direct ``to_csv`` leaves a truncated CSV in the
+    serving directory that still matches every discovery glob. Rename is atomic
+    within a filesystem, so a reader sees either the old file or the complete
+    new one.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    df.to_csv(tmp, index=False)
+    os.replace(tmp, path)
+    return path
+
+
 def _save_stack_oof(
     oof_df: pd.DataFrame,
     target: str,
@@ -475,7 +514,10 @@ def _save_stack_oof(
         if c.endswith("_pred") and c != "y_pred"
     ]
     ordered_cols = [c for c in _OOF_STANDARD_COLS + extra_pred_cols if c in oof_df.columns]
-    oof_df[ordered_cols].to_csv(path, index=False)
+    # Order matters: write the artifact atomically, verify it, *then* let the
+    # caller checkpoint. A checkpoint written before validation is a claim that
+    # a later resume will trust without rechecking.
+    _write_csv_atomic(oof_df[ordered_cols], path)
 
     # Write SHA-256 sidecar so load_and_align_oofs can detect silent corruption.
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -535,6 +577,16 @@ def stack(
     aligned_df, pred_cols, prefixes = load_and_align_oofs(
         [Path(p) for p in oof_paths],
         position_filter=position_filter,
+    )
+
+    # ── Learner policy invariant ──────────────────────────────────────────────
+    # Checked here, inside the library entry point, so that it holds for every
+    # caller: --oof, --oof-dir, and direct Python callers alike. The Phase-5
+    # two-learner contract used to be enforced only by remembering to pass
+    # `--exclude tft,xgb`, which is why clean coef files kept getting
+    # overwritten with xgb/tft keys.
+    assert_learner_policy(
+        target, prefixes, context=f"stack(target={target!r}, position={position_filter!r})"
     )
 
     # ── Meta walk-forward CV ──────────────────────────────────────────────────
@@ -673,6 +725,12 @@ def stack(
         col.removesuffix("_pred"): coef for col, coef in ridge_coefs.items()
     }
     coef_json["intercept"] = float(final_ridge.intercept_)
+    # Second policy gate, on the artifact rather than the inputs. The coef file
+    # is what inference actually reads, so no coef file may be written carrying a
+    # killed learner's key even if some future path reaches here another way.
+    assert_coef_keys_allowed(
+        target, coef_json, context=f"coef write for target={target!r} position={position_filter!r}"
+    )
     # Position-specific filename when position_filter is set.
     if position_filter:
         coef_filename = f"ridge_{target}_{position_filter}_coefs.json"
@@ -744,12 +802,14 @@ def stack(
                 })
 
                 # ── Tags ──────────────────────────────────────────────────────
-                # SHA-256 over sorted OOF paths + their last-modified timestamps.
-                # Captures both which files were used and whether their contents
-                # changed since the last run, without reading full file contents.
-                _sorted_paths = sorted(str(Path(p).resolve()) for p in oof_paths)
+                # SHA-256 over each input's *name and content digest*. This used
+                # to hash absolute paths plus mtimes, which made the tag differ
+                # between two clones of identical data and identical between a
+                # file and its touched-but-changed self. A content hash is
+                # reproducible and actually detects modification.
                 _hash_input = "\n".join(
-                    f"{p}:{os.path.getmtime(p)}" for p in _sorted_paths
+                    f"{Path(p).name}:{_sha256_file(p)}"
+                    for p in sorted(oof_paths, key=lambda q: Path(q).name)
                 ).encode()
                 training_data_hash = hashlib.sha256(_hash_input).hexdigest()
 
@@ -796,66 +856,146 @@ def stack(
 
 # ── CLI helpers ───────────────────────────────────────────────────────────────
 
+def assert_consistent_fold_seasons(frames: dict[Path, pd.DataFrame]) -> None:
+    """
+    Require every input OOF to agree on what each ``fold_idx`` means.
+
+    ``load_and_align_oofs`` keeps ``y_true``/``season``/``fold_idx`` from the
+    *first* file only, and the meta walk-forward CV splits on ``fold_idx``. So
+    if two inputs disagree about which season a fold index denotes, rows are
+    silently mislabelled and the causality assert still passes — it is checking
+    fold ordering, not fold meaning.
+
+    This is not hypothetical: the legacy ``receiving_yards`` OOFs mapped
+    ``fold_idx 0`` to 2022 (tft) and 2023 (lgbm/xgb) while current runs map it
+    to 2020.
+
+    Raises:
+        LearnerPolicyError: on any fold_idx whose season set differs across
+            files. (Reusing the policy error keeps discovery failures one
+            catchable type.)
+    """
+    seen: dict[int, tuple[Path, frozenset[int]]] = {}
+    for path, frame in frames.items():
+        if not {"fold_idx", "season"}.issubset(frame.columns):
+            continue
+        for fold_idx, group in frame.groupby("fold_idx"):
+            fold = int(fold_idx)
+            seasons = frozenset(int(s) for s in group["season"].dropna().unique())
+            if fold not in seen:
+                seen[fold] = (path, seasons)
+                continue
+            first_path, first_seasons = seen[fold]
+            if first_seasons != seasons:
+                raise LearnerPolicyError(
+                    f"Inconsistent fold_idx→season mapping across OOF inputs: "
+                    f"fold_idx={fold} maps to {sorted(first_seasons)} in "
+                    f"{first_path.name} but {sorted(seasons)} in {path.name}. "
+                    "Stacking keeps season/fold columns from the first file "
+                    "only, so combining these would mislabel rows. Remove the "
+                    "stale OOF or regenerate both with the same fold plan."
+                )
+
+
 def _discover_oof_files(oof_dir: Path, target: str) -> list[Path]:
     """
     Auto-discover base-learner OOF files in *oof_dir* for *target*.
 
-    Handles per-position training: if XGB (or LGB/TFT) was run once per
-    position (WR/RB/TE/QB), each run writes a separate CSV with the same
-    prefix pattern.  This function concatenates all matching CSVs per prefix
-    into a single combined file so the meta-learner sees all positions.
+    Handles per-position training: if a learner was run once per position
+    (WR/RB/TE/QB), each run writes a separate CSV with the same prefix pattern.
+    This function concatenates all matching CSVs per prefix into a single
+    combined file so the meta-learner sees all positions.
+
+    Discovery is **allowlist-driven and fails closed**. It previously globbed
+    ``{prefix}_{target}_*.csv`` across all four historical learner prefixes, so
+    a ``--oof-dir`` restack silently reintroduced killed learners from whatever
+    happened to be lying in the directory — including files a test run had just
+    written there. A killed learner's OOF now raises rather than being quietly
+    skipped, so the operator learns the directory is contaminated instead of
+    getting a different model than they asked for.
 
     Returns:
-        List of combined-CSV Paths — one per discovered prefix (xgb/lgbm/tft).
-        Raises SystemExit if fewer than 2 prefixes are found.
+        List of Paths — one per allowed learner prefix.
+
+    Raises:
+        LearnerPolicyError: a killed learner's OOF is present, or the inputs
+            disagree on fold_idx→season.
+        SystemExit: fewer than MIN_BASE_LEARNERS allowed learners found.
     """
     import glob as _glob
 
-    prefixes = ["xgb", "lgbm", "catboost", "tft"]
-    combined_paths: list[Path] = []
+    permitted = allowed_learners(target)
 
-    for prefix in prefixes:
+    # Refuse to proceed while a killed learner's OOF sits in the search path:
+    # the operator's intent is ambiguous and the cost of guessing wrong is
+    # serving a killed learner.
+    contaminants = sorted(
+        Path(f).name
+        for prefix in sorted(killed_learners(target))
+        for f in _glob.glob(str(oof_dir / f"{prefix}_{target}_*.csv"))
+    )
+    if contaminants:
+        raise LearnerPolicyError(
+            f"{oof_dir} contains OOF files for learner(s) not permitted for "
+            f"target={target!r}: {contaminants}. Allowed: {sorted(permitted)}. "
+            "Remove or archive them outside the discovery directory. Discovery "
+            "refuses to silently skip them because that is how the killed "
+            "four-learner stack kept coming back."
+        )
+
+    discovered: list[Path] = []
+    frames_by_path: dict[Path, pd.DataFrame] = {}
+
+    for prefix in sorted(permitted):
         pattern = str(oof_dir / f"{prefix}_{target}_*.csv")
         files = sorted(_glob.glob(pattern))
         if not files:
             logger.debug("No %s OOF files found for target=%s — skipping.", prefix, target)
             continue
 
-        if len(files) == 1:
-            combined_paths.append(Path(files[0]))
-            logger.info("Found 1 OOF file for prefix=%s: %s", prefix, files[0])
-        else:
-            # Multiple files = per-position runs and/or retrain stamps.
-            # Sort by mtime ascending, then keep='last' so newer OOFs win on
-            # (player_id, game_id, fold_idx) — avoids collapsed stale folds
-            # poisoning a restack after retrain.
-            paths = sorted((Path(f) for f in files), key=lambda p: p.stat().st_mtime)
-            # Prefer position-tagged dated runs over stale *combined.csv blobs.
-            paths = [p for p in paths if "combined" not in p.name] or paths
-            dfs = [pd.read_csv(p) for p in paths]
-            combined = pd.concat(dfs, ignore_index=True).drop_duplicates(
-                subset=["player_id", "game_id", "fold_idx"],
-                keep="last",
-            )
-            combined_path = oof_dir / f"{prefix}_{target}_combined.csv"
-            combined.to_csv(combined_path, index=False)
-            logger.info(
-                "Combined %d OOF files for prefix=%s → %s  (%d rows) "
-                "(newest wins: %s)",
-                len(paths), prefix, combined_path, len(combined),
-                paths[-1].name if paths else "?",
-            )
-            combined_paths.append(combined_path)
+        paths = [p for p in (Path(f) for f in files) if "combined" not in p.name] or [
+            Path(f) for f in files
+        ]
+        per_path = {p: pd.read_csv(p) for p in paths}
+        frames_by_path.update(per_path)
 
-    if len(combined_paths) < 2:
+        if len(paths) == 1:
+            discovered.append(paths[0])
+            logger.info("Found 1 OOF file for prefix=%s: %s", prefix, paths[0].name)
+            continue
+
+        # Multiple files = per-position runs and/or retrain stamps. Order by the
+        # dated stamp in the filename, not mtime: a `touch` must not change
+        # which rows win, and mtime ties arbitrarily on coarse-granularity
+        # filesystems.
+        paths = sorted(paths, key=lambda p: p.name)
+        combined = pd.concat(
+            [per_path[p] for p in paths], ignore_index=True
+        ).drop_duplicates(subset=["player_id", "game_id", "fold_idx"], keep="last")
+        # Staged outside the serving directory. Writing these next to the real
+        # artifacts put an unverified, un-manifested blob where every discovery
+        # glob would find it — the previous code had to filter its own output
+        # back out by filename.
+        combined_path = oof_dir / _COMBINED_SUBDIR / f"{prefix}_{target}_combined.csv"
+        _write_csv_atomic(combined, combined_path)
+        logger.info(
+            "Combined %d OOF files for prefix=%s → %s  (%d rows) "
+            "(latest stamp wins: %s)",
+            len(paths), prefix, combined_path, len(combined), paths[-1].name,
+        )
+        discovered.append(combined_path)
+
+    assert_consistent_fold_seasons(frames_by_path)
+
+    if len(discovered) < MIN_BASE_LEARNERS:
         logger.error(
-            "Need ≥2 base-learner OOF files in %s for target=%s. "
-            "Run xgb_model.py and lgbm_model.py first.",
-            oof_dir, target,
+            "Need ≥%d allowed base-learner OOF files in %s for target=%s "
+            "(allowed learners: %s). Run the lgbm and catboost trainers first.",
+            MIN_BASE_LEARNERS, oof_dir, target, sorted(permitted),
         )
         raise SystemExit(1)
 
-    return combined_paths
+    return discovered
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -903,8 +1043,11 @@ def main() -> None:
     parser.add_argument(
         "--exclude",
         default="",
-        help="Comma-separated base-learner prefixes to drop (e.g. tft,xgb). "
-             "Phase 5: fantasy_ppr kill TFT; QB/RB also drop XGB on short history.",
+        help="Comma-separated base-learner prefixes to drop. Convenience only: "
+             "the allowed learner set is enforced inside ml.stacking_ensemble "
+             "regardless of this flag (see ml/artifact_manifest.py), so omitting "
+             "it can no longer resurrect a killed learner. Use it to narrow "
+             "within the allowlist, not to define policy.",
     )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -927,6 +1070,18 @@ def main() -> None:
             if not p.exists():
                 logger.error("OOF file not found: %s", p)
                 raise SystemExit(1)
+        # Explicit --oof paths bypass discovery, so apply the allowlist here too
+        # rather than waiting for stack(): failing before training starts is
+        # cheaper and the message names the offending file.
+        try:
+            assert_learner_policy(
+                args.target,
+                [pfx for p in oof_paths if (pfx := learner_prefix_of(p))],
+                context=f"--oof for target={args.target!r}",
+            )
+        except LearnerPolicyError as exc:
+            logger.error("%s", exc)
+            raise SystemExit(1) from exc
 
     if exclude:
         kept = []

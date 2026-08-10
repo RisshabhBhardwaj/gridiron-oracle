@@ -517,17 +517,34 @@ class TestBacktest:
             r = client.get("/backtest?stat=receiving_yards")
         assert r.status_code == 503
 
-    def test_csv_sort_key_uses_st_mtime(self):
+    def test_csv_sort_key_is_deterministic_not_mtime(self):
         """
-        BacktestService._load_csv must sort CSVs by st_mtime, not by
-        raw stat_result struct.  Sorting stat_result objects raises TypeError
-        when more than one CSV exists.
+        BacktestService._load_csv must sort CSVs by a deterministic scalar key.
+
+        Two regressions guarded here:
+
+        1. The key must not be the raw ``stat_result`` struct — sorting those
+           raises TypeError once more than one CSV exists. (Original intent.)
+        2. The key must not be ``st_mtime`` either. A filesystem timestamp is not
+           a statement about which artifact is correct: ``touch`` reorders them,
+           and a fresh clone stamps every file with the checkout time, so the
+           winner becomes arbitrary. Selection is by filename, which carries the
+           run stamp.
         """
         import inspect
         from backend.app.services.backtest import BacktestService
         src = inspect.getsource(BacktestService._load_csv)
-        assert "st_mtime" in src, (
-            "_load_csv sort key must use .stat().st_mtime, not .stat()"
+        # Compare on code only, so the explanatory comments in _load_csv (which
+        # name the rejected approach) do not trip the negative assertion.
+        code = "\n".join(
+            line for line in src.splitlines() if not line.strip().startswith("#")
+        )
+        assert "key=lambda p: p.name" in code, (
+            "_load_csv must sort by filename (which carries the run stamp)"
+        )
+        assert "st_mtime" not in code, (
+            "_load_csv must not select artifacts by mtime — a touched or freshly "
+            "cloned file would change which backtest is served"
         )
 
 

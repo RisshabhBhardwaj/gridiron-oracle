@@ -27,6 +27,7 @@ import psycopg2
 import psycopg2.extras
 from scipy.stats import spearmanr
 
+from ml.artifact_manifest import ArtifactManifest, ManifestEntryMissing, get_manifest
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.schema import normalize_dsn
 
@@ -183,15 +184,23 @@ def spearman_vs_adp(
     return float(rho), float(pval), int(len(merged)), by_pos
 
 
-def load_stack_season_ppr(season: int, oof_dir: Path | None = None) -> pd.DataFrame:
-    """Sum weekly stack OOF y_pred → season fantasy_ppr ranks (model, not actuals)."""
-    root = oof_dir or (Path(__file__).resolve().parent / "oof")
+def load_stack_season_ppr(season: int, manifest: "ArtifactManifest | None" = None) -> pd.DataFrame:
+    """
+    Sum weekly stack OOF y_pred → season fantasy_ppr ranks (model, not actuals).
+
+    Reads the release-manifest-pinned, SHA-verified stack per position. It used
+    to glob ``ml/oof/`` and take the newest by mtime, which made published ADP
+    evidence a function of local filesystem timestamps and let a touched stale
+    stack supply the ranks.
+    """
+    resolver = manifest or get_manifest()
     frames: list[pd.DataFrame] = []
     for pos in ("QB", "RB", "WR", "TE"):
-        paths = sorted(p for p in root.glob(f"stack_fantasy_ppr_{pos}_*.csv") if "_archive" not in str(p))
-        if not paths:
+        try:
+            path = resolver.resolve_stack("fantasy_ppr", pos)
+        except ManifestEntryMissing:
+            logger.warning("No manifest-pinned fantasy_ppr stack for position=%s", pos)
             continue
-        path = max(paths, key=lambda p: p.stat().st_mtime)
         df = pd.read_csv(path)
         sub = df[df["season"].astype(int) == int(season)].copy()
         if sub.empty:

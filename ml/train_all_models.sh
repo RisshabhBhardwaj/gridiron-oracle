@@ -92,39 +92,87 @@ mkdir -p "$OOF_DIR"
 # ── Resume / checkpoint (--resume skips completed tasks) ───────────────────────
 RESUME=false
 FAST_MODE=false
+PURGE_OOF=false
 for arg in "$@"; do
   [[ "$arg" == "--resume" ]]    && RESUME=true
   [[ "$arg" == "--fast-mode" ]] && FAST_MODE=true
+  [[ "$arg" == "--purge-oof" ]] && PURGE_OOF=true
 done
 CHECKPOINT_DIR="ml/checkpoints/done"
 mkdir -p "$CHECKPOINT_DIR"
 
+# ── Clean slate is opt-in, and never destroys release artifacts ───────────────
+#
+# A normal (non---resume) start used to run `rm -f "$OOF_DIR"/*.csv`, which
+# deletes the entire *serving* artifact set — every tracked stack the release
+# manifest pins and the shipped projections were materialized from. "Clean
+# start" and "destroy the release" were spelled the same way, and the recovery
+# path for a deleted stack is restore-from-archive, not regeneration.
+#
+# Checkpoints are cheap to rebuild and pin nothing, so a non-resume run still
+# clears those. Purging OOF CSVs now requires --purge-oof *and* passes the
+# manifest guard, which refuses if any pinned artifact is in the blast radius.
 if [[ "$RESUME" == "false" ]]; then
-  echo "Clean start: purging stale OOF predictions and checkpoints..."
-  rm -f "$OOF_DIR"/*.csv
+  echo "Clean start: clearing checkpoints (OOF artifacts are preserved)."
   rm -f "$CHECKPOINT_DIR"/*.done
 fi
 
+if [[ "$PURGE_OOF" == "true" ]]; then
+  echo "--purge-oof requested: checking $OOF_DIR against the release manifest…"
+  if ! "$PYTHON" scripts/guard_release_artifacts.py --check-purge "$OOF_DIR"; then
+    echo "ABORTING: refusing to purge release artifacts. See the list above." >&2
+    exit 1
+  fi
+  echo "Guard passed; purging OOF CSVs in $OOF_DIR."
+  rm -f "$OOF_DIR"/*.csv
+fi
+
+# Expected output artifact for a (step, stat, pos) cell. Base learners write
+# {learner}_{stat}_{pos}_*.csv; the stacking step writes stack_{stat}_{pos}_*.csv.
+cell_artifact_glob() {
+  local step=$1 stat=$2 pos=${3:-}
+  if [[ "$step" == "stack" ]]; then
+    echo "$OOF_DIR/stack_${stat}_${pos}_*.csv"
+  else
+    echo "$OOF_DIR/${step}_${stat}_${pos}_*.csv"
+  fi
+}
+
+cell_artifact_exists() {
+  local step=$1 stat=$2 pos=${3:-}
+  # shellcheck disable=SC2086 # deliberate glob expansion
+  compgen -G "$(cell_artifact_glob "$step" "$stat" "$pos")" >/dev/null 2>&1
+}
+
+# A checkpoint alone is not evidence the work produced anything. A `.done` marker
+# left behind by an interrupted or purged run made every resume skip a cell whose
+# CSV did not exist, and the script still exited 0. Require both.
 should_skip() {
   local step=$1 stat=$2 pos=${3:-}
   [[ "$RESUME" != "true" ]] && return 1
+  local marker
   if [[ -n "$pos" ]]; then
-    [[ -f "$CHECKPOINT_DIR/${step}_${stat}_${pos}.done" ]]
+    marker="$CHECKPOINT_DIR/${step}_${stat}_${pos}.done"
   else
-    [[ -f "$CHECKPOINT_DIR/${step}_${stat}.done" ]]
+    marker="$CHECKPOINT_DIR/${step}_${stat}.done"
   fi
-}
-# TFT: also consider done if OOF file exists (stat ran to completion, checkpoint may have missed)
-should_skip_tft() {
-  local stat=$1
-  [[ "$RESUME" != "true" ]] && return 1
-  [[ -f "$CHECKPOINT_DIR/tft_${stat}.done" ]] && return 0
-  # Fallback: OOF written = stat complete (TFT writes OOF at end of all folds)
-  ls "$OOF_DIR"/tft_${stat}_*.csv 1>/dev/null 2>&1 && return 0
+  [[ -f "$marker" ]] || return 1
+  if cell_artifact_exists "$step" "$stat" "$pos"; then
+    return 0
+  fi
+  echo "  [!] stale checkpoint $(basename "$marker") — no artifact on disk; re-running."
+  rm -f "$marker"
   return 1
 }
+
+# Checkpoint only after the artifact is on disk. Written the other way round, the
+# marker is a claim that a later resume trusts without rechecking.
 mark_done() {
   local step=$1 stat=$2 pos=${3:-}
+  if ! cell_artifact_exists "$step" "$stat" "$pos"; then
+    echo "  [!] refusing to checkpoint ${step}/${stat}/${pos}: no artifact matching $(cell_artifact_glob "$step" "$stat" "$pos")" >&2
+    return 1
+  fi
   if [[ -n "$pos" ]]; then
     touch "$CHECKPOINT_DIR/${step}_${stat}_${pos}.done"
   else
@@ -140,47 +188,21 @@ mkdir -p "$LOG_DIR"
 RUN_STAMP=$(date '+%Y%m%d_%H%M')
 echo "Training logs: $LOG_DIR/${RUN_STAMP}_*.log"
 
-# ── Steps 1-3: XGBoost + LightGBM + CatBoost (parallel) ──────────────────────
+# ── Steps 1-2: LightGBM + CatBoost (parallel) ────────────────────────────────
 # Each model type is wrapped in a shell function and launched as a background
-# process. All three train simultaneously — ~3× wall-clock speedup vs sequential.
-# TFT (Step 4) starts only after all three finish (wait below).
-
-run_xgb() {
-  echo ""
-  echo "════════════════════════════════════════════════════════════════"
-  echo "  STEP 1 — XGBoost base learner  [PID $$]"
-  echo "════════════════════════════════════════════════════════════════"
-  local fail=0
-  for pos in $POSITIONS; do
-    case $pos in
-      QB) STAT_SET="$QB_STATS" ;;
-      RB) STAT_SET="$RB_STATS" ;;
-      WR) STAT_SET="$WR_STATS" ;;
-      TE) STAT_SET="$TE_STATS" ;;
-    esac
-    for stat in $STAT_SET; do
-      if should_skip xgb "$stat" "$pos"; then
-        echo "  [XGB] SKIP (done): $stat/$pos"
-        continue
-      fi
-      echo "→ [XGB] stat=$stat  position=$pos"
-      if $PYTHON -m ml.xgb_model \
-        --seasons "2019-2025" \
-        --target "$stat" \
-        --position "$pos" \
-        --n-trials 20 \
-        --out-dir "$OOF_DIR" \
-        > "$LOG_DIR/${RUN_STAMP}_xgb_${stat}_${pos}.log" 2>&1; then
-        mark_done xgb "$stat" "$pos"
-        echo "  [XGB] ✓ $stat/$pos"
-      else
-        echo "  [XGB] SKIP: $stat/$pos (insufficient data or error — see log)"
-        fail=1
-      fi
-    done
-  done
-  return $fail
-}
+# process, so both train simultaneously.
+#
+# XGBoost and TFT are deliberately absent. The Phase-5 contract is
+# lgbm + catboost only: TFT for MAE drag (~7.8) and XGB for toxic causal-meta
+# weights on short history plus the 2022 QB/RB/WR OOF collapse. Every shipped
+# ridge_*_coefs.json is a clean two-learner fit.
+#
+# This script used to train all four and then stack them, so one run of the
+# documented recovery path rewrote the clean coef files with xgb/tft keys and
+# inference began executing killed learners. Removing the training blocks is only
+# half the fix — the allowlist is enforced inside ml.stacking_ensemble (see
+# ml/artifact_manifest.py), which raises if a killed learner's OOF is even
+# present in the discovery directory.
 
 run_lgbm() {
   echo ""
@@ -260,70 +282,31 @@ run_catboost() {
 # set -e is disabled for this block so background job failures don't abort parent.
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo "  STEPS 1-3 — XGBoost + LightGBM + CatBoost (running in parallel)"
-echo "  Logs: $LOG_DIR/${RUN_STAMP}_[xgb|lgbm|catboost]_*.log"
+echo "  STEPS 1-2 — LightGBM + CatBoost (running in parallel)"
+echo "  Logs: $LOG_DIR/${RUN_STAMP}_[lgbm|catboost]_*.log"
 echo "════════════════════════════════════════════════════════════════"
 
 set +e
-run_xgb &
-XGB_PID=$!
 run_lgbm &
 LGB_PID=$!
 run_catboost &
 CB_PID=$!
 
-wait $XGB_PID; XGB_STATUS=$?
 wait $LGB_PID; LGB_STATUS=$?
 wait $CB_PID;  CB_STATUS=$?
 set -e
 
 echo ""
 echo "─── Tree model training complete ───────────────────────────────"
-[ $XGB_STATUS -eq 0 ] && echo "  XGBoost:   ✓ OK"   || echo "  XGBoost:   ✗ had errors (check logs)"
 [ $LGB_STATUS -eq 0 ] && echo "  LightGBM:  ✓ OK"   || echo "  LightGBM:  ✗ had errors (check logs)"
 [ $CB_STATUS  -eq 0 ] && echo "  CatBoost:  ✓ OK"   || echo "  CatBoost:  ✗ had errors (check logs)"
 echo "────────────────────────────────────────────────────────────────"
 
-# ── Step 4: TFT ────────────────────────────────────────────────────────────────
-# TFT trains across all positions at once (--position all).
-# --fast-mode: max_epochs=3, n_optuna_trials=0  (~2-4 hrs total)
-# Full mode:   max_epochs=30, n_optuna_trials=20 (~18-22 hrs total)
-echo ""
-echo "════════════════════════════════════════════════════════════════"
-echo "  STEP 4 — Temporal Fusion Transformer (TFT)"
-[[ "$FAST_MODE" == "true" ]] && echo "  (fast mode: max_epochs=3, 0 optuna trials)" || echo "  (full mode: max_epochs=30, 20 optuna trials)"
-echo "════════════════════════════════════════════════════════════════"
+# Step 3 (TFT) removed with Step 1 (XGB): see the Phase-5 note above the
+# run_lgbm definition. Both learners are killed, so training them produces OOFs
+# that the stacker now refuses to consume.
 
-# Build TFT flags based on mode
-TFT_FAST_FLAG=""
-TFT_TRIALS=20
-[[ "$FAST_MODE" == "true" ]] && TFT_FAST_FLAG="--fast" && TFT_TRIALS=0
-
-for stat in $STATS; do
-  if [[ "$stat" == "passing_yards" ]]; then
-    echo "  SKIP: tft $stat (disabled pending validation for QB passing-yards collapse)"
-    continue
-  fi
-  if should_skip_tft "$stat"; then
-    echo "  SKIP (done): tft $stat"
-    continue
-  fi
-  echo "→ TFT: stat=$stat  (all positions)"
-  if $PYTHON -m ml.tft_model \
-    --seasons "2019-2025" \
-    --target "$stat" \
-    --position all \
-    --n-trials "$TFT_TRIALS" \
-    --out-dir "$OOF_DIR" \
-    $TFT_FAST_FLAG \
-    2>&1 | tee "$LOG_DIR/${RUN_STAMP}_tft_${stat}.log"; then
-    mark_done tft "$stat" ""
-  else
-    echo "  SKIP: $stat (error — see log)"
-  fi
-done
-
-# ── Step 5: Stacking (Ridge meta-learner) — PER POSITION ─────────────────────
+# ── Step 3: Stacking (Ridge meta-learner) — PER POSITION ─────────────────────
 # Train a separate Ridge per (stat, position) to eliminate cross-position
 # intercept contamination. Cross-position Ridge is the root cause of negative
 # XGB coefficients and biased intercepts (e.g. passing_yards intercept = -9
@@ -333,8 +316,13 @@ done
 # train.py _load_ridge_coefs() prefers the position-specific file.
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo "  STEP 5 — Ridge stacking meta-learner (per position)"
+echo "  STEP 3 — Ridge stacking meta-learner (per position)"
 echo "════════════════════════════════════════════════════════════════"
+
+# Cells that failed or produced nothing. The loop used to print "SKIP" on
+# failure and carry on, so the script exited 0 with missing stacks; the final
+# expected-cell check below turns that into a non-zero exit.
+STACK_FAILED=()
 
 for pos in $POSITIONS; do
   case $pos in
@@ -356,19 +344,70 @@ for pos in $POSITIONS; do
       --position "$pos" \
       --out-dir "$OOF_DIR" \
       2>&1 | tee "$LOG_DIR/${RUN_STAMP}_stack_${stat}_${pos}.log"; then
-      mark_done stack "$stat" "$pos"
+      # mark_done itself refuses to checkpoint without an artifact.
+      if ! mark_done stack "$stat" "$pos"; then
+        STACK_FAILED+=("${stat}/${pos} (exit 0 but no artifact)")
+      fi
     else
-      echo "  SKIP: $stat/$pos (need ≥2 base-learner OOF files)"
+      echo "  FAILED: stacking $stat/$pos — see $LOG_DIR/${RUN_STAMP}_stack_${stat}_${pos}.log"
+      STACK_FAILED+=("${stat}/${pos}")
     fi
   done
 done
 
-# ── Step 6: Re-run projection pipeline with real stacking ─────────────────────
-# Now that ridge_*_coefs.json files exist, _run_stacking_step() in train.py
-# will load real XGB+LGB+CB+TFT MLflow models instead of the Kalman proxy.
+# ── Expected-cell matrix ──────────────────────────────────────────────────────
+# A long job must not report success with cells missing.
+#
+# The *required* set is the release cell matrix from the manifest, not the
+# stat×position cross product the loops above iterate. Those loops walk 37
+# combinations, but many are irrelevant by design (QB receiving_yards, and
+# anything with too little data for ≥2 base learners), so the cross product is
+# not a statement about what must exist — the release manifest is. Requiring all
+# 37 would make this script exit 1 on a correct tree and never reach Step 4.
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo "  STEP 6 — Projection pipeline (with real stacking inference)"
+echo "  Expected-cell verification (release matrix)"
+echo "════════════════════════════════════════════════════════════════"
+
+REQUIRED_CELLS=()
+while IFS= read -r cell; do
+  [[ -n "$cell" ]] && REQUIRED_CELLS+=("$cell")
+done < <("$PYTHON" scripts/guard_release_artifacts.py --list-cells)
+
+if (( ${#REQUIRED_CELLS[@]} == 0 )); then
+  echo "ABORTING: could not read the release cell matrix from the manifest." >&2
+  exit 1
+fi
+echo "Release matrix declares ${#REQUIRED_CELLS[@]} required cells."
+
+MISSING_CELLS=()
+for cell in "${REQUIRED_CELLS[@]}"; do
+  stat="${cell%%:*}"; pos="${cell##*:}"
+  cell_artifact_exists stack "$stat" "$pos" || MISSING_CELLS+=("${stat}/${pos}")
+done
+
+# Failures outside the release matrix are reported but not fatal: a cell that
+# never had enough data to stack is not a regression.
+if (( ${#STACK_FAILED[@]} > 0 )); then
+  echo "Stacking cells that did not produce an artifact (${#STACK_FAILED[@]}):"
+  printf '  %s\n' "${STACK_FAILED[@]}"
+  echo "  (fatal only for cells in the release matrix — see below)"
+fi
+if (( ${#MISSING_CELLS[@]} > 0 )); then
+  echo "" >&2
+  echo "Missing REQUIRED stack artifacts (${#MISSING_CELLS[@]} of ${#REQUIRED_CELLS[@]}):" >&2
+  printf '  %s\n' "${MISSING_CELLS[@]}" >&2
+  echo "Refusing to report success with an incomplete release cell matrix." >&2
+  exit 1
+fi
+echo "All ${#REQUIRED_CELLS[@]} required release cells have stack artifacts."
+
+# ── Step 4: Re-run projection pipeline with real stacking ─────────────────────
+# Now that ridge_*_coefs.json files exist, _run_stacking_step() in train.py
+# loads the real LGBM + CatBoost MLflow models instead of the Kalman proxy.
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo "  STEP 4 — Projection pipeline (with real stacking inference)"
 # Pre-flight: warn loudly if MLflow is unreachable. Step 6 will use Kalman
 # proxy fallback, but projections won't use the stacked ensemble models.
 if ! curl -sf "${MLFLOW_TRACKING_URI}/health" > /dev/null 2>&1; then

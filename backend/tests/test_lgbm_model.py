@@ -272,7 +272,7 @@ class TestTrainFold:
 
 class TestFeatureImportances:
     @pytest.fixture(scope="class")
-    def train_result(self) -> LGBMTrainResult:
+    def train_result(self, tmp_path_factory) -> LGBMTrainResult:
         df = _make_synthetic_df([2022, 2023, 2024])
         return train(
             df, seasons=[2022, 2023, 2024],
@@ -280,6 +280,11 @@ class TestFeatureImportances:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",
+            # out_dir is required: ml/{xgb,lgbm}_model.train() defaults to
+            # ml/oof/ — the real serving directory — so omitting it wrote test
+            # fixtures next to the release artifacts, where discovery globs and
+            # mtime-based selectors would pick them up.
+            out_dir=tmp_path_factory.mktemp("oof"),
         )
 
     def test_importances_sum_to_one(self, train_result: LGBMTrainResult) -> None:
@@ -303,7 +308,7 @@ class TestFeatureImportances:
 
 class TestTrainFunction:
     @pytest.fixture(scope="class")
-    def result(self) -> LGBMTrainResult:
+    def result(self, tmp_path_factory) -> LGBMTrainResult:
         df = _make_synthetic_df([2022, 2023, 2024])
         return train(
             df, seasons=[2022, 2023, 2024],
@@ -311,6 +316,7 @@ class TestTrainFunction:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",
+            out_dir=tmp_path_factory.mktemp("oof"),
         )
 
     def test_returns_lgbm_train_result(self, result: LGBMTrainResult) -> None:
@@ -385,7 +391,7 @@ class TestMLflowLogging:
         assert "seasons" in run.data.params
         assert "n_folds" in run.data.params
 
-    def test_mlflow_disabled_run_id_is_none(self) -> None:
+    def test_mlflow_disabled_run_id_is_none(self, tmp_path: Path) -> None:
         df = _make_synthetic_df([2022, 2023])
         result = train(
             df, seasons=[2022, 2023],
@@ -393,6 +399,7 @@ class TestMLflowLogging:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",
+            out_dir=tmp_path / "oof",
         )
         assert result.run_id is None
 
@@ -450,6 +457,7 @@ class TestOofPrefix:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",
+            out_dir=tmp_path / "xgb_oof",
         )
         lgbm_result = train(
             df, seasons=[2022, 2023, 2024],
@@ -457,5 +465,6 @@ class TestOofPrefix:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",
+            out_dir=tmp_path / "lgbm_oof",
         )
         assert set(xgb_result.oof_df.columns) == set(lgbm_result.oof_df.columns)

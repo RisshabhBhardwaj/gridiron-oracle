@@ -178,9 +178,12 @@ class RuntimeStatusService:
     def _check_backtest_assets(self) -> dict:
         latest_csv = None
         if _BACKTEST_RESULTS_DIR.exists():
+            # By filename (which carries the run stamp), not st_mtime — readiness
+            # must not name a different "latest" artifact just because a file was
+            # touched or freshly checked out. Matches BacktestService._load_csv.
             candidates = sorted(
                 _BACKTEST_RESULTS_DIR.glob("backtest_*.csv"),
-                key=lambda path: path.stat().st_mtime,
+                key=lambda path: path.name,
                 reverse=True,
             )
             if candidates:

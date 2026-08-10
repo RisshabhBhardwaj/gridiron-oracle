@@ -5,6 +5,7 @@ Create a baseline manifest for the currently verified runtime.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -22,6 +23,71 @@ from backend.app.services.runtime_status import RuntimeStatusService
 
 def _git(args: list[str]) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
+
+
+def _carry_forward_artifact_pins(payload: dict, current_path: Path) -> None:
+    """
+    Preserve the ``artifacts`` list and recompute ``artifact_digests``.
+
+    Artifact selection is manifest-pinned and fails closed (see
+    ``ml/artifact_manifest.py``), so a manifest written without these keys would
+    break every reader: draft, materialize, ADP eval and conformal calibration
+    all resolve their inputs through them. This function never *invents* pins —
+    it carries the existing artifact list forward and re-hashes what is on disk,
+    so a re-freeze cannot silently drop the pins, and a changed artifact is
+    recorded rather than hidden.
+
+    Re-pointing the release at different artifacts remains a deliberate edit to
+    the ``artifacts`` block.
+    """
+    if not current_path.exists():
+        return
+    try:
+        previous = json.loads(current_path.read_text())
+    except json.JSONDecodeError:
+        return
+
+    artifacts = previous.get("artifacts")
+    if not artifacts:
+        return
+    payload["artifacts"] = artifacts
+    for key in ("stack_policy", "known_issues", "reprojection_gates"):
+        if key in previous and key not in payload:
+            payload[key] = previous[key]
+
+    def _walk(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from _walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                yield from _walk(item)
+
+    digests: dict[str, str] = {}
+    missing: list[str] = []
+    for relpath in sorted(set(_walk(artifacts))):
+        path = ROOT / relpath
+        if not path.is_file():
+            missing.append(relpath)
+            continue
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        digests[relpath] = digest.hexdigest()
+
+    payload["artifact_digests"] = digests
+    if missing:
+        # Recorded rather than swallowed: a pinned artifact that is not on disk
+        # is a release problem the operator has to see.
+        payload["artifact_pins_missing"] = missing
+        print(
+            "WARNING: manifest lists artifacts that are not on disk: "
+            + ", ".join(missing),
+            file=sys.stderr,
+        )
 
 
 def main() -> int:
@@ -76,11 +142,13 @@ def main() -> int:
         },
     }
 
+    current_path = root / settings.baseline_manifest_path
+    _carry_forward_artifact_pins(payload, current_path)
+
     slug = settings.model_version.replace("/", "_").replace(":", "_")
     manifest_path = baselines_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{slug}.json"
     manifest_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
-    current_path = root / settings.baseline_manifest_path
     current_path.parent.mkdir(parents=True, exist_ok=True)
     current_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 

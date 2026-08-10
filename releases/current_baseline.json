@@ -262,7 +262,14 @@
       "ml/oof/stack_pass_attempts_QB_20260809.csv"
     ],
     "passing_yards": "ml/oof/stack_passing_yards_QB_20260809.csv",
-    "serving_divergence": "reports/serving_divergence_passing_yards_QB.json"
+    "serving_divergence": "reports/serving_divergence_passing_yards_QB.json",
+    "stacks_yardage": [
+      "ml/oof/stack_receiving_yards_WR_20260809.csv",
+      "ml/oof/stack_receiving_yards_TE_20260809.csv",
+      "ml/oof/stack_receiving_yards_RB_20260809.csv",
+      "ml/oof/stack_rushing_yards_QB_20260809.csv",
+      "ml/oof/stack_rushing_yards_RB_20260809.csv"
+    ]
   },
   "verification": {
     "local_verify_command": "make verify-local",
@@ -272,5 +279,23 @@
     "approved_pipeline_run_ids": [],
     "require_interval_columns": true,
     "require_posterior_samples": true
+  },
+  "artifact_digests": {
+    "ml/oof/stack_carries_RB_20260809.csv": "e5cf4971349c0fb8deb384ca65294090b6797f5f3dc8534d22d2476e4ec48a78",
+    "ml/oof/stack_fantasy_ppr_QB_20260809.csv": "77614a8a791d4558e07bef7d32e5d084695afc8f53d0ab980bab8715aa3ac6aa",
+    "ml/oof/stack_fantasy_ppr_RB_20260809.csv": "e9c79d75f7d3cba77a9546549740d851055b94c42fdc786c90edbed1700b9214",
+    "ml/oof/stack_fantasy_ppr_TE_20260809.csv": "26a5a23fbee0cea692c2cb713d0ceef560a1661df803cfc90d9247a51cc481b6",
+    "ml/oof/stack_fantasy_ppr_WR_20260809.csv": "086d5b6bbb3899bc331ce95c94fbc43b7b97894d65eb84c7a89f1282dfe12604",
+    "ml/oof/stack_pass_attempts_QB_20260809.csv": "16899f66c72bf2991fc15ce163a53de65b3e35e60cddfb3a567cb1b86b9930a4",
+    "ml/oof/stack_passing_yards_QB_20260809.csv": "187304d6173f16a3bf9e57cfda6191f240871ab2ad90370bdaada27ee337a162",
+    "ml/oof/stack_receiving_yards_RB_20260809.csv": "411af4bc8d85ac0c5448cb15f947e222da209cba14097629bab80fc2d4d94e16",
+    "ml/oof/stack_receiving_yards_TE_20260809.csv": "86e386db4c0e146fab5861ea264603f042cb1076dafb9ac77ab564d8264eadd3",
+    "ml/oof/stack_receiving_yards_WR_20260809.csv": "a6e6d54ae52b37190697d5bb3cfa7e5190584ebe7f2cfea576a2ebd374ac49c1",
+    "ml/oof/stack_rushing_yards_QB_20260809.csv": "a9cac33aa89c2498366112bdce2c5f95cf93bb517de592cdb256165f18553f05",
+    "ml/oof/stack_rushing_yards_RB_20260809.csv": "4912b6329c1ce1c4d4884b205004fc4037f5458d12cf955689a3938fd1de51df",
+    "ml/oof/stack_targets_RB_20260809.csv": "fc096f9acdd12c6fec607d6c5c272afb4259ca011e14ce717384fea81f6033cf",
+    "ml/oof/stack_targets_TE_20260809.csv": "de8eb8af1470ac2ac43f134a5a8f0666ab4edf29dfe11e476e2129059dbe1c07",
+    "ml/oof/stack_targets_WR_20260809.csv": "74a7b0134670857b8fe140dfd09b13d93679bced61afeea76e7990e7427f09da",
+    "reports/serving_divergence_passing_yards_QB.json": "4c80c9db62f13fd7698032395331e14beae4d729236b64a49a5ecf2e1f7b3df2"
   }
 }

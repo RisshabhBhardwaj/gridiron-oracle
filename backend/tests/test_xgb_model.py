@@ -357,7 +357,7 @@ class TestDataHash:
 
 class TestFeatureImportances:
     @pytest.fixture(scope="class")
-    def train_result(self) -> XGBTrainResult:
+    def train_result(self, tmp_path_factory) -> XGBTrainResult:
         df = _make_synthetic_df([2022, 2023, 2024])
         return train(
             df, seasons=[2022, 2023, 2024],
@@ -365,6 +365,11 @@ class TestFeatureImportances:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",  # disable MLflow
+            # out_dir is required: ml/{xgb,lgbm}_model.train() defaults to
+            # ml/oof/ — the real serving directory — so omitting it wrote test
+            # fixtures next to the release artifacts, where discovery globs and
+            # mtime-based selectors would pick them up.
+            out_dir=tmp_path_factory.mktemp("oof"),
         )
 
     def test_importances_sum_to_one(self, train_result: XGBTrainResult) -> None:
@@ -383,7 +388,7 @@ class TestFeatureImportances:
 
 class TestTrainFunction:
     @pytest.fixture(scope="class")
-    def result(self) -> XGBTrainResult:
+    def result(self, tmp_path_factory) -> XGBTrainResult:
         df = _make_synthetic_df([2022, 2023, 2024])
         return train(
             df, seasons=[2022, 2023, 2024],
@@ -391,6 +396,7 @@ class TestTrainFunction:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",  # disable MLflow
+            out_dir=tmp_path_factory.mktemp("oof"),
         )
 
     def test_returns_xgb_train_result(self, result: XGBTrainResult) -> None:
@@ -475,7 +481,7 @@ class TestMLflowLogging:
         assert "seasons"  in run.data.params
         assert "n_folds"  in run.data.params
 
-    def test_mlflow_disabled_does_not_raise(self) -> None:
+    def test_mlflow_disabled_does_not_raise(self, tmp_path: Path) -> None:
         df = _make_synthetic_df([2022, 2023])
         result = train(
             df, seasons=[2022, 2023],
@@ -483,6 +489,7 @@ class TestMLflowLogging:
             n_optuna_trials=0,
             position_filter=None,
             mlflow_tracking_uri="",
+            out_dir=tmp_path / "oof",
         )
         assert result.run_id is None
 

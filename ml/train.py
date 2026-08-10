@@ -86,6 +86,7 @@ import numpy as np
 import pandas as pd
 
 from backend.app.core.tracing import start_span
+from ml.artifact_manifest import ManifestError, get_manifest
 from ml.utils import FEATURE_COLS, suppress_training_warnings
 from ml.reliability import YARDAGE_STATS, split_conformal_interval
 
@@ -1063,20 +1064,33 @@ class PipelineRunner:
         stat: str,
         position: str,
     ) -> pd.DataFrame:
-        """Replace p10/p90 with 80% split-conformal intervals when available."""
-        import glob
+        """
+        Replace p10/p90 with 80% split-conformal intervals when available.
 
+        Calibrated from the single release-manifest-pinned stack artifact for the
+        cell. This previously globbed ``stack_{stat}_{position}_*.csv`` and
+        concatenated *every* match, so stale four-learner residuals (the
+        ``_20260807`` files) fed the shipped intervals — a live defect in served
+        uncertainty, not a latent risk. One cell has exactly one calibration
+        source.
+        """
         actual_parts: list[np.ndarray] = []
         prediction_parts: list[np.ndarray] = []
-        pattern = str(self.oof_dir / f"stack_{stat}_{position}_*.csv")
-        for path in glob.glob(pattern):
-            try:
-                oof = pd.read_csv(path)
-                if {"y_true", "y_pred"}.issubset(oof.columns):
-                    actual_parts.append(oof["y_true"].to_numpy(dtype=float))
-                    prediction_parts.append(oof["y_pred"].to_numpy(dtype=float))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Could not load conformal OOF %s: %s", path, exc)
+        try:
+            path = get_manifest().resolve_stack(stat, position)
+        except (ManifestError, FileNotFoundError) as exc:
+            logger.warning(
+                "No manifest-pinned conformal OOF for %s/%s: %s", stat, position, exc
+            )
+        else:
+            oof = pd.read_csv(path)
+            if {"y_true", "y_pred"}.issubset(oof.columns):
+                actual_parts.append(oof["y_true"].to_numpy(dtype=float))
+                prediction_parts.append(oof["y_pred"].to_numpy(dtype=float))
+            else:
+                logger.warning(
+                    "Pinned conformal OOF %s lacks y_true/y_pred columns", path.name
+                )
 
         if not actual_parts:
             message = f"No stacked OOF residuals for conformal {stat}/{position}"

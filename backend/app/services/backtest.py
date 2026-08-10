@@ -138,10 +138,15 @@ class BacktestService:
         if not _RESULTS_DIR.exists():
             return None
 
-        # Find the most recently written CSV for this stat
+        # Pick the latest run by *filename*, which carries the run stamp.
+        # Sorting by st_mtime made the choice depend on filesystem timestamps: a
+        # `touch` on an old result, or a fresh clone where every mtime is the
+        # checkout time, silently changes which backtest gets reported. The key
+        # must stay a scalar — sorting by the bare `p.stat()` struct raises
+        # TypeError as soon as more than one CSV exists.
         candidates = sorted(
             _RESULTS_DIR.glob("backtest_*.csv"),
-            key=lambda p: p.stat().st_mtime,
+            key=lambda p: p.name,
             reverse=True,
         )
         if not candidates:

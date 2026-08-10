@@ -26,15 +26,23 @@ for model in lgbm catboost; do
   echo ">>> $model passing_yards/QB $(date)"
   $PY -m "ml.${model}_model" --seasons "$SEASONS" --target passing_yards --position QB \
     --n-trials "$TRIALS" --out-dir ml/oof --no-mlflow
+  # Validate the artifact before checkpointing, never the other way round.
+  compgen -G "ml/oof/${model}_passing_yards_QB_*.csv" >/dev/null
   touch "ml/checkpoints/done/${model}_passing_yards_QB.done"
 done
 
-echo ">>> stack passing_yards/QB exclude=tft,xgb $(date)"
+echo ">>> stack passing_yards/QB $(date)"
+# No --exclude: the two-learner allowlist is enforced inside ml.stacking_ensemble
+# (ml/artifact_manifest.py), so it cannot be lost by forgetting a flag here.
 $PY -m ml.stacking_ensemble --oof-dir ml/oof --target passing_yards --position QB \
-  --exclude tft,xgb --out-dir ml/oof --no-mlflow
+  --out-dir ml/oof --no-mlflow
+# Checkpoint only after the artifact exists.
+compgen -G "ml/oof/stack_passing_yards_QB_*.csv" >/dev/null
 touch ml/checkpoints/done/stack_passing_yards_QB.done
 
-STACK=$(ls -t ml/oof/stack_passing_yards_QB_*.csv | head -1)
+# Latest by dated filename, not `ls -t`: mtime ordering made the diagnosed
+# artifact depend on touches and checkout order rather than on which run is newest.
+STACK=$(compgen -G "ml/oof/stack_passing_yards_QB_*.csv" | sort | tail -1)
 echo "Diagnosing $STACK"
 $PY scripts/diagnose_serving_divergence.py --stat passing_yards --position QB --oof "$STACK" \
   --json-out reports/serving_divergence_passing_yards_QB.json

@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.core.config import settings
+from ml.artifact_manifest import ManifestEntryMissing, get_manifest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["draft"])
@@ -78,13 +79,21 @@ def _fetch_adp(conn, season: int, source: str, scoring: str, position: Optional[
         return [dict(r) for r in cur.fetchall()]
 
 
-def _latest_stack_oof(position: str) -> Optional[Path]:
-    paths = sorted(_OOF_DIR.glob(f"stack_fantasy_ppr_{position}_*.csv"))
-    # Prefer newest by mtime among non-archive paths
-    paths = [p for p in paths if "_archive" not in str(p)]
-    if not paths:
+def _pinned_stack_oof(position: str) -> Optional[Path]:
+    """
+    The release-manifest-pinned fantasy_ppr stack for *position*, SHA-verified.
+
+    Deliberately not a glob over ``ml/oof/``: selecting by mtime served the
+    poisoned four-learner ``_20260807`` stack whenever it was touched, or
+    whenever the filesystem's timestamp granularity tied it against the clean
+    one. Returns None only when the cell is genuinely unpinned; an integrity
+    failure raises, because serving a mismatched artifact is worse than 404.
+    """
+    try:
+        return get_manifest().resolve_stack("fantasy_ppr", position)
+    except ManifestEntryMissing:
+        logger.warning("No manifest-pinned fantasy_ppr stack for position=%s", position)
         return None
-    return max(paths, key=lambda p: p.stat().st_mtime)
 
 
 def _fetch_stack_season_ppr(conn, season: int) -> tuple[dict[str, dict], Optional[str]]:
@@ -95,7 +104,7 @@ def _fetch_stack_season_ppr(conn, season: int) -> tuple[dict[str, dict], Optiona
     frames: list[pd.DataFrame] = []
     used: list[str] = []
     for pos in ("QB", "RB", "WR", "TE"):
-        path = _latest_stack_oof(pos)
+        path = _pinned_stack_oof(pos)
         if path is None:
             continue
         df = pd.read_csv(path)

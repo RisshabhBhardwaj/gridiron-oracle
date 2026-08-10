@@ -46,7 +46,11 @@ for pos in ["QB", "RB", "WR"]:
         if not paths:
             failed.append(f"{learner}/{pos}: missing OOF")
             continue
-        path = max(paths, key=lambda p: p.stat().st_mtime)
+        # Latest by dated filename (paths is already sorted), not mtime: the
+        # guard must inspect the same file a restack would consume, and mtime
+        # makes that depend on touches and checkout order rather than on which
+        # run is genuinely newest.
+        path = paths[-1]
         df = pd.read_csv(path)
         g = df[df["season"] == 2022]
         nunique = g["y_pred"].nunique()
