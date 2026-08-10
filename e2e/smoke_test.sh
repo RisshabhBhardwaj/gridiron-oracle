@@ -44,6 +44,11 @@ check() {
   fi
 }
 
+# Response-shape assertions live in a sourced library so they can be tested
+# directly — see backend/tests/test_http_assert.py (audit C-32).
+# shellcheck source=lib/http_assert.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/http_assert.sh"
+
 cleanup() {
   echo ""
   echo "── Cleaning up background processes ──"
@@ -52,6 +57,7 @@ cleanup() {
   [ -n "$ENGINE_PID"  ] && kill "$ENGINE_PID"  2>/dev/null && echo "  stopped engine  (pid=$ENGINE_PID)"
   # Remove engine IPC socket if leftover
   rm -f /tmp/gridiron.sock
+  http_assert_cleanup
 }
 trap cleanup EXIT
 
@@ -116,26 +122,87 @@ echo ""
 echo "── [5/6] API endpoint checks ──"
 BASE="http://127.0.0.1:$FASTAPI_PORT"
 
+# /predict takes `player` (a name; partial match is resolved server-side),
+# `week`, `season`, and `stat`. It does NOT take `player_id` or `position` —
+# position is derived from the resolved player. The old request sent the
+# obsolete parameters and therefore could not exercise the current contract
+# (audit C-32).
+#
+# The cell must be one the materializer actually covered: only 10 of the 15
+# declared (stat, position) cells were materialized, and `receiving_yards` —
+# what this check used to request — is not among them (audit C-10).
+PREDICT_PLAYER="${SMOKE_PLAYER:-Amon-Ra St. Brown}"
+PREDICT_STAT="${SMOKE_STAT:-fantasy_ppr}"
+PREDICT_SEASON="${SMOKE_SEASON:-2024}"
+PREDICT_WEEK="${SMOKE_WEEK:-2}"
+
 check "/health" \
   "curl -sf $BASE/health"
 
-check "/season/current returns {season,week}" \
-  "curl -sf $BASE/season/current | grep -q 'season'"
+api_check "/season/current returns {season, week}" \
+  "$BASE/season/current" "
+assert isinstance(d, dict), type(d)
+assert isinstance(d['season'], int), d
+assert isinstance(d['week'], int), d
+"
 
-check "/projections/week/1 returns array" \
-  "curl -sf '$BASE/projections/week/1?season=2025' | grep -qE '\[|\]'"
+api_check "/projections/week/$PREDICT_WEEK returns populated rows" \
+  "$BASE/projections/week/$PREDICT_WEEK?season=$PREDICT_SEASON&stat=$PREDICT_STAT" "
+rows = d['projections']
+assert isinstance(rows, list), type(rows)
+assert rows, 'empty projections list — an empty array used to pass this check'
+assert d['count'] == len(rows), (d['count'], len(rows))
+assert d['stat'] == '$PREDICT_STAT' and d['season'] == $PREDICT_SEASON, d['stat']
+r = rows[0]
+for field in ('player_id', 'player_name', 'position', 'stat', 'projection', 'floor', 'ceiling'):
+    assert field in r, f'missing {field} in {sorted(r)}'
+assert isinstance(r['projection'], (int, float)), r['projection']
+assert r['floor'] <= r['projection'] <= r['ceiling'], r
+"
 
-check "/predict returns projection" \
-  "curl -sf '$BASE/predict?player_id=00-0031344&week=1&season=2025&stat=receiving_yards&position=WR' | grep -q 'projection'"
+api_check "/predict returns a full projection for the current contract" \
+  "$BASE/predict?player=$(printf %s "$PREDICT_PLAYER" | sed 's/ /%20/g')&week=$PREDICT_WEEK&season=$PREDICT_SEASON&stat=$PREDICT_STAT" "
+for field in ('player', 'player_id', 'week', 'season', 'position', 'stat',
+              'projection', 'percentiles', 'model_version', 'data_freshness'):
+    assert field in d, f'missing {field} in {sorted(d)}'
+assert d['stat'] == '$PREDICT_STAT', d['stat']
+assert d['season'] == $PREDICT_SEASON and d['week'] == $PREDICT_WEEK, d
+# The requested stat must appear as a key of the stat projection.
+assert '$PREDICT_STAT' in d['projection'], sorted(d['projection'])
+value = d['projection']['$PREDICT_STAT']
+assert isinstance(value, (int, float)) and value == value, value   # not None, not NaN
+p = d['percentiles']
+assert p['p10'] is not None and p['p50'] is not None and p['p90'] is not None, p
+assert p['p10'] <= p['p50'] <= p['p90'], p
+assert isinstance(d['model_version'], str) and d['model_version'], d['model_version']
+"
 
-check "/backtest returns results" \
-  "curl -sf $BASE/backtest | grep -q 'mae'"
+# Regression lock: the pre-C-32 request shape must not quietly succeed. A 422
+# is the correct answer — `player` is required, and `player_id`/`position` are
+# not parameters at all.
+status_check "/predict rejects the obsolete player_id/position contract" \
+  "$BASE/predict?player_id=00-0031344&week=1&season=2025&stat=receiving_yards&position=WR" \
+  422
 
-check "/settings returns weights" \
-  "curl -sf $BASE/settings | grep -q 'xgb_weight'"
+api_check "/backtest returns results" \
+  "$BASE/backtest" "
+rows = d['results'] if isinstance(d, dict) and 'results' in d else d
+assert rows, 'empty backtest payload'
+blob = json.dumps(d)
+assert 'mae' in blob, sorted(d) if isinstance(d, dict) else type(d)
+"
 
-check "/alerts returns array" \
-  "curl -sf $BASE/alerts | grep -qE '\[|\]'"
+api_check "/settings returns weights" \
+  "$BASE/settings" "
+assert isinstance(d, dict), type(d)
+assert 'xgb_weight' in d, sorted(d)
+"
+
+api_check "/alerts returns a list" \
+  "$BASE/alerts" "
+rows = d['alerts'] if isinstance(d, dict) and 'alerts' in d else d
+assert isinstance(rows, list), type(rows)
+"
 
 check "MLflow /health" \
   "curl -sf http://127.0.0.1:$MLFLOW_PORT/health"

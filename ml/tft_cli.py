@@ -14,6 +14,7 @@ from typing import Optional
 
 import numpy as np
 
+from ml.season_constants import assert_not_fitting_incomplete_season
 from ml.tft_model import TFTConfig, logger
 from ml.utils import TARGET_COL_MAP, _parse_seasons, load_feature_matrix
 
@@ -99,6 +100,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         parser.error("--db-url or DATABASE_URL env var is required")
 
     seasons = _parse_seasons(args.seasons)
+    # Trainer entrypoint guarantee: an incomplete season must never enter a
+    # walk-forward fold. `_parse_seasons` already raises on out-of-range input;
+    # this is the explicit assert the pre-Week-1 claim rests on (audit C-28).
+    assert_not_fitting_incomplete_season(seasons)
     position = None if args.position.lower() == "all" else args.position
     mlflow_uri = "" if args.no_mlflow else args.mlflow_uri
 

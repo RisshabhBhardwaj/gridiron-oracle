@@ -182,6 +182,15 @@ def _load_pfr_drop_rates(seasons: list[int]) -> pd.DataFrame:
     nflreadpy.load_pfr_advstats(stat_type='rec') returns PFR's advanced
     receiving stats including 'drops' and 'drop_pct' columns.
 
+    THIS IS A LIVE PRO-FOOTBALL-REFERENCE DEPENDENCY. `scraper.adapters.
+    pro_football_ref` is retired, but that retirement covers direct scraping
+    only — this call still ingests PFR-derived data through nflverse's
+    redistributed copy, and `drop_rate` on `player_pbp_features` comes from it.
+    Any claim that the project no longer uses PFR is false while this call
+    exists (audit C-25). See `docs/DATA_SOURCES.md`. Retiring it means dropping
+    `drop_rate` or sourcing it elsewhere (FTN charting already supersedes it
+    where available — see the FTN merge below), not deleting this docstring.
+
     Returns a DataFrame with columns:
         player_id       (pfr_player_id or closest match)
         season, week    (for merging by player-season-week)

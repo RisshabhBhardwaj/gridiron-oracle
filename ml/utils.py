@@ -620,10 +620,19 @@ def _parse_seasons(season_str: str, *, complete_only: bool = True) -> list[int]:
     """
     Parse '2018-2024' (range) or '2018 2019 2020' (list) into a list of ints.
 
-    By default, seasons beyond LAST_COMPLETE_SEASON are dropped with a warning
-    so incomplete (pre-Week-1) seasons cannot enter walk-forward folds.
+    Seasons beyond the cap RAISE `ValueError`. They used to be dropped with a
+    warning (audit C-28), so a trainer invoked with `--seasons 2019-2026`
+    quietly trained on 2019–2025 and reported success — the pre-Week-1
+    guarantee rested on a log line nobody read.
+
+    The lower bound is not capped at all: `TRAIN_SEASON_START` is the default
+    start of the walk-forward range, not a hard floor, and clamping to it
+    silently rewrote `2018-2024` as `2019-2024`.
+
+    `complete_only=False` still caps at `CURRENT_SEASON` — a season that does
+    not exist yet is never a valid request.
     """
-    from ml.season_constants import LAST_COMPLETE_SEASON, cap_seasons
+    from ml.season_constants import assert_seasons_within_cap
 
     season_str = season_str.strip()
     if "-" in season_str and not season_str.startswith("-"):
@@ -636,15 +645,8 @@ def _parse_seasons(season_str: str, *, complete_only: bool = True) -> list[int]:
     else:
         seasons = [int(s.strip()) for s in season_str.replace(",", " ").split()]
 
-    if complete_only:
-        capped = cap_seasons(seasons, complete_only=True)
-        dropped = [s for s in seasons if s not in capped]
-        if dropped:
-            logger.warning(
-                "Dropping incomplete seasons %s (LAST_COMPLETE_SEASON=%d). "
-                "Context-only seasons must not enter training folds.",
-                dropped,
-                LAST_COMPLETE_SEASON,
-            )
-        return capped
+    if not seasons:
+        raise ValueError(f"No seasons parsed from {season_str!r}")
+
+    assert_seasons_within_cap(seasons, complete_only=complete_only)
     return seasons

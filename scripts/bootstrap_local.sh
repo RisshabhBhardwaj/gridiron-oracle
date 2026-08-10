@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${ROOT_DIR}/.venv_311"
 
+# Point Git at the tracked hooks directory so every clone gets the public-push
+# gate without a separate install step, and so edits to `.githooks/pre-push`
+# take effect immediately rather than after a reinstall (audit C-30).
+git -C "${ROOT_DIR}" config core.hooksPath .githooks
+
 python3.11 -m venv "${VENV_DIR}"
 source "${VENV_DIR}/bin/activate"
 

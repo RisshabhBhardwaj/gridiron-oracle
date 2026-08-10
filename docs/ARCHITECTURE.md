@@ -4,7 +4,7 @@ _Last verified against the code: 2026-08-01._
 
 ## Layer 0 — Ingestion
 
-`scraper/adapters/` holds one adapter per data source. `nflreadpy` is primary; there are no paid APIs.
+`scraper/adapters/` holds one adapter per data source. `nflreadpy` is primary; there are no paid APIs. [`docs/DATA_SOURCES.md`](DATA_SOURCES.md) is the authoritative per-source status list — note in particular that direct Pro-Football-Reference *scraping* is retired while PFR-derived advanced receiving stats are still ingested through nflverse (`_load_pfr_drop_rates` → `drop_rate`).
 
 Every external row passes through a **Pydantic validator before touching any non-staging table**. Rows that fail validation go to the `dead_letter` table. Nothing is silently dropped — a pipeline that quietly discards 3% of its input produces a model whose errors nobody can explain.
 
