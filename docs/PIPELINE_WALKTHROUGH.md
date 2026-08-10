@@ -39,7 +39,7 @@ bash pipeline/run_full_etl.sh
 ```bash
 export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
-export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://127.0.0.1:5001}
+export MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://127.0.0.1:15091}
 export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/oracle}
 export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)"
 

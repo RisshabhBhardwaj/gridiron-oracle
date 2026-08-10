@@ -28,22 +28,6 @@ from pipeline.schema import normalize_dsn
 logger = logging.getLogger(__name__)
 _HIST_DIR = ROOT / "data" / "adp" / "historical"
 
-CREATE_FANTASY_ADP = """
-CREATE TABLE IF NOT EXISTS fantasy_adp (
-    season INTEGER NOT NULL,
-    source TEXT NOT NULL,
-    scoring TEXT NOT NULL,
-    player_name TEXT NOT NULL,
-    position TEXT,
-    team TEXT,
-    adp FLOAT NOT NULL,
-    player_id TEXT,
-    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, source, scoring, player_name)
-)
-"""
-
-
 def import_season(season: int, database_url: str) -> int:
     path = _HIST_DIR / f"adp_{season}.csv"
     if not path.exists():
@@ -58,7 +42,6 @@ def import_season(season: int, database_url: str) -> int:
     n = 0
     with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute(CREATE_FANTASY_ADP)
             for _, row in df.iterrows():
                 cur.execute(
                     """

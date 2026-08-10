@@ -32,22 +32,6 @@ logger = logging.getLogger(__name__)
 
 _SLEEPER_BASE = "https://api.sleeper.app/v1"
 
-CREATE_FANTASY_ADP = """
-CREATE TABLE IF NOT EXISTS fantasy_adp (
-    season INTEGER NOT NULL,
-    source TEXT NOT NULL,
-    scoring TEXT NOT NULL,
-    player_name TEXT NOT NULL,
-    position TEXT,
-    team TEXT,
-    adp FLOAT NOT NULL,
-    player_id TEXT,
-    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, source, scoring, player_name)
-)
-"""
-
-
 def _get(path: str) -> Any:
     url = f"{_SLEEPER_BASE}{path}"
     resp = requests.get(url, timeout=30)
@@ -140,7 +124,6 @@ def upsert_adp(
     dsn = normalize_dsn(database_url)
     with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute(CREATE_FANTASY_ADP)
             n = 0
             for _, row in df.iterrows():
                 cur.execute(

@@ -40,7 +40,7 @@ if str(ROOT) not in sys.path:
 
 from ml.artifact_manifest import get_manifest  # noqa: E402
 from ml.season_constants import LAST_COMPLETE_SEASON  # noqa: E402
-from pipeline.schema import ensure_schema, normalize_dsn  # noqa: E402
+from pipeline.schema import normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
 PIPELINE_RUN_ID = f"stack_materialize_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
@@ -224,7 +224,6 @@ def main() -> int:
     dsn = normalize_dsn(args.database_url)
     conn = psycopg2.connect(dsn)
     try:
-        ensure_schema(conn)
         n = _upsert(conn, all_df)
         report["n_upserted"] = n
         out.write_text(json.dumps(report, indent=2) + "\n")

@@ -54,6 +54,7 @@ class Player(SQLModel, table=True):
 
     # Relationships
     game_logs: List["GameLog"] = Relationship(back_populates="player")
+    fantasy_adp_rows: List["FantasyADP"] = Relationship(back_populates="player")
 
 
 class Team(SQLModel, table=True):
@@ -177,6 +178,42 @@ class GameLog(SQLModel, table=True):
     game: Optional[Game] = Relationship(back_populates="game_logs")
 
 
+class TeamCoaching(SQLModel, table=True):
+    """Verified coaching context for a team in one season."""
+
+    __tablename__ = "team_coaching"
+
+    season: int = Field(primary_key=True)
+    team: str = Field(foreign_key="teams.id", primary_key=True)
+    head_coach: Optional[str] = None
+    offensive_coordinator: Optional[str] = None
+    defensive_coordinator: Optional[str] = None
+    scheme_pass_rate_prior: Optional[float] = None
+    notes: Optional[str] = None
+    source: Optional[str] = None
+    verified_by: Optional[str] = None
+    verified_on: Optional[date] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class FantasyADP(SQLModel, table=True):
+    """Imported ADP observation, optionally linked to its canonical player."""
+
+    __tablename__ = "fantasy_adp"
+
+    season: int = Field(primary_key=True)
+    source: str = Field(primary_key=True)
+    scoring: str = Field(primary_key=True)
+    player_name: str = Field(primary_key=True)
+    position: Optional[str] = None
+    team: Optional[str] = None
+    adp: float
+    player_id: Optional[str] = Field(default=None, foreign_key="players.id", index=True)
+    imported_at: datetime = Field(default_factory=datetime.utcnow)
+
+    player: Optional[Player] = Relationship(back_populates="fantasy_adp_rows")
+
+
 class FeatureMatrix(SQLModel, table=True):
     """
     Pre-computed feature vector for one player-game.
@@ -295,6 +332,25 @@ class FeatureMatrix(SQLModel, table=True):
     # snap_pct_off: offensive snap participation rate (0-1).  NULL before HIGH 2 fix.
     snap_pct_off: Optional[float] = None
 
+    # ── Phase 4 feature groups ────────────────────────────────────────────
+    carry_share: Optional[float] = None
+    snap_share_trailing: Optional[float] = None
+    snap_share_trend: Optional[float] = None
+    ts_vs_league: Optional[float] = None
+    rz_ts_vs_league: Optional[float] = None
+    snap_vs_pos_avg: Optional[float] = None
+    carry_share_vs_league: Optional[float] = None
+    opp_adj_target_share: Optional[float] = None
+    team_pace: Optional[float] = None
+    team_pass_rate: Optional[float] = None
+    expected_pass_attempts: Optional[float] = None
+    expected_pass_rate: Optional[float] = None
+    neutral_script_flag: Optional[float] = None
+    years_exp: Optional[float] = None
+    age: Optional[float] = None
+    career_games: Optional[float] = None
+    exp_bucket: Optional[float] = None
+
     # ── Targets (actual results — NULL for future games) ──────────────────
     actual_fantasy_ppr: Optional[float] = None
     actual_receiving_yards: Optional[float] = None
@@ -320,18 +376,7 @@ class FeatureMatrix(SQLModel, table=True):
     avg_separation: Optional[float] = None
     blitz_exposure: Optional[float] = None
     coverage_matchup_score: Optional[float] = None
-    first_read_share: Optional[float] = None
-    light_box_pct: Optional[float] = None
-    man_coverage_rate: Optional[float] = None
-    pass_blocking_grade: Optional[float] = None
-    pass_rush_win_rate: Optional[float] = None
-    press_rate: Optional[float] = None
-    route_participation_rate: Optional[float] = None
-    route_win_rate: Optional[float] = None
-    run_blocking_grade: Optional[float] = None
     snap_share_trend: Optional[float] = None
-    stacked_box_pct: Optional[float] = None
-    yac_expected: Optional[float] = None
 
     deep_matchup_score: Optional[float] = None
     depth_chart_rank: Optional[float] = None

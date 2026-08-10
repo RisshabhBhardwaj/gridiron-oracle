@@ -21,21 +21,6 @@ from pipeline.schema import normalize_dsn
 
 logger = logging.getLogger(__name__)
 
-CREATE_FANTASY_ADP = """
-CREATE TABLE IF NOT EXISTS fantasy_adp (
-    season INTEGER NOT NULL,
-    source TEXT NOT NULL,
-    scoring TEXT NOT NULL,
-    player_name TEXT NOT NULL,
-    position TEXT,
-    team TEXT,
-    adp FLOAT NOT NULL,
-    player_id TEXT,
-    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (season, source, scoring, player_name)
-)
-"""
-
 # Common FantasyPros export headers → canonical names, in PRIORITY ORDER.
 #
 # A standard FantasyPros ADP export looks like:
@@ -116,7 +101,6 @@ def import_csv(
     conn = psycopg2.connect(normalize_dsn(db_url))
     try:
         with conn.cursor() as cur:
-            cur.execute(CREATE_FANTASY_ADP)
             rows = [
                 (
                     season,

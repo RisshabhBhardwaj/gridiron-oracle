@@ -69,13 +69,6 @@ CREATE TABLE IF NOT EXISTS injury_history (
 """
 
 
-def _ensure_schema(conn) -> None:
-    from pipeline.schema import ensure_schema
-
-    ensure_schema(conn)
-    logger.info("injury_history table ensured via schema registry.")
-
-
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 
 def _load_injuries() -> pd.DataFrame:
@@ -250,7 +243,6 @@ def _update_feature_matrix_streaks(conn, df: pd.DataFrame) -> None:
     for snap share and target volume after returning from injury.
     """
     cur = conn.cursor()
-    cur.execute("ALTER TABLE feature_matrix ADD COLUMN IF NOT EXISTS games_missed_streak INTEGER DEFAULT 0")
     conn.commit()
 
     update_sql = """
@@ -279,7 +271,6 @@ def main() -> None:
 
     conn = _get_conn()
     try:
-        _ensure_schema(conn)
         raw = _load_injuries()
         df = _process_injuries(raw)
         n = _write_to_db(conn, df)

@@ -159,14 +159,6 @@ def enrich_elo(conn) -> None:
         if col not in enriched.columns:
             enriched[col] = 0.0
 
-    # ── Ensure Elo columns exist in feature_matrix ─────────────────────────────
-    for col in elo_cols:
-        cur.execute(f"""
-            ALTER TABLE feature_matrix
-            ADD COLUMN IF NOT EXISTS {col} FLOAT
-        """)
-    conn.commit()
-
     # ── Bulk UPDATE in batches of 5,000 ───────────────────────────────────────
     logger.info("Bulk-updating feature_matrix Elo columns (%d rows)...", len(enriched))
     batch_size = 5000
@@ -265,14 +257,6 @@ def enrich_embeddings(conn) -> None:
     embed_path = Path("ml/player_embeddings_store.pkl")
     store.save(str(embed_path))
     logger.info("EmbeddingStore saved → %s", embed_path)
-
-    # ── Add embedding columns if they don't exist ──────────────────────────────
-    for i in range(EMBED_DIM):
-        cur.execute(f"""
-            ALTER TABLE feature_matrix
-            ADD COLUMN IF NOT EXISTS player_emb_{i} FLOAT
-        """)
-    conn.commit()
 
     # ── Load player_ids from feature_matrix ────────────────────────────────────
     cur.execute("SELECT DISTINCT player_id FROM feature_matrix WHERE player_id IS NOT NULL")

@@ -555,7 +555,7 @@ def stack(
                              ridge_{target}_{position}_coefs.json.
                              Eliminates cross-position intercept contamination.
         mlflow_tracking_uri: MLflow tracking URI. Pass "" to disable entirely.
-                             None → uses $MLFLOW_TRACKING_URI or localhost:5000.
+                             None → uses $MLFLOW_TRACKING_URI or localhost:15091.
         mlflow_experiment:   MLflow experiment name. Defaults to "stack_{target}".
         out_dir:             Output directory for stacked OOF. Defaults to ml/oof/.
 
@@ -747,7 +747,7 @@ def stack(
 
     use_mlflow = mlflow_tracking_uri != ""
     if use_mlflow and mlflow_tracking_uri is None:
-        mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001")
+        mlflow_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:15091")
 
     if use_mlflow:
         try:

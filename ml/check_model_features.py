@@ -7,7 +7,7 @@ Inference passes len(FEATURE_COLS) (113). This script identifies which
 (learner, stat) pairs need retraining.
 
 Usage:
-  export MLFLOW_TRACKING_URI=http://127.0.0.1:5001
+  export MLFLOW_TRACKING_URI=http://127.0.0.1:15091
   python -m ml.check_model_features
 
 Output: Lists (learner, stat) with wrong feature count and retrain commands.
@@ -46,9 +46,9 @@ def _get_feature_count(model: object) -> int | None:
 
 def check_mlflow_running() -> bool:
     """Check if MLflow server is responding at tracking URI."""
-    uri = os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
+    uri = os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:15091")
     if not uri.startswith("http"):
-        print("Set MLFLOW_TRACKING_URI (e.g. http://127.0.0.1:5001)")
+        print("Set MLFLOW_TRACKING_URI (e.g. http://127.0.0.1:15091)")
         return False
     # This function is incomplete in the provided snippet,
     # but the instruction was to change the URI and insert this.
@@ -60,9 +60,9 @@ def main() -> int:
     from ml.utils import FEATURE_COLS
 
     expected = len(FEATURE_COLS)
-    uri = os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
+    uri = os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:15091")
     if not uri:
-        print("Set MLFLOW_TRACKING_URI (e.g. http://127.0.0.1:5001)")
+        print("Set MLFLOW_TRACKING_URI (e.g. http://127.0.0.1:15091)")
         return 1
 
     import mlflow

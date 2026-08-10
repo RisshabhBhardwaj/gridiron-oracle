@@ -188,7 +188,7 @@ bash ml/train_all_models.sh          # XGB + LGB + CB + TFT + stack + pipeline (
 bash ml/train_all_models.sh --resume # Resume after crash (skips completed checkpoints)
 ```
 
-The script writes MLflow runs to `http://localhost:5001`. Open that URL to compare run metrics before and after any change.
+The script writes MLflow runs to `http://localhost:15091`. Open that URL to compare run metrics before and after any change.
 
 ### Weekly retrain (manual)
 

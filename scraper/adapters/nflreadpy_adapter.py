@@ -513,7 +513,6 @@ class NFLReadPyAdapter:
         logger.info("Connecting to PostgreSQL…")
         self._conn = psycopg2.connect(dsn)
         self._conn.autocommit = False
-        self._ensure_tables()
         logger.info("Connected and tables verified.")
 
     def close(self) -> None:
@@ -530,15 +529,6 @@ class NFLReadPyAdapter:
             if exc_type:
                 self._conn.rollback()
             self.close()
-
-    # ── DDL ───────────────────────────────────────────────────────────────
-
-    def _ensure_tables(self) -> None:
-        """Create staging and dead_letter tables if they don't exist."""
-        assert self._conn
-        from pipeline.schema import ensure_schema
-
-        ensure_schema(self._conn)
 
     # ── DB writes ─────────────────────────────────────────────────────────
 
