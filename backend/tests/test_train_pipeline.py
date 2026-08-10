@@ -482,24 +482,36 @@ class TestStackingInferenceHelpers:
         from ml.train import PipelineRunner
         coef_path = tmp_path / "ridge_receiving_yards_coefs.json"
         coef_path.write_text(json.dumps({
-            "xgb": 2.0, "lgbm": 1.0, "tft": 1.0,
+            "learner_order": ["lgbm", "catboost"],
+            "weights": {"lgbm": 2.0, "catboost": 1.0},
             "intercept": 0.5,
         }))
         runner = PipelineRunner(oof_dir=tmp_path)
         result = runner._load_ridge_coefs("receiving_yards")
         assert result is not None
         coefs, intercept, learner_order = result
-        assert len(coefs) == 3
-        assert coefs == [2.0, 1.0, 1.0]
-        assert learner_order == ["xgb", "lgbm", "tft"]
+        assert len(coefs) == 2
+        assert coefs == [2.0, 1.0]
+        assert learner_order == ["lgbm", "catboost"]
         assert abs(intercept - 0.5) < 1e-9
 
-    def test_load_ridge_coefs_corrupt_file_returns_none(self, tmp_path):
+    def test_load_ridge_coefs_corrupt_file_raises(self, tmp_path):
         from ml.train import PipelineRunner
         coef_path = tmp_path / "ridge_rushing_yards_coefs.json"
         coef_path.write_text("not valid json {{{")
         runner = PipelineRunner(oof_dir=tmp_path)
-        assert runner._load_ridge_coefs("rushing_yards") is None
+        with pytest.raises(ValueError, match="Invalid Ridge coefficient JSON"):
+            runner._load_ridge_coefs("rushing_yards")
+
+    def test_load_ridge_coefs_rejects_nan_and_unknown_learner(self, tmp_path):
+        from ml.train import PipelineRunner
+        (tmp_path / "ridge_receiving_yards_WR_coefs.json").write_text(
+            '{"learner_order": ["lgbm", "catboost"], '
+            '"weights": {"lgbm": NaN, "catboost": 0.4, "unknown_learner": 99}, '
+            '"intercept": 0.0}'
+        )
+        with pytest.raises(ValueError):
+            PipelineRunner(oof_dir=tmp_path)._load_ridge_coefs("receiving_yards", "WR")
 
     def test_load_ridge_coefs_requires_position_specific_file_when_position_given(self, tmp_path):
         import json
@@ -577,39 +589,58 @@ class TestStackingInferenceHelpers:
             result = runner._run_stacking_step(df, "rushing_yards", "RB")
         assert list(result) == [15.0, 25.0]
 
+    def test_stacking_artifact_backed_exception_never_falls_back(self, monkeypatch):
+        """C-04: artifact-backed serving propagates every stack failure."""
+        from ml.train import PipelineRunner
+
+        monkeypatch.setenv("PRODUCT_MODE", "artifact_backed")
+        runner = PipelineRunner(mlflow_tracking_uri="http://fake:9999")
+        runner._mlflow_reachable = True
+        df = pd.DataFrame({"player_id": ["p1"], "kalman_est_rushing_yards": [15.0]})
+        with patch.object(runner, "_load_and_run_stacking", side_effect=ValueError("malformed coefs")):
+            with pytest.raises(RuntimeError, match="refusing Kalman fallback"):
+                runner._run_stacking_step(df, "rushing_yards", "RB")
+
     def test_stacking_mlflow_with_mock_models_uses_their_predictions(self):
         """When real models are injected, their predictions flow through."""
         from unittest.mock import MagicMock, patch
         from ml.train import PipelineRunner
 
-        runner = PipelineRunner(mlflow_tracking_uri="http://fake:9999")
-        runner._mlflow_reachable = True
-        df = pd.DataFrame({
-            "player_id": ["p1", "p2"],
-            "kalman_est_receiving_yards": [10.0, 20.0],
-        })
+        import json
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            from pathlib import Path
+            tmp_path = Path(tmp)
+            (tmp_path / "ridge_receiving_yards_WR_coefs.json").write_text(json.dumps({
+                "learner_order": ["lgbm", "catboost"],
+                "weights": {"lgbm": 0.5, "catboost": 0.5}, "intercept": 0.0,
+            }))
+            runner = PipelineRunner(mlflow_tracking_uri="http://fake:9999", oof_dir=tmp_path)
+            runner._mlflow_reachable = True
+            df = pd.DataFrame({
+                "player_id": ["p1", "p2"],
+                "kalman_est_receiving_yards": [10.0, 20.0],
+            })
 
-        mock_xgb = MagicMock()
-        mock_xgb.predict.return_value = np.array([100.0, 200.0])
-        mock_xgb.n_features_in_ = 2
-        mock_xgb.feature_names_in_ = ["1", "2"]
-        
-        mock_lgbm = MagicMock()
-        mock_lgbm.predict.return_value = np.array([90.0, 180.0])
-        mock_lgbm.n_features_in_ = 2
-        mock_lgbm.feature_names_in_ = ["1", "2"]
+            mock_xgb = MagicMock()
+            mock_xgb.predict.return_value = np.array([100.0, 200.0])
+            mock_xgb.n_features_in_ = 2
+            mock_xgb.feature_names_in_ = ["1", "2"]
 
-        with patch.object(runner, "_load_latest_mlflow_model") as mock_load, \
-             patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.xgboost", create=True), \
-             patch("mlflow.lightgbm", create=True):
-            # Return XGB for "xgb", LGB for "lgbm".
-            mock_load.side_effect = (
-                lambda learner, stat, position=None:
-                mock_xgb if learner == "xgb" else (mock_lgbm if learner == "lgbm" else None)
-            )
-            result = runner._run_stacking_step(df, "receiving_yards", "WR")
+            mock_lgbm = MagicMock()
+            mock_lgbm.predict.return_value = np.array([90.0, 180.0])
+            mock_lgbm.n_features_in_ = 2
+            mock_lgbm.feature_names_in_ = ["1", "2"]
 
-        # Mean of [xgb_pred, lgbm_pred, kalman_tft_proxy] = mean([100,90,10], [200,180,20])
-        assert abs(result[0] - np.mean([100.0, 90.0, 10.0])) < 0.01
-        assert abs(result[1] - np.mean([200.0, 180.0, 20.0])) < 0.01
+            with patch.object(runner, "_load_latest_mlflow_model") as mock_load, \
+                 patch("mlflow.set_tracking_uri"), \
+                 patch("mlflow.xgboost", create=True), \
+                 patch("mlflow.lightgbm", create=True):
+                mock_load.side_effect = (
+                    lambda learner, stat, position=None:
+                    mock_lgbm if learner == "lgbm" else (mock_xgb if learner == "catboost" else None)
+                )
+                result = runner._run_stacking_step(df, "receiving_yards", "WR")
+
+        assert abs(result[0] - np.mean([90.0, 100.0])) < 0.01
+        assert abs(result[1] - np.mean([180.0, 200.0])) < 0.01

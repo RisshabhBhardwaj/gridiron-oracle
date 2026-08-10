@@ -406,6 +406,10 @@ def _meta_walk_forward_cv(
         meta_oof["y_true"]   = y_va
         meta_oof["y_pred"]   = y_pred
         meta_oof["fold_idx"] = meta_fold_i
+        # This is serving provenance, not a value inferred at materialization
+        # time. Every row records the latest season actually available to the
+        # meta learner for its prediction fold.
+        meta_oof["max_train_season"] = int(train_df["season"].max())
         for col in pred_cols:
             meta_oof[col] = val_df[col].values
         meta_oof = meta_oof.reset_index(drop=True)
@@ -501,7 +505,8 @@ def _save_stack_oof(
     Save stacked OOF CSV.
 
     Column order: standard OOF columns first, then {prefix}_pred base columns.
-    Standard: player_id, game_id, season, week, y_true, y_pred, fold_idx
+    Standard: player_id, game_id, season, week, y_true, y_pred, fold_idx,
+    max_train_season
     Extra:    xgb_pred, lgbm_pred, tft_pred, ... (whatever base learners provided)
     """
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -513,7 +518,10 @@ def _save_stack_oof(
         c for c in oof_df.columns
         if c.endswith("_pred") and c != "y_pred"
     ]
-    ordered_cols = [c for c in _OOF_STANDARD_COLS + extra_pred_cols if c in oof_df.columns]
+    ordered_cols = [
+        c for c in _OOF_STANDARD_COLS + ["max_train_season"] + extra_pred_cols
+        if c in oof_df.columns
+    ]
     # Order matters: write the artifact atomically, verify it, *then* let the
     # caller checkpoint. A checkpoint written before validation is a claim that
     # a later resume will trust without rechecking.
@@ -719,18 +727,24 @@ def stack(
     #   ridge_{target}_{position}_coefs.json  (e.g. ridge_passing_yards_QB_coefs.json)
     # then falls back to the position-agnostic:
     #   ridge_{target}_coefs.json
-    # Keys: "xgb_pred" → "xgb", "lgbm_pred" → "lgbm", etc. + "intercept".
+    # The serving schema is explicit: learner order is data, rather than an
+    # implementation detail inferred from dict keys.
     out_dir.mkdir(parents=True, exist_ok=True)
-    coef_json: dict[str, float] = {
+    weights: dict[str, float] = {
         col.removesuffix("_pred"): coef for col, coef in ridge_coefs.items()
     }
-    coef_json["intercept"] = float(final_ridge.intercept_)
     # Second policy gate, on the artifact rather than the inputs. The coef file
     # is what inference actually reads, so no coef file may be written carrying a
     # killed learner's key even if some future path reaches here another way.
     assert_coef_keys_allowed(
-        target, coef_json, context=f"coef write for target={target!r} position={position_filter!r}"
+        target, weights, context=f"coef write for target={target!r} position={position_filter!r}"
     )
+    learner_order = [col.removesuffix("_pred") for col in pred_cols]
+    coef_json = {
+        "learner_order": learner_order,
+        "weights": weights,
+        "intercept": float(final_ridge.intercept_),
+    }
     # Position-specific filename when position_filter is set.
     if position_filter:
         coef_filename = f"ridge_{target}_{position_filter}_coefs.json"

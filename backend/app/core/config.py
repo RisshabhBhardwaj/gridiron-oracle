@@ -57,7 +57,7 @@ class Settings:
             "MODEL_VERSION", "latest"
         )
         self.product_mode: str = os.environ.get(
-            "PRODUCT_MODE", "graceful_fallback"  # pragma: no mutate
+            "PRODUCT_MODE", "artifact_backed"  # pragma: no mutate
         ).strip().lower()
         if self.product_mode not in {"artifact_backed", "graceful_fallback"}:  # pragma: no mutate
             self.product_mode = "graceful_fallback"

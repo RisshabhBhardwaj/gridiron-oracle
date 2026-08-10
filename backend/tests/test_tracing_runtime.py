@@ -33,6 +33,7 @@ def _mock_projection_result() -> ProjectionResult:
         projection=74.2,
         floor=38.5,
         ceiling=121.8,
+        interval_method="posterior_samples",
         boom_probability=0.28,
         bust_probability=0.15,
         fantasy_projection=15.4,

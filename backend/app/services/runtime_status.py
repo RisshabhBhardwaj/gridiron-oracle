@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,6 +18,7 @@ from backend.app.core.tracing import describe_tracing
 logger = logging.getLogger(__name__)
 
 _BACKTEST_RESULTS_DIR = Path(__file__).parents[3] / "ml" / "backtest_results"
+_REPO_ROOT = Path(__file__).parents[3]
 
 
 class RuntimeStatusService:
@@ -151,6 +153,8 @@ class RuntimeStatusService:
 
     def _check_baseline_manifest(self) -> dict:
         path = Path(settings.baseline_manifest_path)
+        if not path.is_absolute():
+            path = _REPO_ROOT / path
         if not path.exists():
             return {
                 "status": "error",
@@ -165,15 +169,57 @@ class RuntimeStatusService:
                 "detail": f"Baseline manifest unreadable: {exc}",
             }
 
+        try:
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=_REPO_ROOT, text=True,
+            ).strip()
+            dirty = bool(subprocess.check_output(
+                ["git", "status", "--porcelain"], cwd=_REPO_ROOT, text=True,
+            ).strip())
+        except (OSError, subprocess.CalledProcessError) as exc:
+            return {"status": "error", "detail": f"Cannot inspect release Git state: {exc}"}
+
+        expected_cells = {
+            ("fantasy_ppr", "QB"), ("fantasy_ppr", "RB"),
+            ("fantasy_ppr", "WR"), ("fantasy_ppr", "TE"),
+            ("targets", "WR"), ("targets", "TE"), ("targets", "RB"),
+            ("carries", "RB"), ("pass_attempts", "QB"), ("passing_yards", "QB"),
+            ("receiving_yards", "WR"), ("receiving_yards", "TE"),
+            ("receiving_yards", "RB"), ("rushing_yards", "QB"),
+            ("rushing_yards", "RB"),
+        }
+        try:
+            from ml.artifact_manifest import load_manifest
+            manifest = load_manifest(path, root=_REPO_ROOT)
+            actual_cells = set(manifest.stack_index)
+            if actual_cells != expected_cells:
+                return {
+                    "status": "error",
+                    "detail": "Baseline manifest does not declare the full serving cell matrix",
+                    "observed": {"declared_cells": sorted(f"{s}/{p}" for s, p in actual_cells)},
+                }
+        except Exception as exc:
+            return {"status": "error", "detail": f"Baseline artifact pins are invalid: {exc}"}
+
         observed = {
             "path": str(path),
             "model_version": payload.get("model_version"),
             "git_commit": payload.get("git_commit"),
+            "head": head,
+            "worktree_dirty": dirty,
             "created_at": payload.get("created_at"),
         }
-        status = "ok" if payload.get("model_version") else "warn"
-        detail = "Baseline manifest loaded" if status == "ok" else "Baseline manifest missing model_version"
-        return {"status": status, "detail": detail, "observed": observed}
+        if not payload.get("model_version"):
+            return {"status": "error", "detail": "Baseline manifest missing model_version", "observed": observed}
+        if payload.get("git_dirty") is not False:
+            return {"status": "error", "detail": "Baseline manifest was frozen from a dirty worktree", "observed": observed}
+        if dirty:
+            return {"status": "error", "detail": "Runtime worktree is dirty; refuse stale release manifest", "observed": observed}
+        if payload.get("git_commit") != head:
+            return {"status": "error", "detail": "Baseline manifest commit does not match HEAD", "observed": observed}
+        if payload.get("product_mode") != settings.product_mode:
+            return {"status": "error", "detail": "Baseline manifest product_mode does not match runtime", "observed": observed}
+        return {"status": "ok", "detail": "Baseline manifest matches clean HEAD and full cell matrix", "observed": observed}
 
     def _check_backtest_assets(self) -> dict:
         latest_csv = None

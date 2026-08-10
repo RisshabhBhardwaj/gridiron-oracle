@@ -11,8 +11,10 @@ Writes weekly rows for:
 
 Source of truth: the SHA-256-pinned stack artifact for each cell in
 releases/current_baseline.json (y_pred). Never "newest by mtime".
-Floor/ceiling are simple ± residual MAD proxies so /predict percentiles
-are non-null; Bayesian posteriors remain None until full pipeline re-run.
+Only real posterior quantiles may populate percentile-named fields. Stack OOF
+artifacts do not contain per-player posterior samples, so this materializer
+leaves those fields NULL and records ``interval_method=unavailable`` in its
+report rather than mislabelling a cell-wide residual offset as p10/p90.
 
 Usage:
   PYTHONPATH=. DATABASE_URL=... python scripts/materialize_stack_projections.py
@@ -25,6 +27,7 @@ import argparse
 import json
 import logging
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,25 +41,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ml.artifact_manifest import get_manifest  # noqa: E402
-from ml.season_constants import LAST_COMPLETE_SEASON  # noqa: E402
+from ml.artifact_manifest import REQUIRED_SERVING_CELLS, get_manifest  # noqa: E402
 from pipeline.schema import ensure_schema, normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
 PIPELINE_RUN_ID = f"stack_materialize_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
-CELLS: list[tuple[str, str]] = [
-    ("fantasy_ppr", "QB"),
-    ("fantasy_ppr", "RB"),
-    ("fantasy_ppr", "WR"),
-    ("fantasy_ppr", "TE"),
-    ("targets", "WR"),
-    ("targets", "TE"),
-    ("targets", "RB"),
-    ("carries", "RB"),
-    ("pass_attempts", "QB"),
-    ("passing_yards", "QB"),
-]
+CELLS: list[tuple[str, str]] = list(REQUIRED_SERVING_CELLS)
 
 
 def _pinned_stack(stat: str, position: str) -> Path:
@@ -74,8 +65,15 @@ def _pinned_stack(stat: str, position: str) -> Path:
 
 def _load_cell(stat: str, position: str) -> pd.DataFrame:
     path = _pinned_stack(stat, position)
+    if "_20260809" in path.stem:
+        raise ValueError(
+            f"{path.name} is a pre-02 legacy stack; materialize only rebuilt artifacts"
+        )
     df = pd.read_csv(path)
-    required = {"player_id", "game_id", "season", "week", "y_pred"}
+    required = {
+        "player_id", "game_id", "season", "week", "y_pred",
+        "max_train_season",
+    }
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"{path.name} missing columns {sorted(missing)}")
@@ -83,17 +81,22 @@ def _load_cell(stat: str, position: str) -> pd.DataFrame:
     df["stat"] = stat
     df["position"] = position
     df["projection"] = pd.to_numeric(df["y_pred"], errors="coerce")
-    # Residual-based bands when y_true present; else ±20% of |proj|
-    if "y_true" in df.columns:
-        resid = (df["projection"] - pd.to_numeric(df["y_true"], errors="coerce")).abs()
-        mad = float(resid.median()) if resid.notna().any() else 0.0
-        band = max(mad, 0.15 * float(df["projection"].abs().median() or 1.0))
-    else:
-        band = 0.2 * float(df["projection"].abs().median() or 1.0)
-    df["floor"] = df["projection"] - band
-    df["ceiling"] = df["projection"] + band
-    df["p25"] = df["projection"] - 0.5 * band
-    df["p75"] = df["projection"] + 0.5 * band
+    if not np.isfinite(df["projection"]).all():
+        raise ValueError(f"{path.name} has non-finite y_pred values")
+    df["max_train_season"] = pd.to_numeric(df["max_train_season"], errors="coerce")
+    if not np.isfinite(df["max_train_season"]).all():
+        raise ValueError(f"{path.name} has non-finite max_train_season provenance")
+    if not (df["max_train_season"] < df["season"].astype(int)).all():
+        raise ValueError(f"{path.name} has non-causal max_train_season provenance")
+
+    # A cell-wide residual MAD is not a percentile distribution.  Do not emit
+    # p10/p90 (or p25/p75) until the artifact carries real per-player posterior
+    # quantiles. API consumers receive interval_method="unavailable".
+    df["floor"] = None
+    df["ceiling"] = None
+    df["p25"] = None
+    df["p75"] = None
+    df["interval_method"] = "unavailable"
     if stat == "fantasy_ppr":
         df["fantasy_projection"] = df["projection"]
         df["fantasy_floor"] = df["floor"]
@@ -103,9 +106,6 @@ def _load_cell(stat: str, position: str) -> pd.DataFrame:
         df["fantasy_floor"] = None
         df["fantasy_ceiling"] = None
     df["pipeline_run_id"] = PIPELINE_RUN_ID
-    df["max_train_season"] = np.minimum(
-        LAST_COMPLETE_SEASON, df["season"].astype(int) - 1
-    )
     logger.info("Loaded %s (%d rows) from %s", f"{stat}/{position}", len(df), path.name)
     return df
 
@@ -138,6 +138,9 @@ def _upsert(conn, df: pd.DataFrame) -> int:
             fantasy_floor = EXCLUDED.fantasy_floor,
             fantasy_ceiling = EXCLUDED.fantasy_ceiling,
             pipeline_run_id = EXCLUDED.pipeline_run_id,
+            boom_probability = EXCLUDED.boom_probability,
+            bust_probability = EXCLUDED.bust_probability,
+            posterior_samples = EXCLUDED.posterior_samples,
             max_train_season = EXCLUDED.max_train_season
     """
     rows = []
@@ -185,13 +188,14 @@ def main() -> int:
         return 2
 
     frames: list[pd.DataFrame] = []
-    skipped: list[str] = []
     for stat, pos in CELLS:
+        # A declared release cell is all-or-nothing.  Selection itself verifies
+        # the SHA-256 manifest pin before this reader sees any bytes.
         try:
             frames.append(_load_cell(stat, pos))
-        except FileNotFoundError as exc:
-            skipped.append(str(exc))
-            logger.warning("%s", exc)
+        except Exception as exc:
+            logger.error("Refusing materialization: required %s/%s is invalid: %s", stat, pos, exc)
+            return 1
 
     if not frames:
         logger.error("No stack OOFs loaded")
@@ -207,10 +211,13 @@ def main() -> int:
     )
     report = {
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "git_commit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip(),
         "pipeline_run_id": PIPELINE_RUN_ID,
         "n_rows": int(len(all_df)),
         "cells": summary,
-        "skipped": skipped,
+        "interval_method": "unavailable",
         "dry_run": bool(args.dry_run),
     }
     out = ROOT / "reports" / "materialize_stack_projections.json"

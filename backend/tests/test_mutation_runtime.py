@@ -183,7 +183,7 @@ def test_settings_defaults_cover_all_runtime_fallbacks(monkeypatch):
     assert settings.database_url == "postgresql://oracle:oracle@localhost:15439/oracle"
     assert settings.mlflow_tracking_uri == "http://localhost:5001"
     assert settings.model_version == "latest"
-    assert settings.product_mode == "graceful_fallback"
+    assert settings.product_mode == "artifact_backed"
     assert settings.settings_file == "user_config.json"
     assert settings.baseline_manifest_path == "releases/current_baseline.json"
     assert settings.artifact_invalidation_path == "releases/artifact_invalidations.json"
