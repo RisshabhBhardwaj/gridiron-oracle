@@ -161,22 +161,6 @@
       "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
     },
     {
-      "path": "reports/eval_causal_volume_summary.json",
-      "sha256": "1d99199e406239e5c1ed338a02b30660a45b87dd40732405fe73b755cc3a29db",
-      "bytes": 2075,
-      "status": "provisional",
-      "produced_by": "python scripts/summarize_causal_evals.py",
-      "description": "Summary roll-up of the per-cell eval CSVs; metric name carried through from the CSVs (audit C-31)."
-    },
-    {
-      "path": "reports/eval_causal_yardage_summary.json",
-      "sha256": "2974c09a02b0acb576c5aab283e5b913a153a844eae72421b42ce3e0b2ca64b1",
-      "bytes": 2358,
-      "status": "provisional",
-      "produced_by": "python scripts/summarize_causal_evals.py",
-      "description": "Summary roll-up of the per-cell eval CSVs; metric name carried through from the CSVs (audit C-31)."
-    },
-    {
       "path": "reports/fantasy_ppr_2022_autopsy.json",
       "sha256": "b1a806a79c47bcd16d8ca829d9a7f94f2fe41e61760cc8cc188186eb725a803d",
       "bytes": 14165,

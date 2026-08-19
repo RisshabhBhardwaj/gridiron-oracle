@@ -1,0 +1,9 @@
+{
+  "candidate": "stack",
+  "candidate_mae": 7.505950587077535,
+  "incumbent_mae": 7.500212721114787,
+  "position": "QB",
+  "promotable": false,
+  "reason": "held-out improvement -0.08% does not exceed 0.00%",
+  "target": "pass_attempts"
+}

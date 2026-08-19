@@ -1,0 +1,9 @@
+{
+  "candidate": "stack",
+  "candidate_mae": 4.055196994812271,
+  "incumbent_mae": 4.089180014312221,
+  "position": "RB",
+  "promotable": true,
+  "reason": "held-out improvement 0.83% exceeds 0.00%",
+  "target": "carries"
+}

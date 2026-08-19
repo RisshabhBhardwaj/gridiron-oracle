@@ -7,8 +7,9 @@ Before promoting a train run, re-score holdout seasons with causal constraints
 and refuse promotion if MAE regresses vs the frozen baseline (or vs naive).
 
 Usage:
-  python scripts/reprojection_gate.py --holdout-season 2024 --position WR --target fantasy_ppr
-  python scripts/reprojection_gate.py --holdout-season 2024 --position WR --target fantasy_ppr --oof-glob 'ml/oof/*fantasy_ppr*WR*'
+  python scripts/reprojection_gate.py --holdout-season 2024 --position WR --target fantasy_ppr \
+      --candidate-oof releases/candidates/causal_20260810/stack_fantasy_ppr_WR_20260819.csv \
+      --baseline-manifest releases/baselines/previous_promoted_release.json
 """
 
 from __future__ import annotations
@@ -28,25 +29,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ml.model_floor import fit_ridge_floor  # noqa: E402
+from ml.artifact_manifest import sha256_of  # noqa: E402
 
 logger = logging.getLogger(__name__)
 _OUT = ROOT / "ml" / "experiments" / "reprojection_gate"
 
 
-def _load_oof(glob_pat: str) -> Optional[pd.DataFrame]:
-    paths = sorted(ROOT.glob(glob_pat))
-    if not paths:
-        return None
-    frames = []
-    for p in paths:
-        try:
-            frames.append(pd.read_csv(p))
-        except Exception as exc:
-            logger.warning("skip %s: %s", p, exc)
-    if not frames:
-        return None
-    return pd.concat(frames, ignore_index=True)
+def _load_oof(path: Path) -> pd.DataFrame:
+    """Load exactly one candidate OOF; selection by glob is not a gate."""
+    if not path.exists():
+        raise FileNotFoundError(f"Candidate OOF does not exist: {path}")
+    frame = pd.read_csv(path)
+    if frame.empty:
+        raise ValueError(f"Candidate OOF is empty: {path}")
+    return frame
 
 
 def _oof_mae(df: pd.DataFrame, holdout_season: int) -> Optional[float]:
@@ -67,89 +63,82 @@ def _oof_mae(df: pd.DataFrame, holdout_season: int) -> Optional[float]:
     return float(err.mean()) if len(err) else None
 
 
-def _load_baseline_mae(position: str, target: str, holdout_season: int) -> Optional[float]:
-    path = ROOT / "releases" / "current_baseline.json"
+def _load_baseline_measurement(
+    path: Path, position: str, target: str, holdout_season: int
+) -> dict:
+    """Load a prior-release metric, never the candidate release's own metric."""
     if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text())
-    except Exception:
-        return None
-    gates = payload.get("reprojection_gates") or payload.get("eval") or {}
+        raise FileNotFoundError(f"Frozen baseline manifest does not exist: {path}")
+    payload = json.loads(path.read_text())
+    gates = payload.get("frozen_baseline")
+    if not isinstance(gates, dict):
+        raise ValueError(
+            f"{path} has no frozen_baseline block. Legacy reprojection_gates are "
+            "not eligible because they may be candidate self-comparisons."
+        )
     key = f"{target}:{position}:{holdout_season}"
-    if key in gates:
-        return float(gates[key].get("mae", gates[key]))
-    return None
+    measurement = gates.get(key)
+    if not isinstance(measurement, dict):
+        raise ValueError(f"Frozen baseline has no measurement for {key}")
+    required = {"mae", "oof_sha256", "release_id"}
+    missing = required - set(measurement)
+    if missing:
+        raise ValueError(f"Frozen baseline {key} missing {sorted(missing)}")
+    mae = float(measurement["mae"])
+    if not np.isfinite(mae) or mae <= 0:
+        raise ValueError(f"Frozen baseline {key} has invalid MAE {mae!r}")
+    return {**measurement, "mae": mae}
 
 
 def run_gate(
     holdout_season: int,
     position: str,
     target: str,
-    oof_glob: str,
-    max_regression: float = 0.05,
+    candidate_oof: Path,
+    baseline_manifest: Path,
+    max_regression: float = 0.0,
+    approval: str | None = None,
 ) -> dict:
-    ridge = fit_ridge_floor(holdout_season, position, target=target)
-    oof_df = _load_oof(oof_glob)
+    if max_regression < 0:
+        raise ValueError("max_regression cannot be negative")
+    if max_regression > 0 and not approval:
+        raise ValueError("A non-zero regression allowance requires a recorded approval")
+    oof_df = _load_oof(candidate_oof)
     oof_mae = _oof_mae(oof_df, holdout_season)
-    baseline_mae = _load_baseline_mae(position, target, holdout_season)
+    if oof_mae is None:
+        raise ValueError(f"Candidate OOF has no finite {holdout_season} predictions")
+    baseline = _load_baseline_measurement(baseline_manifest, position, target, holdout_season)
+    candidate_sha256 = sha256_of(candidate_oof)
+    if candidate_sha256 == str(baseline["oof_sha256"]):
+        raise ValueError("Candidate OOF is byte-identical to the frozen baseline; self-comparison is forbidden")
 
-    candidate_mae = oof_mae if oof_mae is not None else ridge.mae
-    candidate_source = "oof" if oof_mae is not None else "ridge_floor"
-
-    # Compare to frozen baseline if present; else require beating ridge itself is N/A —
-    # require candidate <= ridge.mae * (1+eps) when OOF exists, else pass ridge-only.
-    checks = []
-    promote = True
-    reasons = []
-
-    if baseline_mae is not None:
-        ok = candidate_mae <= baseline_mae * (1.0 + max_regression)
-        checks.append({
-            "name": "vs_frozen_baseline",
-            "baseline_mae": baseline_mae,
-            "candidate_mae": candidate_mae,
-            "ok": ok,
-        })
-        if not ok:
-            promote = False
-            reasons.append(
-                f"candidate MAE {candidate_mae:.4f} exceeds baseline {baseline_mae:.4f} "
-                f"by more than {max_regression:.0%}"
-            )
-    else:
-        checks.append({
-            "name": "vs_frozen_baseline",
-            "baseline_mae": None,
-            "candidate_mae": candidate_mae,
-            "ok": True,
-            "note": "no current_baseline.json gate entry — skipped",
-        })
-
-    if oof_mae is not None:
-        ok = oof_mae <= ridge.mae * (1.0 + max_regression)
-        checks.append({
-            "name": "oof_vs_ridge_floor",
-            "ridge_mae": ridge.mae,
-            "oof_mae": oof_mae,
-            "ok": ok,
-        })
-        if not ok:
-            promote = False
-            reasons.append(
-                f"OOF MAE {oof_mae:.4f} worse than Ridge floor {ridge.mae:.4f}"
-            )
+    baseline_mae = float(baseline["mae"])
+    promote = oof_mae <= baseline_mae * (1.0 + max_regression)
+    reasons = [] if promote else [
+        f"candidate MAE {oof_mae:.4f} exceeds frozen baseline {baseline_mae:.4f} "
+        f"by more than {max_regression:.0%}"
+    ]
+    checks = [{
+        "name": "vs_frozen_prior_release",
+        "baseline_mae": baseline_mae,
+        "candidate_mae": oof_mae,
+        "baseline_release_id": baseline["release_id"],
+        "baseline_oof_sha256": baseline["oof_sha256"],
+        "candidate_oof_sha256": candidate_sha256,
+        "ok": promote,
+    }]
 
     report = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "holdout_season": holdout_season,
         "position": position.upper(),
         "target": target,
-        "candidate_source": candidate_source,
-        "candidate_mae": candidate_mae,
-        "ridge_floor_mae": ridge.mae,
+        "candidate_source": str(candidate_oof),
+        "candidate_mae": oof_mae,
         "oof_mae": oof_mae,
         "baseline_mae": baseline_mae,
+        "baseline_manifest": str(baseline_manifest),
+        "approval": approval,
         "promote": promote,
         "reasons": reasons,
         "checks": checks,
@@ -163,16 +152,20 @@ def main() -> int:
     p.add_argument("--holdout-season", type=int, required=True)
     p.add_argument("--position", default="WR")
     p.add_argument("--target", default="fantasy_ppr")
-    p.add_argument("--oof-glob", default="ml/oof/*fantasy_ppr*")
-    p.add_argument("--max-regression", type=float, default=0.05)
+    p.add_argument("--candidate-oof", type=Path, required=True)
+    p.add_argument("--baseline-manifest", type=Path, required=True)
+    p.add_argument("--max-regression", type=float, default=0.0)
+    p.add_argument("--approval", default=None)
     args = p.parse_args()
 
     report = run_gate(
         holdout_season=args.holdout_season,
         position=args.position,
         target=args.target,
-        oof_glob=args.oof_glob,
+        candidate_oof=args.candidate_oof,
+        baseline_manifest=args.baseline_manifest,
         max_regression=args.max_regression,
+        approval=args.approval,
     )
     _OUT.mkdir(parents=True, exist_ok=True)
     path = _OUT / (

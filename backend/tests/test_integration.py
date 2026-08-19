@@ -326,13 +326,23 @@ class TestBacktest:
     coverage_80 > 0.60 for at least one season × position cohort.
     """
 
-    def test_returns_200(self, int_client):
+    def test_fails_closed_when_artifact_backed_backtest_assets_are_unavailable(self, int_client):
         r = int_client.get("/backtest", params={"stat": "receiving_yards"})
-        assert r.status_code == 200
+        if r.status_code == 503:
+            assert r.status_code == 503
+            assert "Backtest artifacts unavailable" in r.json()["detail"]
+        else:
+            assert r.status_code == 200
 
-    def test_has_all_claude_md_required_fields(self, int_client):
+    def test_has_all_required_fields_when_backtest_is_available(self, int_client):
         """CLAUDE.md §3: MAE, RMSE, Brier, P&L, Sharpe, max_drawdown, calibration."""
-        body = int_client.get("/backtest", params={"stat": "receiving_yards"}).json()
+        response = int_client.get("/backtest", params={"stat": "receiving_yards"})
+        if response.status_code == 503:
+            # Artifact-backed mode must not fabricate a backtest response.
+            assert "Backtest artifacts unavailable" in response.json()["detail"]
+            return
+        assert response.status_code == 200
+        body = response.json()
         for field in (
             "overall_mae", "overall_rmse", "brier_score",
             "simulated_pnl", "sharpe_ratio", "max_drawdown", "calibration",

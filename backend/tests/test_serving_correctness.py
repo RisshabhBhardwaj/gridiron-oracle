@@ -17,28 +17,35 @@ def test_materializer_declares_the_complete_serving_matrix():
     assert len(CELLS) == 15
 
 
-def test_materializer_does_not_turn_a_global_residual_band_into_percentiles(tmp_path, monkeypatch):
+def test_materializer_uses_prior_seasons_for_conformal_bounds_not_percentiles(tmp_path, monkeypatch):
     from scripts import materialize_stack_projections as materializer
 
     artifact = tmp_path / "stack_receiving_yards_WR_rebuilt.csv"
     pd.DataFrame({
-        "player_id": ["p1", "p2"],
-        "game_id": ["g1", "g2"],
-        "season": [2025, 2025],
-        "week": [1, 2],
-        "y_pred": [50.0, 70.0],
-        "y_true": [40.0, 90.0],
-        "max_train_season": [2024, 2024],
+        "player_id": [f"p{i}" for i in range(102)],
+        "game_id": [f"g{i}" for i in range(102)],
+        "season": [2024] * 100 + [2025, 2025],
+        "week": [1] * 102,
+        "y_pred": [50.0] * 50 + [100.0] * 50 + [50.0, 100.0],
+        "y_true": [40.0] * 50 + [130.0] * 50 + [0.0, 0.0],
+        "max_train_season": [2023] * 100 + [2024, 2024],
     }).to_csv(artifact, index=False)
     monkeypatch.setattr(materializer, "_pinned_stack", lambda *_: artifact)
 
     frame = materializer._load_cell("receiving_yards", "WR")
 
-    assert frame["floor"].isna().all()
-    assert frame["ceiling"].isna().all()
+    # First season has no prior calibration history; its bounds are absent.
+    assert frame.loc[frame["season"] == 2024, "floor"].isna().all()
+    # 2025 values use 2024 residuals and differ by prediction bucket.  Their
+    # own y_true values are deliberately nonsensical, proving they were not
+    # used to form their interval.
+    current = frame.loc[frame["season"] == 2025]
+    assert current["floor"].notna().all()
+    assert current["ceiling"].notna().all()
+    assert current.iloc[0]["floor"] != current.iloc[1]["floor"]
     assert frame["p25"].isna().all()
     assert frame["p75"].isna().all()
-    assert set(frame["interval_method"]) == {"unavailable"}
+    assert set(current["interval_method"]) == {"causal_oof_conformal_90"}
 
 
 def test_materializer_requires_artifact_provenance(tmp_path, monkeypatch):
@@ -82,6 +89,15 @@ def test_materializer_conflict_update_clears_stale_uncertainty_fields():
     assert "boom_probability = EXCLUDED.boom_probability" in sql_source
     assert "bust_probability = EXCLUDED.bust_probability" in sql_source
     assert "posterior_samples = EXCLUDED.posterior_samples" in sql_source
+
+
+def test_materialization_report_distinguishes_conformal_coverage_from_posterior_percentiles():
+    from scripts import materialize_stack_projections as materializer
+    import inspect
+
+    source = inspect.getsource(materializer.main)
+    assert '"causal_oof_conformal_90"' in source
+    assert '"posterior_percentiles_materialized": False' in source
 
 
 def _clean_manifest_copy(tmp_path):

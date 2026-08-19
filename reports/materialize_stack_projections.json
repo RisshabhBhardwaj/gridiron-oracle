@@ -1,70 +1,107 @@
 {
-  "created_at": "2026-08-09T17:18:11.399366+00:00",
-  "pipeline_run_id": "stack_materialize_20260809T171811Z",
-  "n_rows": 48058,
+  "created_at": "2026-08-19T14:44:00.285245+00:00",
+  "git_commit": "1e543bfd511a8755cd068ec0b396b8b48ee798a8",
+  "pipeline_run_id": "stack_materialize_20260819T144342Z",
+  "n_rows": 80404,
   "cells": [
     {
       "stat": "carries",
       "position": "RB",
-      "n": 3987,
+      "n": 5048,
       "seasons": 5
     },
     {
       "stat": "fantasy_ppr",
       "position": "QB",
-      "n": 2929,
+      "n": 2733,
       "seasons": 5
     },
     {
       "stat": "fantasy_ppr",
       "position": "RB",
-      "n": 3987,
+      "n": 5048,
       "seasons": 5
     },
     {
       "stat": "fantasy_ppr",
       "position": "TE",
-      "n": 4691,
+      "n": 5058,
       "seasons": 5
     },
     {
       "stat": "fantasy_ppr",
       "position": "WR",
-      "n": 8964,
+      "n": 9686,
       "seasons": 5
     },
     {
       "stat": "pass_attempts",
       "position": "QB",
-      "n": 2929,
+      "n": 2733,
       "seasons": 5
     },
     {
       "stat": "passing_yards",
       "position": "QB",
-      "n": 2929,
+      "n": 2733,
+      "seasons": 5
+    },
+    {
+      "stat": "receiving_yards",
+      "position": "RB",
+      "n": 5048,
+      "seasons": 5
+    },
+    {
+      "stat": "receiving_yards",
+      "position": "TE",
+      "n": 5058,
+      "seasons": 5
+    },
+    {
+      "stat": "receiving_yards",
+      "position": "WR",
+      "n": 9686,
+      "seasons": 5
+    },
+    {
+      "stat": "rushing_yards",
+      "position": "QB",
+      "n": 2733,
+      "seasons": 5
+    },
+    {
+      "stat": "rushing_yards",
+      "position": "RB",
+      "n": 5048,
       "seasons": 5
     },
     {
       "stat": "targets",
       "position": "RB",
-      "n": 3987,
+      "n": 5048,
       "seasons": 5
     },
     {
       "stat": "targets",
       "position": "TE",
-      "n": 4691,
+      "n": 5058,
       "seasons": 5
     },
     {
       "stat": "targets",
       "position": "WR",
-      "n": 8964,
+      "n": 9686,
       "seasons": 5
     }
   ],
-  "skipped": [],
+  "intervals": {
+    "method": "causal_oof_conformal_90",
+    "available_rows": 64525,
+    "unavailable_rows": 15879,
+    "reason_unavailable": "No strictly prior OOF season exists for calibration.",
+    "posterior_percentiles_materialized": false
+  },
   "dry_run": false,
-  "n_upserted": 48058
+  "n_upserted": 80404
 }

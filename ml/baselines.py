@@ -92,36 +92,57 @@ def attach_baselines(
         raise ValueError(f"history missing stat column {stat_col!r}")
 
     out = eval_rows.copy()
-    naive: list[Optional[float]] = []
-    rolling: list[Optional[float]] = []
-    kalman: list[Optional[float]] = []
+    out["_eval_order"] = np.arange(len(out))
+    clean = history.loc[:, ["player_id", "season", "week", stat_col]].copy()
+    clean[stat_col] = pd.to_numeric(clean[stat_col], errors="coerce")
+    clean = clean.sort_values(["player_id", "season", "week"])
 
-    for row in out.itertuples(index=False):
-        naive.append(
-            prev_season_mean(
-                history,
-                player_id=str(getattr(row, "player_id")),
-                season=int(getattr(row, "season")),
-                stat_col=stat_col,
-            )
-        )
-        rolling.append(
-            trailing_n_mean(
-                history,
-                player_id=str(getattr(row, "player_id")),
-                season=int(getattr(row, "season")),
-                week=int(getattr(row, "week")),
+    # Previous-season mean is a group aggregate joined onto season + 1. This
+    # preserves the reference implementation's exact-season (not "last known
+    # season") contract while avoiding an O(rows × history) Boolean scan.
+    prior = (
+        clean.dropna(subset=[stat_col])
+        .groupby(["player_id", "season"], as_index=False)[stat_col]
+        .mean()
+        .rename(columns={stat_col: "naive_baseline"})
+    )
+    prior["season"] = prior["season"].astype(int) + 1
+    out = out.merge(prior, on=["player_id", "season"], how="left", sort=False)
+
+    # For rows from game-log history (the normal evaluation case), groupwise
+    # shift then rolling is the same causal computation as trailing_n_mean:
+    # only rows strictly before this week's row are visible.
+    clean["rolling_baseline"] = (
+        clean.groupby(["player_id", "season"], sort=False)[stat_col]
+        .transform(lambda values: values.shift(1).rolling(trailing_n, min_periods=1).mean())
+    )
+    rolling = clean[["player_id", "season", "week", "rolling_baseline"]].drop_duplicates(
+        ["player_id", "season", "week"], keep="last"
+    )
+    out = out.merge(rolling, on=["player_id", "season", "week"], how="left", sort=False)
+
+    # Evaluation rows occasionally describe a scheduled game not yet present in
+    # history. Retain the reference behavior for only those exceptional rows;
+    # normal historical evaluation remains fully vectorized.
+    known = pd.MultiIndex.from_frame(rolling[["player_id", "season", "week"]])
+    requested = pd.MultiIndex.from_frame(out[["player_id", "season", "week"]])
+    missing_history = ~requested.isin(known)
+    if missing_history.any():
+        out.loc[missing_history, "rolling_baseline"] = [
+            np.nan if (value := trailing_n_mean(
+                clean,
+                player_id=str(row.player_id),
+                season=int(row.season),
+                week=int(row.week),
                 stat_col=stat_col,
                 n=trailing_n,
-            )
-        )
-        if kalman_col and kalman_col in out.columns:
-            val = getattr(row, kalman_col, None)
-            kalman.append(float(val) if val is not None and not (isinstance(val, float) and np.isnan(val)) else None)
-        else:
-            kalman.append(None)
+            )) is None else value
+            for row in out.loc[missing_history].itertuples(index=False)
+        ]
 
-    out["naive_baseline"] = naive
-    out["rolling_baseline"] = rolling
-    out["kalman_baseline"] = kalman
+    if kalman_col and kalman_col in out.columns:
+        out["kalman_baseline"] = pd.to_numeric(out[kalman_col], errors="coerce")
+    else:
+        out["kalman_baseline"] = None
+    out = out.sort_values("_eval_order").drop(columns="_eval_order")
     return out

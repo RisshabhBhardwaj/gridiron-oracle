@@ -50,6 +50,9 @@ class FeatureGroupResult:
     delta_mae: float  # treatment - baseline; negative = improvement
     promote: bool
     feature_cols_added: list[str]
+    evaluation_model: str
+    promotion_eligible: bool
+    limitation: str
     created_at: str
 
 
@@ -92,24 +95,23 @@ def evaluate_feature_group(
     """
     Causal holdout: train on seasons < holdout_season, score on holdout_season.
 
-    Uses Ridge as a fast floor model so group deltas are comparable without a
-    full Optuna stack. Promote when treatment MAE ≤ baseline MAE + min_delta
-    (default: at least 0.05 MAE improvement).
+    Uses Ridge only as an inexpensive screening proxy. Its output is explicitly
+    ineligible for promotion because a Ridge delta is not evidence that the
+    deployed LGBM/CatBoost stack will improve. A real-stack experiment must
+    confirm a proxy win before a group can join the serving feature contract.
     """
     if group not in FEATURE_GROUPS:
         raise KeyError(f"Unknown feature group '{group}'. Known: {sorted(FEATURE_GROUPS)}")
 
     seasons = train_seasons or list(range(2019, holdout_season + 1))
-    # load_feature_matrix only selects FEATURE_COLS — temporarily extend for A/B
-    from ml import utils as ml_utils
-
     added = FEATURE_GROUPS[group]
-    original_cols = list(ml_utils.FEATURE_COLS)
-    try:
-        ml_utils.FEATURE_COLS = original_cols + [c for c in added if c not in original_cols]
-        df = load_feature_matrix(database_url, seasons, position_filter=position.upper())
-    finally:
-        ml_utils.FEATURE_COLS = original_cols
+    requested_cols = resolve_feature_cols([group])
+    df = load_feature_matrix(
+        database_url,
+        seasons,
+        position_filter=position.upper(),
+        feature_cols=requested_cols,
+    )
 
     if df.empty:
         raise RuntimeError(f"No rows for position={position}")
@@ -144,7 +146,7 @@ def evaluate_feature_group(
     baseline_mae = float(mean_absolute_error(yh, ridge_b.predict(Xh_b)))
     treatment_mae = float(mean_absolute_error(yh, ridge_t.predict(Xh_t)))
     delta = treatment_mae - baseline_mae
-    promote = delta <= min_delta
+    proxy_passed = delta <= min_delta
 
     return FeatureGroupResult(
         group=group,
@@ -156,8 +158,15 @@ def evaluate_feature_group(
         baseline_mae=baseline_mae,
         treatment_mae=treatment_mae,
         delta_mae=delta,
-        promote=promote,
+        # A proxy win is useful triage, but it is not a promotion decision.
+        promote=False,
         feature_cols_added=added,
+        evaluation_model="ridge_proxy",
+        promotion_eligible=False,
+        limitation=(
+            "Ridge proxy result only; rerun with the deployed LGBM/CatBoost "
+            "stack before enabling this group. proxy_passed=" + str(proxy_passed)
+        ),
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 

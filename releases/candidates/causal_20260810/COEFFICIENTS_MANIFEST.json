@@ -1,0 +1,157 @@
+{
+  "cells": {
+    "carries:RB": {
+      "coefficient_path": "ridge_carries_RB_coefs.json",
+      "coefficient_sha256": "a263b71d14ad22a5a4e6e3ccb9ee6e6faec50f75e390c3fd535062493fe14924",
+      "inputs": {
+        "catboost_carries_RB_20260810.csv": "29a9cd44582f002f29269b55f11749d6ee4d3d990e23359e3392eb7fb778050d",
+        "lgbm_carries_RB_20260810.csv": "cd668bf80f8e691cb2613e1c1b5699472bdf1e2d868def6e756315444b0196b2"
+      },
+      "stacked_mae": 4.055196994812271,
+      "stacked_rmse": 5.179150949654358
+    },
+    "fantasy_ppr:QB": {
+      "coefficient_path": "ridge_fantasy_ppr_QB_coefs.json",
+      "coefficient_sha256": "5fd900a9cb3023db45dd6c815ac6edb122e5853cff03feb9f71fbdea836561de",
+      "inputs": {
+        "catboost_fantasy_ppr_QB_20260810.csv": "2426afe1b3ccd7b4f2a8729791848bcb66aa62977d0de09d1ba22a52bacc0cd4",
+        "lgbm_fantasy_ppr_QB_20260810.csv": "3b21a4dc427e32e3b7cc87a53bfb2331fcaae0cf0f0a3fc8313af662724e65a4"
+      },
+      "stacked_mae": 6.246448878739949,
+      "stacked_rmse": 7.802834171729705
+    },
+    "fantasy_ppr:RB": {
+      "coefficient_path": "ridge_fantasy_ppr_RB_coefs.json",
+      "coefficient_sha256": "2867d9764cc6662a692fad246678304ec08f47f61496dfc1f48f5853bcfd3e9a",
+      "inputs": {
+        "catboost_fantasy_ppr_RB_20260810.csv": "646e08b1b6f6ad69857109d31482e52c72412d65cdf38d66fb1eb219a079bb70",
+        "lgbm_fantasy_ppr_RB_20260810.csv": "37a8d1383a47b93532d5ca90d7a1cb8cb9f270e5ea51bac40a44cad7411fb8a3"
+      },
+      "stacked_mae": 5.440099636857665,
+      "stacked_rmse": 7.022831360582823
+    },
+    "fantasy_ppr:TE": {
+      "coefficient_path": "ridge_fantasy_ppr_TE_coefs.json",
+      "coefficient_sha256": "a8c2ff09bbe2d91668c2ef82f78403783d877d9737e2ad1dfa62a0233f1ba10c",
+      "inputs": {
+        "catboost_fantasy_ppr_TE_20260810.csv": "1507738181600cf7e47357529608c339f1651d11f8c02106b9841f3f507b11b1",
+        "lgbm_fantasy_ppr_TE_20260810.csv": "8aa1ed0524ecf07b81537d80666d9afae8a34b02ce4e3d23199ad31963507f82"
+      },
+      "stacked_mae": 3.8516390433762213,
+      "stacked_rmse": 5.251599767101971
+    },
+    "fantasy_ppr:WR": {
+      "coefficient_path": "ridge_fantasy_ppr_WR_coefs.json",
+      "coefficient_sha256": "c53ea0ced9ff57ae35b71f835f114cbf4476bb14eb685dcea21375fd9ab587ad",
+      "inputs": {
+        "catboost_fantasy_ppr_WR_20260810.csv": "55a6fbce80f319870d834ce9f824378c2d978a32f707f1b42be1a3e880562ae9",
+        "lgbm_fantasy_ppr_WR_20260810.csv": "79898654795ed2bf9e4d15df310f2447429cd4a5bd94ecc2af63b874da5b3d58"
+      },
+      "stacked_mae": 5.099942326539265,
+      "stacked_rmse": 6.661421950234827
+    },
+    "pass_attempts:QB": {
+      "coefficient_path": "ridge_pass_attempts_QB_coefs.json",
+      "coefficient_sha256": "ea012beb48f1e16b0a0887321aeea738da073e893e0c62bdc6b7ee11d9dbe4d9",
+      "inputs": {
+        "catboost_pass_attempts_QB_20260810.csv": "fe04b3e62651c8c7ead52827d36c850edcb1bd18a28ef07bdc6800d227257f2e",
+        "lgbm_pass_attempts_QB_20260810.csv": "0e7aa719df5d5fc95427311595f830fb9e10fab9ac1a2b88adb9e2256f90d3ea"
+      },
+      "stacked_mae": 7.505950587077535,
+      "stacked_rmse": 9.709152030775343
+    },
+    "passing_yards:QB": {
+      "coefficient_path": "ridge_passing_yards_QB_coefs.json",
+      "coefficient_sha256": "a91b476ec1bc1d61d3ebd4589f500b9398087d833f90f62e11de05157227c9f7",
+      "inputs": {
+        "catboost_passing_yards_QB_20260810.csv": "f82cd977d3e5645a12ffdb16a5f25cd9af24f4ba91c085f39198cd18d0dd5beb",
+        "lgbm_passing_yards_QB_20260810.csv": "34018a841e4be238dc346031757c03608b4a5774b71bd32554bd82392d1aac36"
+      },
+      "stacked_mae": 62.66207801836051,
+      "stacked_rmse": 79.18418861449537
+    },
+    "receiving_yards:RB": {
+      "coefficient_path": "ridge_receiving_yards_RB_coefs.json",
+      "coefficient_sha256": "4b50d9108b2f48f34a581a2045c0afe220237f8dc6fb9fa221b3910744d4e7f6",
+      "inputs": {
+        "catboost_receiving_yards_RB_20260810.csv": "b78c26045173d2934f56b0b41f5cbf0be3cf85835ae106334e9204b4207d1381",
+        "lgbm_receiving_yards_RB_20260810.csv": "5ae5ab2db668dd568082ff74ef620a0d4f5d26fc4145c137997cb0c7c5d35119"
+      },
+      "stacked_mae": 12.67456624027532,
+      "stacked_rmse": 17.229859693915593
+    },
+    "receiving_yards:TE": {
+      "coefficient_path": "ridge_receiving_yards_TE_coefs.json",
+      "coefficient_sha256": "d4aeaae2eb1afb3ee0652af3ce68ac89cf11ea2187ac886b18313106d013b22c",
+      "inputs": {
+        "catboost_receiving_yards_TE_20260810.csv": "542952ead24f8caec17d03b27a01d73754affd8c398734f97de7ef96a2ea0fe5",
+        "lgbm_receiving_yards_TE_20260810.csv": "07ec439119bbb7884aeb6ad63402faeba8c9165dbfb4fdd09fe272c3d03a6629"
+      },
+      "stacked_mae": 16.560749261621805,
+      "stacked_rmse": 22.400295342485734
+    },
+    "receiving_yards:WR": {
+      "coefficient_path": "ridge_receiving_yards_WR_coefs.json",
+      "coefficient_sha256": "82fa3ff7276c0d185a475f5add30f882e0d755d2fa77e35fdd8d3ba74f85eeab",
+      "inputs": {
+        "catboost_receiving_yards_WR_20260810.csv": "f29bafa826ed7af0f3bf90c9cd47f536a6914abfda91956489299cee9d6ad6b4",
+        "lgbm_receiving_yards_WR_20260810.csv": "120a16c940d59eb4c739352eb400b5dc370e68a8cdf178d4fb4905f68c6276e3"
+      },
+      "stacked_mae": 23.785612106932494,
+      "stacked_rmse": 31.263882281080697
+    },
+    "rushing_yards:QB": {
+      "coefficient_path": "ridge_rushing_yards_QB_coefs.json",
+      "coefficient_sha256": "ac2dc0a1876da95387d539b3966bdf0eda9b616cf4bd2b070d32a0963f1d7110",
+      "inputs": {
+        "catboost_rushing_yards_QB_20260810.csv": "bb513c1258d1163a902964f04ea78f0b8db499d22ed37049980d733150a920e2",
+        "lgbm_rushing_yards_QB_20260810.csv": "648d24b26b8840a6611790df82c94d2b5fd7c4e5690c1ff9fbd7bd258056519e"
+      },
+      "stacked_mae": 12.353245626645036,
+      "stacked_rmse": 17.13102378950158
+    },
+    "rushing_yards:RB": {
+      "coefficient_path": "ridge_rushing_yards_RB_coefs.json",
+      "coefficient_sha256": "736b55439362cce9b09750c4cd34257e2d164b43272c9dfa5ae66f99e8e09f14",
+      "inputs": {
+        "catboost_rushing_yards_RB_20260810.csv": "0b969676fae7f07a4290e899bc4ec06ccc7138f1c10a7029256f520f4a38843a",
+        "lgbm_rushing_yards_RB_20260810.csv": "02461fcd6760aeb24e0b49907cff43cd9c4a5b434384ce7723df7495eb80fa64"
+      },
+      "stacked_mae": 23.49852508217772,
+      "stacked_rmse": 31.009529349707595
+    },
+    "targets:RB": {
+      "coefficient_path": "ridge_targets_RB_coefs.json",
+      "coefficient_sha256": "adca1f34d646b97d9ad55edf6e27c405a487040c5b45a8eb56261104484541ec",
+      "inputs": {
+        "catboost_targets_RB_20260810.csv": "4f90cf27b5ad3ea994a901a580782175e21c1cde206879d8fdf02ad5b053e8d9",
+        "lgbm_targets_RB_20260810.csv": "2a0d8c817407c11ed35e0580aada63f293a52d2e60dc4a0bb532d222a7f8be73"
+      },
+      "stacked_mae": 1.5667633267582872,
+      "stacked_rmse": 2.015362128442189
+    },
+    "targets:TE": {
+      "coefficient_path": "ridge_targets_TE_coefs.json",
+      "coefficient_sha256": "a4890e55963e5fb1885f1df11f00a8dba3fe6c3fac306b60827677416fbcd592",
+      "inputs": {
+        "catboost_targets_TE_20260810.csv": "8e51133b956e19f9228cb39dd1c80e3ae1babec9358687b88080594ed1d51744",
+        "lgbm_targets_TE_20260810.csv": "eb844a1241da1de1bcbcc43977311a11a66b61e192d5634d8cd6903cd7fb11a4"
+      },
+      "stacked_mae": 1.6125208524312051,
+      "stacked_rmse": 2.1670758016436538
+    },
+    "targets:WR": {
+      "coefficient_path": "ridge_targets_WR_coefs.json",
+      "coefficient_sha256": "e51012a0cbd4a45c886d11d34161e11eb883ee693c00720056c0f7476e22b03e",
+      "inputs": {
+        "catboost_targets_WR_20260810.csv": "4a5db6197320238d802cfb6958fb51bd51e08a4b674bb0b77a0e75a902ea074a",
+        "lgbm_targets_WR_20260810.csv": "932a17d99077adac98c671b18a43bfda76a565be7a86b06de7a0a39649bc419d"
+      },
+      "stacked_mae": 2.086097436187786,
+      "stacked_rmse": 2.6833384590342075
+    }
+  },
+  "created_at": "2026-08-19T04:17:38.227475+00:00",
+  "schema": "ridge-coefficients-v2",
+  "source_rebuild": "ml/oof/rebuild_20260809T231500"
+}

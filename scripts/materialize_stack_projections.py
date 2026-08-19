@@ -48,6 +48,8 @@ logger = logging.getLogger(__name__)
 PIPELINE_RUN_ID = f"stack_materialize_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
 CELLS: list[tuple[str, str]] = list(REQUIRED_SERVING_CELLS)
+CONFORMAL_LEVEL = 0.90
+_MIN_CONFORMAL_HISTORY = 100
 
 
 def _pinned_stack(stat: str, position: str) -> Path:
@@ -61,6 +63,61 @@ def _pinned_stack(stat: str, position: str) -> Path:
     servable.
     """
     return get_manifest().resolve_stack(stat, position)
+
+
+def _attach_causal_conformal_intervals(df: pd.DataFrame) -> pd.DataFrame:
+    """Attach 90% empirical intervals using only earlier OOF seasons.
+
+    Stack OOF files contain realised outcomes because they are validation
+    evidence.  Those outcomes must never calibrate their own row (or any row
+    in the same target season).  For each season we therefore fit residual
+    quantiles from strictly earlier seasons.  Prediction-conditioned buckets
+    make the width responsive to the forecast level; sparse buckets safely
+    fall back to the prior-season pooled residual distribution.
+
+    ``floor`` and ``ceiling`` are lower/upper prediction bounds, not posterior
+    percentiles.  ``p25``/``p75`` remain NULL until serving has genuine
+    per-player posterior samples.
+    """
+    out = df.copy()
+    out["floor"] = np.nan
+    out["ceiling"] = np.nan
+    out["interval_method"] = "unavailable"
+    if "y_true" not in out.columns:
+        return out
+
+    out["y_true"] = pd.to_numeric(out["y_true"], errors="coerce")
+    out["residual"] = out["y_true"] - out["projection"]
+    finite = out["residual"].notna() & np.isfinite(out["residual"])
+    alpha = (1.0 - CONFORMAL_LEVEL) / 2.0
+
+    for season in sorted(out["season"].unique()):
+        target = out["season"] == season
+        history = out[(out["season"] < season) & finite].copy()
+        if len(history) < _MIN_CONFORMAL_HISTORY:
+            continue
+
+        # Use stable, explicit prediction-value cut points rather than qcut's
+        # labels, which can collapse when the model emits ties.
+        edges = np.unique(history["projection"].quantile([0.2, 0.4, 0.6, 0.8]).to_numpy())
+        history["_bin"] = np.searchsorted(edges, history["projection"].to_numpy(), side="right")
+        target_bins = np.searchsorted(edges, out.loc[target, "projection"].to_numpy(), side="right")
+        pooled = history["residual"]
+        lower: list[float] = []
+        upper: list[float] = []
+        for bucket in target_bins:
+            bucket_residuals = history.loc[history["_bin"] == bucket, "residual"]
+            calibration = bucket_residuals if len(bucket_residuals) >= _MIN_CONFORMAL_HISTORY else pooled
+            lower.append(float(calibration.quantile(alpha)))
+            upper.append(float(calibration.quantile(1.0 - alpha)))
+
+        predictions = out.loc[target, "projection"].to_numpy(dtype=float)
+        # All declared targets are non-negative counting/yards statistics.
+        out.loc[target, "floor"] = np.maximum(0.0, predictions + np.asarray(lower))
+        out.loc[target, "ceiling"] = np.maximum(0.0, predictions + np.asarray(upper))
+        out.loc[target, "interval_method"] = "causal_oof_conformal_90"
+
+    return out.drop(columns=["residual"], errors="ignore")
 
 
 def _load_cell(stat: str, position: str) -> pd.DataFrame:
@@ -89,14 +146,11 @@ def _load_cell(stat: str, position: str) -> pd.DataFrame:
     if not (df["max_train_season"] < df["season"].astype(int)).all():
         raise ValueError(f"{path.name} has non-causal max_train_season provenance")
 
-    # A cell-wide residual MAD is not a percentile distribution.  Do not emit
-    # p10/p90 (or p25/p75) until the artifact carries real per-player posterior
-    # quantiles. API consumers receive interval_method="unavailable".
-    df["floor"] = None
-    df["ceiling"] = None
+    # Calibrate interval bounds from earlier OOF seasons only.  They are not
+    # posterior quantiles, so percentile-named columns stay NULL.
+    df = _attach_causal_conformal_intervals(df)
     df["p25"] = None
     df["p75"] = None
-    df["interval_method"] = "unavailable"
     if stat == "fantasy_ppr":
         df["fantasy_projection"] = df["projection"]
         df["fantasy_floor"] = df["floor"]
@@ -183,7 +237,7 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--database-url", default=os.environ.get("DATABASE_URL", ""))
     args = p.parse_args()
-    if not args.database_url:
+    if not args.database_url and not args.dry_run:
         logger.error("DATABASE_URL required")
         return 2
 
@@ -217,14 +271,19 @@ def main() -> int:
         "pipeline_run_id": PIPELINE_RUN_ID,
         "n_rows": int(len(all_df)),
         "cells": summary,
-        "interval_method": "unavailable",
+        "intervals": {
+            "method": "causal_oof_conformal_90",
+            "available_rows": int((all_df["interval_method"] == "causal_oof_conformal_90").sum()),
+            "unavailable_rows": int((all_df["interval_method"] == "unavailable").sum()),
+            "reason_unavailable": "No strictly prior OOF season exists for calibration.",
+            "posterior_percentiles_materialized": False,
+        },
         "dry_run": bool(args.dry_run),
     }
     out = ROOT / "reports" / "materialize_stack_projections.json"
     out.parent.mkdir(parents=True, exist_ok=True)
 
     if args.dry_run:
-        out.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
         return 0
 

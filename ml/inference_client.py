@@ -497,8 +497,18 @@ class InferenceClient:
         artifact — inference must only run those learners (Phase-5 kill policy).
         """
         candidates: list[Path] = []
+        # A release manifest may pin executable coefficients outside ml/oof.
+        # Resolve and SHA-verify that authority first; legacy manifests that do
+        # not yet list coefficients retain the old lookup solely so their
+        # malformed files fail with a useful schema error rather than masking
+        # the release defect.
         if position:
-            candidates.append(self.oof_dir / f"ridge_{stat}_{position}_coefs.json")
+            try:
+                from ml.artifact_manifest import ManifestEntryMissing, get_manifest
+
+                candidates.append(get_manifest().resolve_coefficient(stat, position))
+            except ManifestEntryMissing:
+                candidates.append(self.oof_dir / f"ridge_{stat}_{position}_coefs.json")
         else:
             candidates.append(self.oof_dir / f"ridge_{stat}_coefs.json")
 

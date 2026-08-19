@@ -1,0 +1,9 @@
+{
+  "candidate": "stack",
+  "candidate_mae": 5.099942326539265,
+  "incumbent_mae": 5.103810329694311,
+  "position": "WR",
+  "promotable": true,
+  "reason": "held-out improvement 0.08% exceeds 0.00%",
+  "target": "fantasy_ppr"
+}

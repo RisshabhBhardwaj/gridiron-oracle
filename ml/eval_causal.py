@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from ml.baselines import attach_baselines
+from ml.eval_cohort import CohortSpec, DEFAULT_COHORT, filter_cohort_frame
 from ml.eval_metrics import primary_score
 from ml.stat_resolution import VALID_POSITION_STATS, assert_position_stats_resolvable
 
@@ -41,10 +42,16 @@ def _normalize_oof(df: pd.DataFrame, stat: str) -> pd.DataFrame:
     missing = required - set(out.columns)
     if missing:
         raise ValueError(f"OOF missing columns {sorted(missing)}")
-    # Provenance for BacktestRunner causality assert
     if "max_train_season" not in out.columns:
-        # Expanding-window OOF: max train season is the fold's prior season.
-        out["max_train_season"] = out["season"].astype(int) - 1
+        raise ValueError(
+            "OOF missing max_train_season provenance; do not infer it from the "
+            "evaluation season. A causal assertion over an invented value is tautological."
+        )
+    out["max_train_season"] = pd.to_numeric(out["max_train_season"], errors="coerce")
+    if out["max_train_season"].isna().any():
+        raise ValueError("OOF has non-numeric max_train_season provenance")
+    if not (out["max_train_season"] < pd.to_numeric(out["season"], errors="raise")).all():
+        raise ValueError("OOF contains non-causal max_train_season provenance")
     return out
 
 
@@ -54,6 +61,7 @@ def score_oof_against_baselines(
     *,
     stat: str,
     position: str | None = None,
+    cohort_spec: CohortSpec = DEFAULT_COHORT,
 ) -> pd.DataFrame:
     """
     Return one summary row per (season, position) with model vs baselines.
@@ -63,6 +71,7 @@ def score_oof_against_baselines(
     df = _normalize_oof(oof, stat)
     if position and "position" in df.columns:
         df = df[df["position"] == position].copy()
+    df = filter_cohort_frame(df, spec=cohort_spec)
     if df.empty:
         return pd.DataFrame()
 
@@ -91,20 +100,26 @@ def score_oof_against_baselines(
     for keys, cohort in merged.groupby(group_cols):
         if not isinstance(keys, tuple):
             keys = (keys,)
-        actual = cohort["actual"].to_numpy(dtype=float)
-        pred = cohort["predicted"].to_numpy(dtype=float)
-        metric_name, model_score = primary_score(stat, actual, pred)
-        naive = cohort["naive_baseline"].to_numpy(dtype=float)
-        rolling = cohort["rolling_baseline"].to_numpy(dtype=float)
-        # Drop NaN baselines for fair per-baseline scores
-        naive_mask = np.isfinite(naive)
-        roll_mask = np.isfinite(rolling)
-        _, naive_score = primary_score(stat, actual[naive_mask], naive[naive_mask]) if naive_mask.any() else (metric_name, np.nan)
-        _, roll_score = primary_score(stat, actual[roll_mask], rolling[roll_mask]) if roll_mask.any() else (metric_name, np.nan)
+        actual = pd.to_numeric(cohort["actual"], errors="coerce").to_numpy(dtype=float)
+        pred = pd.to_numeric(cohort["predicted"], errors="coerce").to_numpy(dtype=float)
+        naive = pd.to_numeric(cohort["naive_baseline"], errors="coerce").to_numpy(dtype=float)
+        rolling = pd.to_numeric(cohort["rolling_baseline"], errors="coerce").to_numpy(dtype=float)
+        # A comparison only means something when every contestant is scored on
+        # the same declared population.  Do not report a model score on rows
+        # where a baseline is undefined.
+        common = np.isfinite(actual) & np.isfinite(pred) & np.isfinite(naive) & np.isfinite(rolling)
+        metric_name, model_score = primary_score(stat, actual[common], pred[common]) if common.any() else ("unavailable", np.nan)
+        _, naive_score = primary_score(stat, actual[common], naive[common]) if common.any() else (metric_name, np.nan)
+        _, roll_score = primary_score(stat, actual[common], rolling[common]) if common.any() else (metric_name, np.nan)
         record = {
             "stat": stat,
             "metric": metric_name,
-            "n": int(len(cohort)),
+            "n": int(common.sum()),
+            "n_model": int((np.isfinite(actual) & np.isfinite(pred)).sum()),
+            "n_naive": int((np.isfinite(actual) & np.isfinite(naive)).sum()),
+            "n_trailing3": int((np.isfinite(actual) & np.isfinite(rolling)).sum()),
+            "cohort_rule": cohort_spec.describe()["rule"],
+            "min_prior_games": cohort_spec.min_prior_games,
             "model_score": model_score,
             "naive_score": naive_score,
             "trailing3_score": roll_score,

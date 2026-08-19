@@ -870,6 +870,31 @@ class TestFreezeBaselinePreservesPins:
         assert "_carry_forward_artifact_pins(payload" in src
 
 
+def test_manifest_pins_executable_ridge_coefficients(tmp_path):
+    """A declared release coefficient is SHA-verified, not found by directory scan."""
+    from ml.artifact_manifest import load_manifest, sha256_of
+
+    artifact_dir = tmp_path / "release"
+    artifact_dir.mkdir()
+    stack = artifact_dir / "stack_fantasy_ppr_WR_candidate.csv"
+    stack.write_text("player_id,game_id,season,week,y_pred,max_train_season\np,g,2025,1,1,2024\n")
+    coefficient = artifact_dir / "ridge_fantasy_ppr_WR_coefs.json"
+    coefficient.write_text(
+        '{"learner_order":["lgbm","catboost"],"weights":{"lgbm":0.4,"catboost":0.6},"intercept":0.0}'
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "artifacts": {"stacks": ["release/stack_fantasy_ppr_WR_candidate.csv"],
+                      "ridge_coefficients": ["release/ridge_fantasy_ppr_WR_coefs.json"]},
+        "artifact_digests": {
+            "release/stack_fantasy_ppr_WR_candidate.csv": sha256_of(stack),
+            "release/ridge_fantasy_ppr_WR_coefs.json": sha256_of(coefficient),
+        },
+    }))
+    manifest = load_manifest(manifest_path, root=tmp_path)
+    assert manifest.resolve_coefficient("fantasy_ppr", "WR") == coefficient
+
+
 class TestManifestAuthoritySplit:
     """
     Two manifests, two jobs, one digest per file.

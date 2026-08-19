@@ -251,6 +251,8 @@ class ArtifactManifest:
     digests: Mapping[str, str]
     #: (stat, position) → repo-relative path, parsed from the pinned stack list.
     stack_index: Mapping[tuple[str, str], str]
+    #: (stat, position) → repo-relative executable Ridge coefficient artifact.
+    coefficient_index: Mapping[tuple[str, str], str]
 
     # ── lookup ────────────────────────────────────────────────────────────
 
@@ -324,6 +326,23 @@ class ArtifactManifest:
             for stat, position in cells
         }
 
+    def resolve_coefficient(self, stat: str, position: str, *, verify: bool = True) -> Path:
+        """Resolve the executable, SHA-pinned Ridge coefficient artifact for a cell."""
+        key = (stat, position.upper())
+        try:
+            relpath = self.coefficient_index[key]
+        except KeyError:
+            raise ManifestEntryMissing(
+                f"{self.path} pins no Ridge coefficient for {stat}/{position}. "
+                "Artifact-backed inference cannot fall back to an unpinned coefficient file."
+            ) from None
+        absolute = self.root / relpath
+        if not absolute.exists():
+            raise FileNotFoundError(f"Manifest pins missing Ridge coefficient {relpath} for {stat}/{position}")
+        if verify:
+            self.require_digest(relpath, absolute)
+        return absolute
+
     # ── protection ────────────────────────────────────────────────────────
 
     def protected_relpaths(self) -> frozenset[str]:
@@ -363,6 +382,18 @@ def _parse_stack_relpath(relpath: str) -> Optional[tuple[str, str]]:
         return None
     # Next token from the right is the position; the remainder is the stat,
     # which may itself contain underscores (fantasy_ppr, receiving_yards).
+    stat, _, position = body.rpartition("_")
+    if not stat or position.upper() not in POSITIONS:
+        return None
+    return stat, position.upper()
+
+
+def _parse_coefficient_relpath(relpath: str) -> Optional[tuple[str, str]]:
+    """Parse ``ridge_fantasy_ppr_WR_coefs.json`` into its serving cell."""
+    name = Path(relpath).name
+    if not name.startswith("ridge_") or not name.endswith("_coefs.json"):
+        return None
+    body = name[len("ridge_") : -len("_coefs.json")]
     stat, _, position = body.rpartition("_")
     if not stat or position.upper() not in POSITIONS:
         return None
@@ -433,17 +464,27 @@ def load_manifest(
     digests = {str(k): str(v) for k, v in digests_raw.items()}
 
     stack_index: dict[tuple[str, str], str] = {}
-    for relpath in _iter_artifact_relpaths(raw.get("artifacts", {})):
+    coefficient_index: dict[tuple[str, str], str] = {}
+    artifact_paths = list(_iter_artifact_relpaths(raw.get("artifacts", {})))
+    for relpath in artifact_paths:
         cell = _parse_stack_relpath(relpath)
-        if cell is None:
-            continue
-        if cell in stack_index and stack_index[cell] != relpath:
-            raise ManifestError(
-                f"Release manifest {resolved} pins two artifacts for "
-                f"{cell[0]}/{cell[1]}: {stack_index[cell]} and {relpath}. "
-                "A cell must have exactly one serving artifact."
-            )
-        stack_index[cell] = relpath
+        if cell is not None:
+            if cell in stack_index and stack_index[cell] != relpath:
+                raise ManifestError(
+                    f"Release manifest {resolved} pins two artifacts for "
+                    f"{cell[0]}/{cell[1]}: {stack_index[cell]} and {relpath}. "
+                    "A cell must have exactly one serving artifact."
+                )
+            stack_index[cell] = relpath
+
+        coefficient = _parse_coefficient_relpath(relpath)
+        if coefficient is not None:
+            if coefficient in coefficient_index and coefficient_index[coefficient] != relpath:
+                raise ManifestError(
+                    f"Release manifest {resolved} pins two Ridge coefficients for "
+                    f"{coefficient[0]}/{coefficient[1]}"
+                )
+            coefficient_index[coefficient] = relpath
 
     if not stack_index:
         raise ManifestError(
@@ -452,7 +493,7 @@ def load_manifest(
         )
 
     # A pinned stack with no digest is an unpinned artifact wearing a pin.
-    unpinned = sorted(set(stack_index.values()) - set(digests))
+    unpinned = sorted((set(stack_index.values()) | set(coefficient_index.values())) - set(digests))
     if unpinned:
         raise ManifestError(
             f"Release manifest {resolved} lists stack artifact(s) with no "
@@ -465,6 +506,7 @@ def load_manifest(
         raw=raw,
         digests=digests,
         stack_index=stack_index,
+        coefficient_index=coefficient_index,
     )
 
 

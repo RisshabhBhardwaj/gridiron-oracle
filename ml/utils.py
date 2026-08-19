@@ -283,6 +283,7 @@ def load_feature_matrix(
     db_url: str,
     seasons: list[int],
     position_filter: Optional[str] = None,
+    feature_cols: Optional[list[str]] = None,
 ) -> pd.DataFrame:
     """
     Load feature_matrix rows from PostgreSQL.
@@ -292,7 +293,8 @@ def load_feature_matrix(
     from scraper.adapters.nflreadpy_adapter import _psycopg2_dsn
 
     id_cols  = ["player_id", "game_id", "season", "week", "position", "team"]
-    all_cols = id_cols + FEATURE_COLS + list(TARGET_COL_MAP.values())
+    requested_features = list(feature_cols) if feature_cols is not None else list(FEATURE_COLS)
+    all_cols = id_cols + requested_features + list(TARGET_COL_MAP.values())
 
     col_list = ", ".join(all_cols)
     position_clause = ""
@@ -329,7 +331,7 @@ def load_feature_matrix(
         "  Applied pregame eligibility: removed %d rows (<%d completed prior games). Remaining: %d",
         original_len - len(df), MIN_PRIOR_GAMES, len(df),
     )
-    assert_model_frame_contract(df, FEATURE_COLS, consumer="load_feature_matrix")
+    assert_model_frame_contract(df, requested_features, consumer="load_feature_matrix")
     return df
 
 

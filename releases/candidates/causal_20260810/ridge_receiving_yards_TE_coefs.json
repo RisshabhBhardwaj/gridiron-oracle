@@ -1,0 +1,11 @@
+{
+  "learner_order": [
+    "lgbm",
+    "catboost"
+  ],
+  "weights": {
+    "lgbm": 0.313083719849551,
+    "catboost": 0.7484708466372184
+  },
+  "intercept": -2.354868291854743
+}
