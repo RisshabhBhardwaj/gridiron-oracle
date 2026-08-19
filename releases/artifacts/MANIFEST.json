@@ -185,14 +185,6 @@
       "description": "Materialization run record for the projections upsert."
     },
     {
-      "path": "reports/serving_divergence_passing_yards_QB.json",
-      "bytes": 334,
-      "status": "provisional",
-      "produced_by": "ad-hoc analysis",
-      "description": "DB-vs-source-CSV comparison for one cell.",
-      "sha256_authority": "releases/current_baseline.json"
-    },
-    {
       "path": "reports/yardage_diagnostic.json",
       "sha256": "385c9f6dfc65e3a1e4a6748b78825694fc00efac245a13c2857755052e3ab7c7",
       "bytes": 994,

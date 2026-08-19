@@ -1,7 +1,7 @@
 {
-  "created_at": "2026-08-19T14:51:12.768806+00:00",
-  "git_commit": "68d0998e4ee90f93853eed12b25760cf5aab51a2",
-  "pipeline_run_id": "stack_materialize_20260819T145053Z",
+  "created_at": "2026-08-19T15:16:13.542192+00:00",
+  "git_commit": "53735fdb6949e600d71a7642f2b63d0c8c0b6123",
+  "pipeline_run_id": "stack_materialize_20260819T151555Z",
   "n_rows": 80404,
   "cells": [
     {

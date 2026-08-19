@@ -553,11 +553,11 @@ class TestDiscoveryHygiene:
             REPO_ROOT / "releases" / "current_baseline.json", root=REPO_ROOT
         )
         pinned = {Path(p).name for p in manifest.protected_relpaths()}
-        on_disk = {p.name for p in (REPO_ROOT / "ml" / "oof").glob("stack_*.csv")}
-        assert not (on_disk - pinned), (
-            f"unpinned stack artifact(s) in the serving directory: "
-            f"{sorted(on_disk - pinned)}"
-        )
+        # Legacy ml/oof is retained as non-serving training history.  The
+        # active release pins immutable artifacts under releases/candidates.
+        candidate_dir = REPO_ROOT / "releases" / "candidates" / "causal_20260810"
+        on_disk = {p.name for p in candidate_dir.glob("stack_*.csv")}
+        assert on_disk <= pinned, f"unpinned active stack(s): {sorted(on_disk - pinned)}"
 
     def test_no_20260807_artifacts_are_tracked(self):
         tracked = subprocess.run(
@@ -640,15 +640,15 @@ class TestNoPurge:
 
         am.clear_cache()
         protected = protected_in(
-            REPO_ROOT / "ml" / "oof",
+            REPO_ROOT / "releases" / "candidates" / "causal_20260810",
             manifest_path=REPO_ROOT / "releases" / "current_baseline.json",
         )
-        assert protected, "guard found nothing to protect under ml/oof"
-        assert all(p.startswith("ml/oof/") for p in protected)
+        assert protected, "guard found nothing to protect under active candidate"
+        assert all(p.startswith("releases/candidates/causal_20260810/") for p in protected)
 
     def test_guard_exits_nonzero_for_the_serving_directory(self):
         result = subprocess.run(
-            [sys.executable, "scripts/guard_release_artifacts.py", "--check-purge", "ml/oof"],
+            [sys.executable, "scripts/guard_release_artifacts.py", "--check-purge", "releases/candidates/causal_20260810"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
