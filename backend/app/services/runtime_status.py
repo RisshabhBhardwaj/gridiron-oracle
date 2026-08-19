@@ -174,7 +174,10 @@ class RuntimeStatusService:
                 ["git", "rev-parse", "HEAD"], cwd=_REPO_ROOT, text=True,
             ).strip()
             dirty = bool(subprocess.check_output(
-                ["git", "status", "--porcelain"], cwd=_REPO_ROOT, text=True,
+                # An operator's untracked notes do not alter the checked-in
+                # release.  Only tracked/untracked-index changes can make a
+                # frozen code commit non-reproducible.
+                ["git", "status", "--porcelain", "--untracked-files=no"], cwd=_REPO_ROOT, text=True,
             ).strip())
         except (OSError, subprocess.CalledProcessError) as exc:
             return {"status": "error", "detail": f"Cannot inspect release Git state: {exc}"}

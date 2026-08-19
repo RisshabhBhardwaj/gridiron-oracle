@@ -1,0 +1,458 @@
+{
+  "bootstrap_reference": true,
+  "created_at": "2026-08-19T15:14:19.148473+00:00",
+  "frozen_baseline": {
+    "carries:RB:2021": {
+      "mae": 4.442224276497762,
+      "oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2022": {
+      "mae": 4.123734157523606,
+      "oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2023": {
+      "mae": 3.9546089943211054,
+      "oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2024": {
+      "mae": 4.012568420769343,
+      "oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2025": {
+      "mae": 3.943890801427372,
+      "oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2021": {
+      "mae": 6.48355049407846,
+      "oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2022": {
+      "mae": 5.974001405269073,
+      "oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2023": {
+      "mae": 6.138966570155888,
+      "oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2024": {
+      "mae": 6.304421334265427,
+      "oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2025": {
+      "mae": 6.67655383054195,
+      "oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2021": {
+      "mae": 5.995369654498193,
+      "oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2022": {
+      "mae": 5.531323615649228,
+      "oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2023": {
+      "mae": 5.19203420133073,
+      "oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2024": {
+      "mae": 5.21165138633096,
+      "oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2025": {
+      "mae": 5.665057399053677,
+      "oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2021": {
+      "mae": 4.174325540113038,
+      "oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2022": {
+      "mae": 3.9726216664475404,
+      "oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2023": {
+      "mae": 3.816827431550095,
+      "oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2024": {
+      "mae": 3.8749813889675444,
+      "oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2025": {
+      "mae": 3.864239794364283,
+      "oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2021": {
+      "mae": 5.229014841782754,
+      "oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2022": {
+      "mae": 5.1876843149881315,
+      "oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2023": {
+      "mae": 4.951829854116755,
+      "oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2024": {
+      "mae": 5.1772777458861405,
+      "oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2025": {
+      "mae": 4.9794476153884695,
+      "oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2021": {
+      "mae": 7.536759932707311,
+      "oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2022": {
+      "mae": 7.652445737178004,
+      "oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2023": {
+      "mae": 7.417801562307447,
+      "oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2024": {
+      "mae": 7.678169572989606,
+      "oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2025": {
+      "mae": 7.762801831996492,
+      "oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2021": {
+      "mae": 62.498071798918204,
+      "oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2022": {
+      "mae": 60.82236844898833,
+      "oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2023": {
+      "mae": 63.12653394766391,
+      "oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2024": {
+      "mae": 63.3440968749012,
+      "oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2025": {
+      "mae": 63.632267483465355,
+      "oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2021": {
+      "mae": 14.413856318691284,
+      "oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2022": {
+      "mae": 12.579102719729029,
+      "oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2023": {
+      "mae": 12.769074290426028,
+      "oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2024": {
+      "mae": 12.020827915671688,
+      "oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2025": {
+      "mae": 12.741858191928976,
+      "oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2021": {
+      "mae": 18.056769780592592,
+      "oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2022": {
+      "mae": 16.979677645702537,
+      "oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2023": {
+      "mae": 16.476042118186566,
+      "oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2024": {
+      "mae": 16.80483204677839,
+      "oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2025": {
+      "mae": 16.292513109046162,
+      "oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2021": {
+      "mae": 24.28214755182507,
+      "oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2022": {
+      "mae": 24.391791046931232,
+      "oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2023": {
+      "mae": 24.058813982669196,
+      "oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2024": {
+      "mae": 23.908233141594724,
+      "oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2025": {
+      "mae": 23.658217334920735,
+      "oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2021": {
+      "mae": 11.847264509503312,
+      "oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2022": {
+      "mae": 12.951494679050954,
+      "oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2023": {
+      "mae": 12.546218543046455,
+      "oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2024": {
+      "mae": 13.237584114390897,
+      "oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2025": {
+      "mae": 12.154380767395903,
+      "oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2021": {
+      "mae": 24.241370341826773,
+      "oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2022": {
+      "mae": 24.257110689542543,
+      "oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2023": {
+      "mae": 22.740887278268886,
+      "oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2024": {
+      "mae": 23.44927579174204,
+      "oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2025": {
+      "mae": 24.420553003021904,
+      "oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2021": {
+      "mae": 1.7413114677412829,
+      "oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2022": {
+      "mae": 1.6127271662392009,
+      "oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2023": {
+      "mae": 1.5682437628354957,
+      "oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2024": {
+      "mae": 1.4484119230071082,
+      "oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2025": {
+      "mae": 1.4959915365986087,
+      "oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2021": {
+      "mae": 1.6879239868885583,
+      "oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2022": {
+      "mae": 1.6453225711983033,
+      "oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2023": {
+      "mae": 1.6477673021740833,
+      "oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2024": {
+      "mae": 1.741236583047779,
+      "oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2025": {
+      "mae": 1.5748435772529312,
+      "oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2021": {
+      "mae": 2.243710876110076,
+      "oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2022": {
+      "mae": 2.1420440154240277,
+      "oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2023": {
+      "mae": 2.0217559419953055,
+      "oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2024": {
+      "mae": 2.118098620222485,
+      "oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2025": {
+      "mae": 2.031779862307278,
+      "oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    }
+  },
+  "governance": "User-authorized first causal reference after C-01 invalidated historical releases.",
+  "release_id": "bootstrap_causal_lgbm_reference_20260819"
+}

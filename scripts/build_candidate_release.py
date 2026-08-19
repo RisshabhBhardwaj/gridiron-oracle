@@ -34,6 +34,12 @@ def build(artifact_dir: Path, output: Path, release_status: str) -> dict[str, ob
         parity = _one(artifact_dir, f"serving_divergence_{stat}_{position}.json")
         for kind, path in (("stacks", stack), ("ridge_coefficients", coef), ("serving_parity", parity)):
             entries[kind].append(path.relative_to(ROOT).as_posix())
+    for name, kind in (
+        ("CONSTRAINED_STACK_SELECTION.json", "selection_policy"),
+    ):
+        path = artifact_dir / name
+        if path.is_file():
+            entries[kind] = [path.relative_to(ROOT).as_posix()]
     manifest = {
         "candidate": True,
         "created_at": datetime.now(timezone.utc).isoformat(),

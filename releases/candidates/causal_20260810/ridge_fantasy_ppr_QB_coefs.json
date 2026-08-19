@@ -4,8 +4,8 @@
     "catboost"
   ],
   "weights": {
-    "lgbm": 0.3865076474240723,
-    "catboost": 0.6138443498396571
+    "lgbm": 1.0,
+    "catboost": 0.0
   },
-  "intercept": -0.09648624958451002
+  "intercept": 0.0
 }
