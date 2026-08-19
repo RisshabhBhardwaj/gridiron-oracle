@@ -20,6 +20,34 @@ logger = logging.getLogger(__name__)
 _BACKTEST_RESULTS_DIR = Path(__file__).parents[3] / "ml" / "backtest_results"
 _REPO_ROOT = Path(__file__).parents[3]
 
+#: Paths a release commit may touch, on top of the manifest's pinned source
+#: commit, without invalidating that commit as "what was verified".
+#:
+#: A baseline manifest necessarily records the commit it was frozen from
+#: *before* that manifest is itself committed — committing it moves HEAD past
+#: the commit it names. Requiring exact equality therefore made every
+#: committed release reject itself. The fix is not to drop the check but to
+#: scope it: HEAD may move ahead of the pinned commit only through changes
+#: that are pure evidence about that commit (the manifest, reports about it,
+#: locking tests, drift-detection bookkeeping) — never through changes to the
+#: code that produced it or the artifacts it pins. `releases/candidates/` is
+#: deliberately excluded even though it is under `releases/`: it holds the
+#: SHA-pinned model artifacts themselves, and `load_manifest` does not verify
+#: their digests at readiness-check time (only `resolve_stack` does, lazily,
+#: at load time) — so this allowlist is the only thing standing between a
+#: swapped artifact and a green readiness check.
+_EVIDENCE_ONLY_PATHS = frozenset({
+    "releases/current_baseline.json",
+    "releases/artifacts/MANIFEST.json",
+})
+_EVIDENCE_ONLY_PREFIXES = ("reports/", "backend/tests/")
+
+
+def _is_evidence_only_path(relpath: str) -> bool:
+    if relpath in _EVIDENCE_ONLY_PATHS:
+        return True
+    return any(relpath.startswith(prefix) for prefix in _EVIDENCE_ONLY_PREFIXES)
+
 
 class RuntimeStatusService:
     """Collect lightweight integrity checks for the running deployment."""
@@ -218,11 +246,61 @@ class RuntimeStatusService:
             return {"status": "error", "detail": "Baseline manifest was frozen from a dirty worktree", "observed": observed}
         if dirty:
             return {"status": "error", "detail": "Runtime worktree is dirty; refuse stale release manifest", "observed": observed}
-        if payload.get("git_commit") != head:
-            return {"status": "error", "detail": "Baseline manifest commit does not match HEAD", "observed": observed}
+
+        manifest_commit = payload.get("git_commit")
+        if manifest_commit != head:
+            lineage = self._check_commit_lineage(manifest_commit, head)
+            if lineage is not None:
+                observed["evidence_only_diff"] = lineage
+                return {"status": "error", "detail": lineage, "observed": observed}
         if payload.get("product_mode") != settings.product_mode:
             return {"status": "error", "detail": "Baseline manifest product_mode does not match runtime", "observed": observed}
         return {"status": "ok", "detail": "Baseline manifest matches clean HEAD and full cell matrix", "observed": observed}
+
+    def _check_commit_lineage(self, manifest_commit: object, head: str) -> str | None:
+        """
+        Return an error detail if *head* is not a legitimate evidence-only
+        descendant of *manifest_commit*, else ``None``.
+
+        Called only when the manifest's pinned commit differs from HEAD. HEAD
+        is allowed to be ahead of the pinned commit — but only through commits
+        that changed nothing except evidence about the pinned commit (see
+        `_EVIDENCE_ONLY_PATHS`/`_EVIDENCE_ONLY_PREFIXES`). Anything else —
+        code drift, an unrelated branch, an artifact swap — is rejected.
+        """
+        if not manifest_commit or not isinstance(manifest_commit, str):
+            return "Baseline manifest commit does not match HEAD"
+
+        try:
+            subprocess.check_output(
+                ["git", "merge-base", "--is-ancestor", manifest_commit, "HEAD"],
+                cwd=_REPO_ROOT, stderr=subprocess.STDOUT, text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 1:
+                return "Baseline manifest commit does not match HEAD and is not an ancestor of it"
+            # Anything other than "definitively not an ancestor" (e.g. 128 for
+            # an object git cannot resolve) is unknown lineage, not evidence
+            # of safety — fail closed rather than guess.
+            return f"Baseline manifest commit lineage could not be verified: {exc.output.strip()}"
+        except OSError as exc:
+            return f"Baseline manifest commit lineage could not be verified: {exc}"
+
+        try:
+            changed = subprocess.check_output(
+                ["git", "diff", "--name-only", manifest_commit, "HEAD"],
+                cwd=_REPO_ROOT, text=True,
+            ).splitlines()
+        except (OSError, subprocess.CalledProcessError) as exc:
+            return f"Baseline manifest commit lineage could not be verified: {exc}"
+
+        non_evidence = sorted(p for p in changed if p and not _is_evidence_only_path(p))
+        if non_evidence:
+            return (
+                "Baseline manifest commit is an ancestor of HEAD, but HEAD "
+                f"changes non-evidence paths since that commit: {non_evidence}"
+            )
+        return None
 
     def _check_backtest_assets(self) -> dict:
         latest_csv = None

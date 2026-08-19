@@ -108,7 +108,72 @@ def _clean_manifest_copy(tmp_path):
     return path
 
 
-def test_readiness_rejects_a_manifest_at_a_different_commit(tmp_path):
+def test_readiness_accepts_a_manifest_exactly_at_head_without_extra_git_calls(tmp_path):
+    """The pre-existing fast path: no ancestor/diff check needed when they're equal."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    manifest_commit = json.loads(manifest.read_text())["git_commit"]
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=[f"{manifest_commit}\n", ""],
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "ok"
+
+
+def test_readiness_rejects_a_manifest_at_an_unrelated_commit(tmp_path):
+    """Manifest commit that is not even an ancestor of HEAD: an unrelated branch."""
+    import subprocess
+
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    not_an_ancestor = subprocess.CalledProcessError(1, ["git", "merge-base"], output="")
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=["not-the-manifest-head\n", "", not_an_ancestor],
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "error"
+    assert "does not match HEAD" in result["detail"]
+    assert "not an ancestor" in result["detail"]
+
+
+def test_readiness_rejects_an_unresolvable_manifest_commit(tmp_path):
+    """merge-base cannot even resolve the pinned commit (e.g. exit 128): fail closed, not open."""
+    import subprocess
+
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    unknown_object = subprocess.CalledProcessError(128, ["git", "merge-base"], output="fatal: not a valid object name")
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=["some-other-head\n", "", unknown_object],
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "error"
+    assert "could not be verified" in result["detail"]
+
+
+def test_readiness_accepts_an_ancestor_commit_with_an_evidence_only_diff(tmp_path):
+    """
+    The self-referential-freeze fix: a manifest necessarily names the commit it
+    was frozen from *before* it is itself committed, so HEAD legitimately moves
+    past that commit the instant the manifest lands. That is fine as long as
+    everything HEAD added on top is evidence about the pinned commit, not a
+    change to it.
+    """
     from backend.app.core.config import settings
     from backend.app.services.runtime_status import RuntimeStatusService
 
@@ -116,12 +181,71 @@ def test_readiness_rejects_a_manifest_at_a_different_commit(tmp_path):
     manifest = _clean_manifest_copy(tmp_path)
     with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
         "backend.app.services.runtime_status.subprocess.check_output",
-        side_effect=["not-the-manifest-head\n", ""],
+        side_effect=[
+            "evidence-commit-head\n",
+            "",
+            "",  # git merge-base --is-ancestor: exit 0, no output
+            "releases/current_baseline.json\n"
+            "releases/artifacts/MANIFEST.json\n"
+            "reports/materialize_stack_projections.json\n"
+            "backend/tests/test_artifact_containment.py\n",
+        ],
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "ok"
+
+
+def test_readiness_rejects_an_ancestor_commit_that_also_changed_application_code(tmp_path):
+    """An evidence-looking commit that also carries a code change must not slip through."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=[
+            "evidence-commit-head\n",
+            "",
+            "",
+            "releases/current_baseline.json\nbackend/app/services/runtime_status.py\n",
+        ],
     ):
         result = service._check_baseline_manifest()
 
     assert result["status"] == "error"
-    assert "does not match HEAD" in result["detail"]
+    assert "non-evidence paths" in result["detail"]
+    assert "backend/app/services/runtime_status.py" in result["detail"]
+
+
+def test_readiness_rejects_an_ancestor_commit_that_swapped_a_pinned_artifact(tmp_path):
+    """
+    `releases/candidates/` holds the SHA-pinned model artifacts. `load_manifest`
+    does not verify their digests (only `resolve_stack` does, lazily) — so a
+    diff touching that directory must not be treated as evidence-only, or a
+    swapped artifact would sail through readiness.
+    """
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=[
+            "evidence-commit-head\n",
+            "",
+            "",
+            "releases/current_baseline.json\n"
+            "releases/candidates/causal_20260810/ridge_fantasy_ppr_QB_coefs.json\n",
+        ],
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "error"
+    assert "non-evidence paths" in result["detail"]
+    assert "releases/candidates/causal_20260810/ridge_fantasy_ppr_QB_coefs.json" in result["detail"]
 
 
 def test_readiness_rejects_a_dirty_runtime_worktree(tmp_path):
