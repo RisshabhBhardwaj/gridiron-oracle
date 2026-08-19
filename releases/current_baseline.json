@@ -104,8 +104,8 @@
     ]
   },
   "candidate": false,
-  "created_at": "2026-08-19T15:48:35.718595+00:00",
-  "git_commit": "1bfb4dbfeea93b2c9e992608f8b1320b12e100a6",
+  "created_at": "2026-08-19T15:50:24.982977+00:00",
+  "git_commit": "c7d0663fa3f38915dbaea3c7c7899bc21c9ce9cf",
   "git_dirty": false,
   "model_version": "causal_20260819_zero_regression",
   "product_mode": "artifact_backed",
