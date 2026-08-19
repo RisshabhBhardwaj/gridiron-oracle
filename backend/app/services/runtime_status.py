@@ -248,14 +248,20 @@ class RuntimeStatusService:
             return {"status": "error", "detail": "Runtime worktree is dirty; refuse stale release manifest", "observed": observed}
 
         manifest_commit = payload.get("git_commit")
-        if manifest_commit != head:
+        exact_match = manifest_commit == head
+        if not exact_match:
             lineage = self._check_commit_lineage(manifest_commit, head)
             if lineage is not None:
-                observed["evidence_only_diff"] = lineage
                 return {"status": "error", "detail": lineage, "observed": observed}
         if payload.get("product_mode") != settings.product_mode:
             return {"status": "error", "detail": "Baseline manifest product_mode does not match runtime", "observed": observed}
-        return {"status": "ok", "detail": "Baseline manifest matches clean HEAD and full cell matrix", "observed": observed}
+        detail = (
+            "Baseline manifest matches clean HEAD and full cell matrix"
+            if exact_match else
+            "Baseline manifest's pinned commit is a clean ancestor of HEAD via an "
+            "evidence-only release commit, and declares the full cell matrix"
+        )
+        return {"status": "ok", "detail": detail, "observed": observed}
 
     def _check_commit_lineage(self, manifest_commit: object, head: str) -> str | None:
         """
