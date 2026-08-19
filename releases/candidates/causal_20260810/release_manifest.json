@@ -100,8 +100,8 @@
     ]
   },
   "candidate": true,
-  "created_at": "2026-08-19T14:44:22.655123+00:00",
-  "git_commit": "1e543bfd511a8755cd068ec0b396b8b48ee798a8",
+  "created_at": "2026-08-19T14:50:44.577987+00:00",
+  "git_commit": "68d0998e4ee90f93853eed12b25760cf5aab51a2",
   "release_status": "candidate_only_pending_wave_04_promotion_no_valid_prior_frozen_baseline",
   "source_rebuild": "ml/oof/rebuild_20260809T231500"
 }
