@@ -1,301 +1,120 @@
 {
-  "created_at": "2026-08-09T17:14:33.142022+00:00",
-  "git_commit": "a4fb0e96995de1de943842afaa196777e0a194cb",
-  "git_branch": "main",
-  "git_dirty": true,
-  "model_version": "fantasy_ppr_stack_phase5_clean_plus_volume",
-  "product_mode": "artifact_backed",
-  "baseline_manifest_path": "releases/current_baseline.json",
-  "stack_policy": {
-    "target": "fantasy_ppr",
-    "keep_learners": [
-      "lgbm",
-      "catboost"
-    ],
-    "kill_learners": [
-      "tft",
-      "xgb"
-    ],
-    "reason": "TFT MAE~7.8 drag; XGB toxic causal-meta weights on short history; 2022 OOF collapse on QB/RB/WR trees"
-  },
-  "known_issues": [
-    {
-      "id": "2022_oof_collapse",
-      "status": "fixed",
-      "detail": "Clean restack from 20260809 tree OOFs only; WR-2022 now beats both baselines."
-    }
-  ],
-  "reprojection_gates": {
-    "fantasy_ppr:QB:2021": {
-      "mae": 6.107414130095707,
-      "naive_mae": 6.910667166279862,
-      "trailing3_mae": 6.950148148148148,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 588,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:QB:2022": {
-      "mae": 5.364820547410334,
-      "naive_mae": 6.411737117652595,
-      "trailing3_mae": 6.448567807351077,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 583,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:QB:2023": {
-      "mae": 5.4797670035232136,
-      "naive_mae": 6.699552269787426,
-      "trailing3_mae": 6.615474860335195,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 587,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:QB:2024": {
-      "mae": 5.696750514488936,
-      "naive_mae": 7.108820051951951,
-      "trailing3_mae": 6.90030191004313,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 586,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:QB:2025": {
-      "mae": 6.0653788369193435,
-      "naive_mae": 7.079836489547978,
-      "trailing3_mae": 7.262857142857143,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 585,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:RB:2021": {
-      "mae": 5.564812768797207,
-      "naive_mae": 6.714819296021681,
-      "trailing3_mae": 6.966240942028986,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 789,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:RB:2022": {
-      "mae": 5.410268001356786,
-      "naive_mae": 6.265861353692151,
-      "trailing3_mae": 6.505561403508773,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 814,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:RB:2023": {
-      "mae": 5.251372048238762,
-      "naive_mae": 6.224347630089493,
-      "trailing3_mae": 6.255681313803817,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 802,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:RB:2024": {
-      "mae": 5.5259594037166915,
-      "naive_mae": 6.218930274584735,
-      "trailing3_mae": 6.343907407407406,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 772,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:RB:2025": {
-      "mae": 5.598701088841798,
-      "naive_mae": 6.346133899635114,
-      "trailing3_mae": 6.533114035087719,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 810,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:WR:2021": {
-      "mae": 5.548637564890009,
-      "naive_mae": 5.898779248177397,
-      "trailing3_mae": 5.9240862137465236,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 1818,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:WR:2022": {
-      "mae": 5.420342601138125,
-      "naive_mae": 5.622293810655552,
-      "trailing3_mae": 5.970430436556508,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 1768,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:WR:2023": {
-      "mae": 5.185474137167873,
-      "naive_mae": 5.559122179521016,
-      "trailing3_mae": 5.774025457438345,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 1802,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:WR:2024": {
-      "mae": 5.272734276359981,
-      "naive_mae": 5.916485365491974,
-      "trailing3_mae": 5.952787769784172,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 1793,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:WR:2025": {
-      "mae": 5.072118545969718,
-      "naive_mae": 5.710803761542445,
-      "trailing3_mae": 5.581872862603098,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 1783,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:TE:2021": {
-      "mae": 4.206811657200344,
-      "naive_mae": 4.3870887712229605,
-      "trailing3_mae": 4.68232476635514,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 921,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:TE:2022": {
-      "mae": 4.003814223681295,
-      "naive_mae": 4.06880494636547,
-      "trailing3_mae": 4.509139534883721,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 929,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:TE:2023": {
-      "mae": 3.885991199661308,
-      "naive_mae": 4.1241418976162825,
-      "trailing3_mae": 4.406933811802233,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 902,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:TE:2024": {
-      "mae": 3.900102648186149,
-      "naive_mae": 4.148455853269553,
-      "trailing3_mae": 4.349227871939736,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 957,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "fantasy_ppr:TE:2025": {
-      "mae": 4.031682569778117,
-      "naive_mae": 4.334838050313587,
-      "trailing3_mae": 4.510348751835536,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 982,
-      "stack": "lgbm+catboost_phase5_clean"
-    },
-    "passing_yards:QB:2021": {
-      "mae": 57.44398220036389,
-      "naive_mae": 70.81905465744192,
-      "trailing3_mae": 71.54228395061729,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 588
-    },
-    "passing_yards:QB:2022": {
-      "mae": 52.49595619686016,
-      "naive_mae": 67.16971816673302,
-      "trailing3_mae": 67.7138783269962,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 583
-    },
-    "passing_yards:QB:2023": {
-      "mae": 53.055275233338264,
-      "naive_mae": 74.7220934524027,
-      "trailing3_mae": 70.54965859714464,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 587
-    },
-    "passing_yards:QB:2024": {
-      "mae": 52.83429782983649,
-      "naive_mae": 76.10116861903929,
-      "trailing3_mae": 71.22828096118299,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 586
-    },
-    "passing_yards:QB:2025": {
-      "mae": 51.59464513815641,
-      "naive_mae": 68.98080412275229,
-      "trailing3_mae": 71.00061842918987,
-      "beats_naive": true,
-      "beats_trailing3": true,
-      "n": 585
-    }
+  "artifact_digests": {
+    "releases/candidates/causal_20260810/CONSTRAINED_STACK_SELECTION.json": "5b37793e0eac41692beeccc667de51880676462979b89c9dbc2f4c0a52ca4f97",
+    "releases/candidates/causal_20260810/ridge_carries_RB_coefs.json": "a263b71d14ad22a5a4e6e3ccb9ee6e6faec50f75e390c3fd535062493fe14924",
+    "releases/candidates/causal_20260810/ridge_fantasy_ppr_QB_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260810/ridge_fantasy_ppr_RB_coefs.json": "2867d9764cc6662a692fad246678304ec08f47f61496dfc1f48f5853bcfd3e9a",
+    "releases/candidates/causal_20260810/ridge_fantasy_ppr_TE_coefs.json": "a8c2ff09bbe2d91668c2ef82f78403783d877d9737e2ad1dfa62a0233f1ba10c",
+    "releases/candidates/causal_20260810/ridge_fantasy_ppr_WR_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260810/ridge_pass_attempts_QB_coefs.json": "ea012beb48f1e16b0a0887321aeea738da073e893e0c62bdc6b7ee11d9dbe4d9",
+    "releases/candidates/causal_20260810/ridge_passing_yards_QB_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260810/ridge_receiving_yards_RB_coefs.json": "4b50d9108b2f48f34a581a2045c0afe220237f8dc6fb9fa221b3910744d4e7f6",
+    "releases/candidates/causal_20260810/ridge_receiving_yards_TE_coefs.json": "d4aeaae2eb1afb3ee0652af3ce68ac89cf11ea2187ac886b18313106d013b22c",
+    "releases/candidates/causal_20260810/ridge_receiving_yards_WR_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260810/ridge_rushing_yards_QB_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260810/ridge_rushing_yards_RB_coefs.json": "736b55439362cce9b09750c4cd34257e2d164b43272c9dfa5ae66f99e8e09f14",
+    "releases/candidates/causal_20260810/ridge_targets_RB_coefs.json": "adca1f34d646b97d9ad55edf6e27c405a487040c5b45a8eb56261104484541ec",
+    "releases/candidates/causal_20260810/ridge_targets_TE_coefs.json": "a4890e55963e5fb1885f1df11f00a8dba3fe6c3fac306b60827677416fbcd592",
+    "releases/candidates/causal_20260810/ridge_targets_WR_coefs.json": "e51012a0cbd4a45c886d11d34161e11eb883ee693c00720056c0f7476e22b03e",
+    "releases/candidates/causal_20260810/serving_divergence_carries_RB.json": "6546685baa2dd737734e2d35916af1e30ecf39e8b081f438e36301235b51ac8e",
+    "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_QB.json": "0ace46a61552067fba433b0c201e87a2437429e826e103e0b813da687929bfd7",
+    "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_RB.json": "3ca8db47f7e8ab085d1a57d393cbaf72a370798097ded6092b8187042112844e",
+    "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_TE.json": "20653a82c8055ea7ee58be34af0c1a84822265f836f698e356e12279df71e963",
+    "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_WR.json": "98299990972e8a11f63e7279df1f4e41b51a2345a5b2398c014fff578aa5b4c7",
+    "releases/candidates/causal_20260810/serving_divergence_pass_attempts_QB.json": "7d1f3c1e493358c4f96c7cacb72b65e7151348b858a5b06e1d83233ba2f7a6ce",
+    "releases/candidates/causal_20260810/serving_divergence_passing_yards_QB.json": "53742b6064b59c3b9cf06d01c90e20ecc026c8c5e96dbbe8d9924292ceda67cd",
+    "releases/candidates/causal_20260810/serving_divergence_receiving_yards_RB.json": "6f4bb50073550180742ff0947949c67435a5ac2b56cc5fb46f3274d895f0c97f",
+    "releases/candidates/causal_20260810/serving_divergence_receiving_yards_TE.json": "58295f346d8cd40949c9e0a6dbc0ce89310dcb86916f998e5022a5b16a973dc5",
+    "releases/candidates/causal_20260810/serving_divergence_receiving_yards_WR.json": "de8bfb9bed2c0345636dea45ac06cce5cf99671b27eeb0ae08101971a3d04415",
+    "releases/candidates/causal_20260810/serving_divergence_rushing_yards_QB.json": "123cdc6bc1eedac6e11d0227851e8dc1d80adafa7a82e5da6b6b312f68a99925",
+    "releases/candidates/causal_20260810/serving_divergence_rushing_yards_RB.json": "897e3224217c58e1b1d786038e3b8f9ed7a0ee475b0af4a16b339b131e98fb83",
+    "releases/candidates/causal_20260810/serving_divergence_targets_RB.json": "15563f95e511c0be9b9d0ef4cfd4cf6c36620d73b821dc807d790306379662d6",
+    "releases/candidates/causal_20260810/serving_divergence_targets_TE.json": "112ce536783ebd2133e488890f73a30fb6f836d0aa7f607150c681fdf9c27af8",
+    "releases/candidates/causal_20260810/serving_divergence_targets_WR.json": "e8cc864edb7201da5cc1d0c05c6d1f27750f3f9f463fa6d9a618f42920de1e9f",
+    "releases/candidates/causal_20260810/stack_carries_RB_20260819.csv": "5a4e6ba87a3574c0c18f244ef3f7d2cb36797e997e2d35a21d68ce79d6004ae9",
+    "releases/candidates/causal_20260810/stack_fantasy_ppr_QB_20260819.csv": "d8a81e48a24f344c79a98573247d9080baeb63383a461068bd2c6c0ab632ec37",
+    "releases/candidates/causal_20260810/stack_fantasy_ppr_RB_20260819.csv": "4088c91c203690f81abbaae749b492f66f2cac5986edb026984c65061d76531e",
+    "releases/candidates/causal_20260810/stack_fantasy_ppr_TE_20260819.csv": "dac0839de9df3d9c209b01632b27ff44be75ec9c5e96d6c34bac7d0bd9b7f9fa",
+    "releases/candidates/causal_20260810/stack_fantasy_ppr_WR_20260819.csv": "a543f00f370ba3730b815209158e6a725c9df997e9fec058578058f2d351d680",
+    "releases/candidates/causal_20260810/stack_pass_attempts_QB_20260819.csv": "4ce952057aeba0bf164cbb403a2471b923042f3ba267865c817686df9c3d1891",
+    "releases/candidates/causal_20260810/stack_passing_yards_QB_20260819.csv": "29f5c783eeb6cb9df8ee67f631609c316d2d2909fe868ea8dfec15b90f5a47fa",
+    "releases/candidates/causal_20260810/stack_receiving_yards_RB_20260819.csv": "1f8b9a06a68bb88e7bbfe5a246dcdc88dc1deb767e3156ff6bc1099be7228c53",
+    "releases/candidates/causal_20260810/stack_receiving_yards_TE_20260819.csv": "5c14372c801c2145621f14a6941c7b049d2731dce77d2383be525a3bc1a02e7a",
+    "releases/candidates/causal_20260810/stack_receiving_yards_WR_20260819.csv": "32e63c504c6aef005a4cbbab2aa1638850ab298b8a1afbb45d57105048389af4",
+    "releases/candidates/causal_20260810/stack_rushing_yards_QB_20260819.csv": "874ca97a5089751776f41595725285c5af86c967223eeaad9aac4064f15dd4c6",
+    "releases/candidates/causal_20260810/stack_rushing_yards_RB_20260819.csv": "c5d1c801dfc6cbf7dc8b6829cfcbe298cefe9c555328f1c56f15aff24f6a0cdd",
+    "releases/candidates/causal_20260810/stack_targets_RB_20260819.csv": "e9ca6974da6b174cdda0afa6a23e0848dd1b472bfb537a0df8f6650a88aaed52",
+    "releases/candidates/causal_20260810/stack_targets_TE_20260819.csv": "8986655ce48c19293705666d10a412445c2207860555801d7e1d7304cfa2bb0a",
+    "releases/candidates/causal_20260810/stack_targets_WR_20260819.csv": "d8685883958d0c15a91a9a307d63b868808e14cc8051872bc717c9eb8f5d0e3c"
   },
   "artifacts": {
-    "stacks_fantasy_ppr": [
-      "ml/oof/stack_fantasy_ppr_QB_20260809.csv",
-      "ml/oof/stack_fantasy_ppr_RB_20260809.csv",
-      "ml/oof/stack_fantasy_ppr_WR_20260809.csv",
-      "ml/oof/stack_fantasy_ppr_TE_20260809.csv"
+    "ridge_coefficients": [
+      "releases/candidates/causal_20260810/ridge_fantasy_ppr_QB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_fantasy_ppr_RB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_fantasy_ppr_WR_coefs.json",
+      "releases/candidates/causal_20260810/ridge_fantasy_ppr_TE_coefs.json",
+      "releases/candidates/causal_20260810/ridge_targets_WR_coefs.json",
+      "releases/candidates/causal_20260810/ridge_targets_TE_coefs.json",
+      "releases/candidates/causal_20260810/ridge_targets_RB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_carries_RB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_pass_attempts_QB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_passing_yards_QB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_receiving_yards_WR_coefs.json",
+      "releases/candidates/causal_20260810/ridge_receiving_yards_TE_coefs.json",
+      "releases/candidates/causal_20260810/ridge_receiving_yards_RB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_rushing_yards_QB_coefs.json",
+      "releases/candidates/causal_20260810/ridge_rushing_yards_RB_coefs.json"
     ],
-    "stacks_volume": [
-      "ml/oof/stack_targets_WR_20260809.csv",
-      "ml/oof/stack_targets_TE_20260809.csv",
-      "ml/oof/stack_targets_RB_20260809.csv",
-      "ml/oof/stack_carries_RB_20260809.csv",
-      "ml/oof/stack_pass_attempts_QB_20260809.csv"
+    "selection_policy": [
+      "releases/candidates/causal_20260810/CONSTRAINED_STACK_SELECTION.json"
     ],
-    "passing_yards": "ml/oof/stack_passing_yards_QB_20260809.csv",
-    "serving_divergence": "reports/serving_divergence_passing_yards_QB.json",
-    "stacks_yardage": [
-      "ml/oof/stack_receiving_yards_WR_20260809.csv",
-      "ml/oof/stack_receiving_yards_TE_20260809.csv",
-      "ml/oof/stack_receiving_yards_RB_20260809.csv",
-      "ml/oof/stack_rushing_yards_QB_20260809.csv",
-      "ml/oof/stack_rushing_yards_RB_20260809.csv"
+    "serving_parity": [
+      "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_QB.json",
+      "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_RB.json",
+      "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_WR.json",
+      "releases/candidates/causal_20260810/serving_divergence_fantasy_ppr_TE.json",
+      "releases/candidates/causal_20260810/serving_divergence_targets_WR.json",
+      "releases/candidates/causal_20260810/serving_divergence_targets_TE.json",
+      "releases/candidates/causal_20260810/serving_divergence_targets_RB.json",
+      "releases/candidates/causal_20260810/serving_divergence_carries_RB.json",
+      "releases/candidates/causal_20260810/serving_divergence_pass_attempts_QB.json",
+      "releases/candidates/causal_20260810/serving_divergence_passing_yards_QB.json",
+      "releases/candidates/causal_20260810/serving_divergence_receiving_yards_WR.json",
+      "releases/candidates/causal_20260810/serving_divergence_receiving_yards_TE.json",
+      "releases/candidates/causal_20260810/serving_divergence_receiving_yards_RB.json",
+      "releases/candidates/causal_20260810/serving_divergence_rushing_yards_QB.json",
+      "releases/candidates/causal_20260810/serving_divergence_rushing_yards_RB.json"
+    ],
+    "stacks": [
+      "releases/candidates/causal_20260810/stack_fantasy_ppr_QB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_fantasy_ppr_RB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_fantasy_ppr_WR_20260819.csv",
+      "releases/candidates/causal_20260810/stack_fantasy_ppr_TE_20260819.csv",
+      "releases/candidates/causal_20260810/stack_targets_WR_20260819.csv",
+      "releases/candidates/causal_20260810/stack_targets_TE_20260819.csv",
+      "releases/candidates/causal_20260810/stack_targets_RB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_carries_RB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_pass_attempts_QB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_passing_yards_QB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_receiving_yards_WR_20260819.csv",
+      "releases/candidates/causal_20260810/stack_receiving_yards_TE_20260819.csv",
+      "releases/candidates/causal_20260810/stack_receiving_yards_RB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_rushing_yards_QB_20260819.csv",
+      "releases/candidates/causal_20260810/stack_rushing_yards_RB_20260819.csv"
     ]
   },
-  "verification": {
-    "local_verify_command": "make verify-local",
-    "reprojection_gate_command": "python scripts/reprojection_gate.py --holdout-season 2024 --position WR --target fantasy_ppr --oof-glob \"ml/oof/stack_fantasy_ppr_WR_*.csv\""
-  },
+  "candidate": false,
+  "created_at": "2026-08-19T15:48:35.718595+00:00",
+  "git_commit": "1bfb4dbfeea93b2c9e992608f8b1320b12e100a6",
+  "git_dirty": false,
+  "model_version": "causal_20260819_zero_regression",
+  "product_mode": "artifact_backed",
   "projection_policy": {
     "approved_pipeline_run_ids": [],
     "require_interval_columns": true,
-    "require_posterior_samples": true
+    "require_posterior_samples": false
   },
-  "artifact_digests": {
-    "ml/oof/stack_carries_RB_20260809.csv": "e5cf4971349c0fb8deb384ca65294090b6797f5f3dc8534d22d2476e4ec48a78",
-    "ml/oof/stack_fantasy_ppr_QB_20260809.csv": "77614a8a791d4558e07bef7d32e5d084695afc8f53d0ab980bab8715aa3ac6aa",
-    "ml/oof/stack_fantasy_ppr_RB_20260809.csv": "e9c79d75f7d3cba77a9546549740d851055b94c42fdc786c90edbed1700b9214",
-    "ml/oof/stack_fantasy_ppr_TE_20260809.csv": "26a5a23fbee0cea692c2cb713d0ceef560a1661df803cfc90d9247a51cc481b6",
-    "ml/oof/stack_fantasy_ppr_WR_20260809.csv": "086d5b6bbb3899bc331ce95c94fbc43b7b97894d65eb84c7a89f1282dfe12604",
-    "ml/oof/stack_pass_attempts_QB_20260809.csv": "16899f66c72bf2991fc15ce163a53de65b3e35e60cddfb3a567cb1b86b9930a4",
-    "ml/oof/stack_passing_yards_QB_20260809.csv": "187304d6173f16a3bf9e57cfda6191f240871ab2ad90370bdaada27ee337a162",
-    "ml/oof/stack_receiving_yards_RB_20260809.csv": "411af4bc8d85ac0c5448cb15f947e222da209cba14097629bab80fc2d4d94e16",
-    "ml/oof/stack_receiving_yards_TE_20260809.csv": "86e386db4c0e146fab5861ea264603f042cb1076dafb9ac77ab564d8264eadd3",
-    "ml/oof/stack_receiving_yards_WR_20260809.csv": "a6e6d54ae52b37190697d5bb3cfa7e5190584ebe7f2cfea576a2ebd374ac49c1",
-    "ml/oof/stack_rushing_yards_QB_20260809.csv": "a9cac33aa89c2498366112bdce2c5f95cf93bb517de592cdb256165f18553f05",
-    "ml/oof/stack_rushing_yards_RB_20260809.csv": "4912b6329c1ce1c4d4884b205004fc4037f5458d12cf955689a3938fd1de51df",
-    "ml/oof/stack_targets_RB_20260809.csv": "fc096f9acdd12c6fec607d6c5c272afb4259ca011e14ce717384fea81f6033cf",
-    "ml/oof/stack_targets_TE_20260809.csv": "de8eb8af1470ac2ac43f134a5a8f0666ab4edf29dfe11e476e2129059dbe1c07",
-    "ml/oof/stack_targets_WR_20260809.csv": "74a7b0134670857b8fe140dfd09b13d93679bced61afeea76e7990e7427f09da",
-    "reports/serving_divergence_passing_yards_QB.json": "4c80c9db62f13fd7698032395331e14beae4d729236b64a49a5ecf2e1f7b3df2"
-  }
+  "promotion_evidence": "releases/candidates/causal_20260810/promotion_gates_zero_regression.json",
+  "release_status": "promoted_zero_regression",
+  "source_rebuild": "ml/oof/rebuild_20260809T231500"
 }
