@@ -210,5 +210,6 @@ void drive_mcmc_load_defaults(void *handle);
 void drive_mcmc_simulate(void *handle, uint8_t field_pos, uint8_t down,
                          uint8_t yards_to_go, float *out_p_td, float *out_p_fg,
                          float *out_expected_yards, float *out_drive_value);
+bool drive_mcmc_load_transitions_csv(void *handle, const char *csv_path);
 
 } // extern "C"

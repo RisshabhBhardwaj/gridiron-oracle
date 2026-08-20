@@ -94,6 +94,26 @@ if LIB is not None:
     ]
     LIB.season_sim_full.restype = None
 
+    LIB.drive_mcmc_create.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    LIB.drive_mcmc_create.restype = ctypes.c_void_p
+    LIB.drive_mcmc_destroy.argtypes = [ctypes.c_void_p]
+    LIB.drive_mcmc_destroy.restype = None
+    LIB.drive_mcmc_load_defaults.argtypes = [ctypes.c_void_p]
+    LIB.drive_mcmc_load_defaults.restype = None
+    LIB.drive_mcmc_load_transitions_csv.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    LIB.drive_mcmc_load_transitions_csv.restype = ctypes.c_bool
+    LIB.drive_mcmc_simulate.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint8,
+        ctypes.c_uint8,
+        ctypes.c_uint8,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+    ]
+    LIB.drive_mcmc_simulate.restype = None
+
 
 # ── Python Wrapper Class ──────────────────────────────────────────────────────
 
@@ -166,4 +186,44 @@ class CppSeasonSimulator:
             "p10": out_p10,
             "p50": out_p50,
             "p90": out_p90
+        }
+
+
+class CppDriveMCMC:
+    """Python interface to C++ DriveMCMC. Requires fitted transitions.csv."""
+
+    def __init__(self, n_simulations: int = 2000, rng_seed: int = 42):
+        if LIB is None:
+            raise RuntimeError("C++ engine shared library not found. Build it first.")
+        self.handle = LIB.drive_mcmc_create(n_simulations, rng_seed)
+        self.n_simulations = n_simulations
+
+    def __del__(self):
+        if hasattr(self, "handle") and self.handle and LIB is not None:
+            LIB.drive_mcmc_destroy(self.handle)
+            self.handle = None
+
+    def load_transitions_csv(self, path: str) -> bool:
+        return bool(LIB.drive_mcmc_load_transitions_csv(self.handle, path.encode("utf-8")))
+
+    def simulate(self, field_pos: int = 25, down: int = 1, yards_to_go: int = 10) -> dict[str, float]:
+        p_td = ctypes.c_float()
+        p_fg = ctypes.c_float()
+        yards = ctypes.c_float()
+        value = ctypes.c_float()
+        LIB.drive_mcmc_simulate(
+            self.handle,
+            field_pos,
+            down,
+            yards_to_go,
+            ctypes.byref(p_td),
+            ctypes.byref(p_fg),
+            ctypes.byref(yards),
+            ctypes.byref(value),
+        )
+        return {
+            "p_touchdown": float(p_td.value),
+            "p_field_goal": float(p_fg.value),
+            "expected_yards": float(yards.value),
+            "drive_value": float(value.value),
         }

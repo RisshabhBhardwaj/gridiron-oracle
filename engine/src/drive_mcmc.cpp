@@ -340,4 +340,12 @@ void drive_mcmc_simulate(void *handle, uint8_t field_pos, uint8_t down,
   *out_drive_value = res.drive_value;
 }
 
+bool drive_mcmc_load_transitions_csv(void *handle, const char *csv_path) {
+  if (!handle || !csv_path) {
+    return false;
+  }
+  return static_cast<gridiron::DriveMCMC *>(handle)->load_transitions_from_csv(
+      csv_path);
+}
+
 } // extern "C"
