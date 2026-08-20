@@ -127,6 +127,12 @@ def score_oof_against_baselines(
             "beats_trailing3": bool(model_score < roll_score) if np.isfinite(roll_score) else None,
             "max_train_season_ok": bool((cohort["max_train_season"] < cohort["season"]).all()),
         }
+        if "marcel_baseline" in cohort.columns:
+            marcel = pd.to_numeric(cohort["marcel_baseline"], errors="coerce").to_numpy(dtype=float)
+            common_m = np.isfinite(actual) & np.isfinite(pred) & np.isfinite(marcel)
+            _, marcel_score = primary_score(stat, actual[common_m], marcel[common_m]) if common_m.any() else (metric_name, np.nan)
+            record["marcel_score"] = marcel_score
+            record["beats_marcel"] = bool(model_score < marcel_score) if np.isfinite(marcel_score) else None
         for col, val in zip(group_cols, keys):
             record[col] = val
         rows.append(record)

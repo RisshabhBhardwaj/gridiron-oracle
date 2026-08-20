@@ -41,6 +41,12 @@ def poisson_deviance(actual: np.ndarray, predicted: np.ndarray) -> float:
     return float(np.mean(2.0 * (term - (actual - predicted))))
 
 
+def crps_from_samples(samples: np.ndarray, actual: float) -> float:
+    """Vendored CRPS; do not add the scoringrules package (needs Python ≥ 3.12)."""
+    from ml.backtest import compute_crps_single
+    return compute_crps_single(np.asarray(samples, dtype=float), float(actual))
+
+
 def primary_score(stat: str, actual: np.ndarray, predicted: np.ndarray) -> tuple[str, float]:
     """Return (metric_name, value) for the stat's metric family."""
     family = target_metric_family(stat)

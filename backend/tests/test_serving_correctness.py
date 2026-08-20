@@ -88,7 +88,7 @@ def test_materializer_conflict_update_clears_stale_uncertainty_fields():
     sql_source = inspect.getsource(_upsert)
     assert "boom_probability = EXCLUDED.boom_probability" in sql_source
     assert "bust_probability = EXCLUDED.bust_probability" in sql_source
-    assert "posterior_samples = EXCLUDED.posterior_samples" in sql_source
+    assert "interval_method = EXCLUDED.interval_method" in sql_source
 
 
 def test_materialization_report_distinguishes_conformal_coverage_from_posterior_percentiles():

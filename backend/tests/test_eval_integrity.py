@@ -133,3 +133,8 @@ def test_eval_scores_every_predictor_on_one_finite_cohort() -> None:
     assert row["n"] == 1
     assert row["n_model"] > row["n"]
     assert row["model_score"] == pytest.approx(1.0)
+
+
+def test_vendored_crps_matches_hand_verified_example() -> None:
+    from ml.eval_metrics import crps_from_samples
+    assert crps_from_samples(np.array([0.0, 1.0, 2.0, 3.0, 4.0]), 2.0) == pytest.approx(0.4)

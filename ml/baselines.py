@@ -144,5 +144,89 @@ def attach_baselines(
         out["kalman_baseline"] = pd.to_numeric(out[kalman_col], errors="coerce")
     else:
         out["kalman_baseline"] = None
+    out = attach_marcel(out, history, stat_col=stat_col)
     out = out.sort_values("_eval_order").drop(columns="_eval_order")
     return out
+
+
+MARCEL_LAG_WEIGHTS: tuple[tuple[int, float], ...] = ((1, 5.0), (2, 4.0), (3, 3.0))
+MARCEL_REGRESSION_GAMES = 30.0
+
+
+def attach_marcel(
+    eval_rows: pd.DataFrame,
+    history: pd.DataFrame,
+    *,
+    stat_col: str,
+    regression_games: float = MARCEL_REGRESSION_GAMES,
+) -> pd.DataFrame:
+    """Attach a causal Marcel rate (prior three seasons only, shrunk to position mean).
+
+    Same-season games of the evaluation year are never used. Contemporaneous
+    expected-fantasy (xFP) is not a Marcel input.
+    """
+    out = eval_rows.copy()
+    if stat_col not in history.columns:
+        out["marcel_baseline"] = np.nan
+        return out
+    needed = {"player_id", "season", stat_col}
+    if needed - set(history.columns):
+        out["marcel_baseline"] = np.nan
+        return out
+
+    hist = history.loc[:, [c for c in ["player_id", "season", "position", stat_col] if c in history.columns]].copy()
+    hist[stat_col] = pd.to_numeric(hist[stat_col], errors="coerce")
+    hist = hist.dropna(subset=[stat_col])
+    if hist.empty:
+        out["marcel_baseline"] = np.nan
+        return out
+
+    group_cols = ["player_id", "season"]
+    if "position" in hist.columns:
+        group_cols.append("position")
+    rates = hist.groupby(group_cols, as_index=False).agg(
+        rate=(stat_col, "mean"),
+        games=(stat_col, "size"),
+    ).drop_duplicates(["player_id", "season"], keep="first")
+    pos_means = pd.DataFrame(columns=["season", "position", "pos_mean"])
+    if "position" in rates.columns:
+        pos_means = (
+            rates.groupby(["season", "position"], as_index=False)["rate"]
+            .mean()
+            .rename(columns={"rate": "pos_mean"})
+        )
+
+    for lag, _weight in MARCEL_LAG_WEIGHTS:
+        lagged = rates.rename(columns={"rate": f"rate_{lag}", "games": f"games_{lag}"})
+        lagged["season"] = lagged["season"].astype(int) + lag
+        merge_cols = ["player_id", "season", f"rate_{lag}", f"games_{lag}"]
+        out = out.merge(lagged[merge_cols], on=["player_id", "season"], how="left")
+
+    if "position" in out.columns and not pos_means.empty:
+        prior_pos = pos_means.rename(columns={"season": "_pos_season"})
+        prior_pos["season"] = prior_pos["_pos_season"].astype(int) + 1
+        out = out.merge(
+            prior_pos[["season", "position", "pos_mean"]],
+            on=["season", "position"],
+            how="left",
+        )
+    else:
+        out["pos_mean"] = np.nan
+
+    numer = pd.Series(0.0, index=out.index)
+    denom = pd.Series(0.0, index=out.index)
+    for lag, weight in MARCEL_LAG_WEIGHTS:
+        games = pd.to_numeric(out.get(f"games_{lag}"), errors="coerce").fillna(0.0)
+        rate = pd.to_numeric(out.get(f"rate_{lag}"), errors="coerce")
+        contrib = weight * games
+        numer = numer + contrib * rate.fillna(0.0)
+        denom = denom + contrib
+    pos_mean = pd.to_numeric(out["pos_mean"], errors="coerce")
+    shrink = pos_mean.notna() & (denom > 0)
+    numer = numer.where(~shrink, numer + regression_games * pos_mean.fillna(0.0))
+    denom = denom.where(~shrink, denom + regression_games)
+    marcel = numer / denom.replace(0.0, np.nan)
+    marcel = marcel.where(denom > 0)
+    out["marcel_baseline"] = marcel
+    drop_cols = [c for c in out.columns if c.startswith("rate_") or c.startswith("games_") or c == "pos_mean"]
+    return out.drop(columns=drop_cols, errors="ignore")

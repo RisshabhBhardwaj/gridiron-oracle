@@ -200,7 +200,11 @@ class FeatureRow:
     # routes_run_pct: offensive snap participation rate from load_snap_counts().
     # Proxy for routes run per game; offense_pct × team_pass_attempts ≈ routes.
     # Populated by normalize.py snap counts pass alongside snap_pct_off.
+    # routes_run_pct is target-game participation and is forbidden as a model input.
     routes_run_pct:        Optional[float] = None  # offense_pct (0.0–1.0)
+    # Prior-game mean routes from participation_player_game (week < target).
+    # Stored for SP2; not on FEATURE_COLS until a holdout win.
+    routes_run_per_game:   Optional[float] = None
 
     # Derived velocity/trend features (computed in build_feature_row)
     # target_share_trend: 3-game delta in target share (positive = trending up).

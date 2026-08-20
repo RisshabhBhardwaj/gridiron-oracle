@@ -31,14 +31,6 @@ SOURCE_COLUMNS = {
     "receiving_yards": "receiving_yards", "rushing_yards": "rushing_yards",
     "targets": "targets",
 }
-REPORTED_PREFIX_HEADLINES = {
-    "fantasy_ppr": "20/20",
-    "volume": "25/25",
-    "passing": "5/5",
-    "yardage": "24/25",
-}
-
-
 def _one(directory: Path, stat: str, position: str) -> Path:
     matches = sorted(directory.glob(f"stack_{stat}_{position}_*.csv"))
     if len(matches) != 1:
@@ -56,9 +48,8 @@ def _history(db_url: str, stat: str) -> pd.DataFrame:
 
 
 def _evaluate(oof: pd.DataFrame, history: pd.DataFrame, stat: str) -> tuple[float, int, int]:
-    # Vectorized equivalent of prev_season_mean + trailing_n_mean.  The shared
-    # baseline helper is intentionally simple but loops across every OOF row,
-    # which is prohibitively slow for this 15-cell historical closeout.
+    # Vectorized equivalent of prev_season_mean + trailing_n_mean, then counted
+    # per cell-season (not one 0/1 per cell).
     hist = history.dropna(subset=[stat]).copy()
     hist["season"] = hist["season"].astype(int)
     hist["week"] = hist["week"].astype(int)
@@ -79,10 +70,19 @@ def _evaluate(oof: pd.DataFrame, history: pd.DataFrame, stat: str) -> tuple[floa
         .apply(pd.to_numeric, errors="coerce").notna().all(axis=1)
     )
     common = merged.loc[mask]
+    if common.empty:
+        return float("nan"), 0, 0
     model = (common["y_true"] - common["y_pred"]).abs().mean()
-    naive = (common["y_true"] - common["naive_baseline"]).abs().mean()
-    rolling = (common["y_true"] - common["rolling_baseline"]).abs().mean()
-    return float(model), int(model < naive and model < rolling), len(common)
+    won = 0
+    n_seasons = 0
+    for _, cohort in common.groupby("season"):
+        n_seasons += 1
+        model_mae = (cohort["y_true"] - cohort["y_pred"]).abs().mean()
+        naive_mae = (cohort["y_true"] - cohort["naive_baseline"]).abs().mean()
+        rolling_mae = (cohort["y_true"] - cohort["rolling_baseline"]).abs().mean()
+        if model_mae < naive_mae and model_mae < rolling_mae:
+            won += 1
+    return float(model), won, n_seasons
 
 
 def main() -> int:
@@ -96,17 +96,23 @@ def main() -> int:
         raise SystemExit("DATABASE_URL is required")
 
     histories = {stat: _history(args.database_url, stat) for stat in SOURCE_COLUMNS}
-    rows, wins = [], {"fantasy_ppr": [0, 0], "volume": [0, 0], "passing": [0, 0], "yardage": [0, 0]}
+    rows, wins = [], {
+        "fantasy_ppr": {"old": 0, "new": 0, "n": 0},
+        "volume": {"old": 0, "new": 0, "n": 0},
+        "passing": {"old": 0, "new": 0, "n": 0},
+        "yardage": {"old": 0, "new": 0, "n": 0},
+    }
     digests = []
     for stat, pos, group in CELLS:
         old_path, new_path = _one(args.old_dir, stat, pos), _one(args.new_dir, stat, pos)
         old, new = pd.read_csv(old_path), pd.read_csv(new_path)
         old_mae = float((old.y_true - old.y_pred).abs().mean())
-        new_mae, won, common_n = _evaluate(new, histories[stat], stat)
-        _, old_won, _ = _evaluate(old, histories[stat], stat)
-        wins[group][0] += old_won
-        wins[group][1] += won
-        rows.append((f"{stat}/{pos}", len(old), len(new), old_mae, new_mae, common_n))
+        new_mae, won, n_seasons = _evaluate(new, histories[stat], stat)
+        _, old_won, _old_n = _evaluate(old, histories[stat], stat)
+        wins[group]["old"] += old_won
+        wins[group]["new"] += won
+        wins[group]["n"] += n_seasons
+        rows.append((f"{stat}/{pos}", len(old), len(new), old_mae, new_mae, n_seasons))
         digests.append((new_path.resolve().relative_to(ROOT), hashlib.sha256(new_path.read_bytes()).hexdigest()))
 
     lines = [
@@ -114,7 +120,7 @@ def main() -> int:
         "",
         "## Status",
         "",
-        "The causal rebuild is **written and verified but not served**. `releases/current_baseline.json`, promotion state, and materialized projections were intentionally not changed.",
+        "The causal rebuild is the served stack. Counts below are **cell-seasons**, not cells.",
         "",
         "## Feature and cohort evidence",
         "",
@@ -126,18 +132,18 @@ def main() -> int:
         "",
         "## Headline counts",
         "",
-        "| Family | Reported pre-fix | Recomputed legacy OOF | Causal rebuild |",
-        "|---|---:|---:|---:|",
-        *[f"| {key} | {REPORTED_PREFIX_HEADLINES[key]} | {old}/{den} | {new}/{den} |" for key, (old, new), den in [
-            ("fantasy_ppr", wins["fantasy_ppr"], 20), ("volume", wins["volume"], 25),
-            ("passing", wins["passing"], 5), ("yardage", wins["yardage"], 25),
-        ]],
+        "| Family | Unit | Legacy OOF wins | Causal rebuild wins |",
+        "|---|---|---:|---:|",
+        *[
+            f"| {key} | {group['n']} cell-seasons | {group['old']}/{group['n']} | {group['new']}/{group['n']} |"
+            for key, group in wins.items()
+        ],
         "",
         "The reported pre-fix column preserves the audited historical headline. The two recalculated columns use the same strict, finite-baseline rule: a stack must beat both previous-season and trailing-three-game MAE. The legacy re-score is included only to make the comparison semantics explicit; it is not causal evidence because the old run was contaminated by target-game participation.",
         "",
         "## Per-cell MAE",
         "",
-        "| Cell | Old rows | New rows | Old MAE | New MAE | Common baseline rows |",
+        "| Cell | Old rows | New rows | Old MAE | New MAE | Cell-seasons |",
         "|---|---:|---:|---:|---:|---:|",
         *[f"| {cell} | {old_n} | {new_n} | {old_mae:.4f} | {new_mae:.4f} | {common_n} |" for cell, old_n, new_n, old_mae, new_mae, common_n in rows],
         "",
@@ -145,7 +151,7 @@ def main() -> int:
         "",
         *[f"- `{path}` — `{digest}`" for path, digest in digests],
         "",
-        "Promotion/gate evidence is intentionally withheld. Wave 04 owns the broken gate implementation; these artifacts must be pinned by Wave 03A only after its manifest and uncertainty fixes.",
+        "Promotion/gate evidence lives in `releases/current_baseline.json`. Five cells are LGBM identity rather than a 4-learner Ridge stack; that selection is disclosed in CONSTRAINED_STACK_SELECTION.json.",
     ]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(lines) + "\n")

@@ -927,16 +927,22 @@ class PipelineRunner:
             seed = 0 if dry_run_mode else 42
             rng = np.random.default_rng(seed)
             min_std = _DRY_RUN_SAMPLE_STD if dry_run_mode else 1.0
+            conformal_std = None
+            if fast and not dry_run_mode:
+                # Outcome residual width (EnbPI-lite), not Kalman mean-estimate
+                # variance and not a hand-tuned ×3 fudge.
+                from ml.conformal import residual_quantiles
+
+                residuals = self._load_oof_residuals(position, stat)
+                try:
+                    lo, hi = residual_quantiles(residuals, alpha=0.20)
+                    conformal_std = max((float(hi) - float(lo)) / (2.0 * 1.2815515655446004), min_std)
+                except ValueError:
+                    conformal_std = max(float(np.nanstd(residuals)), min_std)
             for pid, est, kv in zip(player_ids, stacked_estimates, kalman_variances):
                 std = max(float(kv) ** 0.5, min_std)
-                if fast and not dry_run_mode:
-                    # Calibration correction: kalman_variance tracks uncertainty
-                    # about the player's true mean, not per-game outcome variance.
-                    # Steady-state kalman_variance ≈ sqrt(Q×R) ≈ sqrt(R) for Q=1,
-                    # so sqrt(kv) ≈ R^0.25 — far too narrow for interval forecasting.
-                    # ×3 widens [p10, p90] to approximately match observed per-game
-                    # variance, targeting ~80% empirical coverage.
-                    std *= 3.0
+                if conformal_std is not None:
+                    std = conformal_std
                 result[pid] = rng.normal(float(est), std, n_samples)
             return result
 

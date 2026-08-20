@@ -171,13 +171,13 @@ def _upsert(conn, df: pd.DataFrame) -> int:
              projection, floor, ceiling, p25, p75,
              boom_probability, bust_probability,
              fantasy_projection, fantasy_floor, fantasy_ceiling,
-             pipeline_run_id, posterior_samples, max_train_season)
+             pipeline_run_id, posterior_samples, max_train_season, interval_method)
         VALUES (
             %(player_id)s, %(game_id)s, %(season)s, %(week)s, %(stat)s, %(position)s,
             %(projection)s, %(floor)s, %(ceiling)s, %(p25)s, %(p75)s,
             NULL, NULL,
             %(fantasy_projection)s, %(fantasy_floor)s, %(fantasy_ceiling)s,
-            %(pipeline_run_id)s, NULL, %(max_train_season)s
+            %(pipeline_run_id)s, NULL, %(max_train_season)s, %(interval_method)s
         )
         ON CONFLICT (player_id, game_id, stat) DO UPDATE SET
             season = EXCLUDED.season,
@@ -195,7 +195,8 @@ def _upsert(conn, df: pd.DataFrame) -> int:
             boom_probability = EXCLUDED.boom_probability,
             bust_probability = EXCLUDED.bust_probability,
             posterior_samples = EXCLUDED.posterior_samples,
-            max_train_season = EXCLUDED.max_train_season
+            max_train_season = EXCLUDED.max_train_season,
+            interval_method = EXCLUDED.interval_method
     """
     rows = []
     for r in df.itertuples(index=False):
@@ -223,6 +224,7 @@ def _upsert(conn, df: pd.DataFrame) -> int:
                 else None,
                 "pipeline_run_id": str(r.pipeline_run_id),
                 "max_train_season": int(r.max_train_season),
+                "interval_method": str(r.interval_method) if getattr(r, "interval_method", None) else "unavailable",
             }
         )
     with conn.cursor() as cur:
@@ -236,7 +238,15 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--database-url", default=os.environ.get("DATABASE_URL", ""))
+    p.add_argument(
+        "--pipeline-run-id",
+        default=None,
+        help="Reuse an approved run id instead of minting a new timestamped id",
+    )
     args = p.parse_args()
+    global PIPELINE_RUN_ID
+    if args.pipeline_run_id:
+        PIPELINE_RUN_ID = str(args.pipeline_run_id)
     if not args.database_url and not args.dry_run:
         logger.error("DATABASE_URL required")
         return 2

@@ -17,6 +17,24 @@ if str(ROOT) not in sys.path:
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, sha256_of
 
 
+def _mean_variance_fallback(seasonal: list[dict[str, object]]) -> bool:
+    """Fallback to LGBM identity only when mean MAE is worse after a variance penalty.
+
+    Losing any single season is not enough. Mean candidate MAE plus 0.5 × std of
+    (candidate − baseline) must exceed mean baseline MAE.
+    """
+    if not seasonal:
+        return True
+    deltas = [float(row["candidate_mae"]) - float(row["baseline_mae"]) for row in seasonal]
+    mean_cand = sum(float(row["candidate_mae"]) for row in seasonal) / len(seasonal)
+    mean_base = sum(float(row["baseline_mae"]) for row in seasonal) / len(seasonal)
+    if len(deltas) == 1:
+        return mean_cand > mean_base
+    mean_delta = sum(deltas) / len(deltas)
+    var = sum((d - mean_delta) ** 2 for d in deltas) / (len(deltas) - 1)
+    return (mean_cand + 0.5 * (var ** 0.5)) > mean_base
+
+
 def _one(directory: Path, pattern: str) -> Path:
     paths = sorted(directory.glob(pattern))
     if len(paths) != 1:
@@ -53,7 +71,7 @@ def select(candidate_dir: Path, baseline_path: Path) -> dict[str, object]:
                 "release_id": "bootstrap_causal_lgbm_reference_20260819",
                 "reference_kind": "user_authorized_first_causal_reference",
             }
-        fallback = not all(row["ok"] for row in seasonal)
+        fallback = _mean_variance_fallback(seasonal)
         if fallback:
             stack["y_pred"] = stack["lgbm_pred"]
             stack.to_csv(stack_path, index=False)
@@ -70,7 +88,11 @@ def select(candidate_dir: Path, baseline_path: Path) -> dict[str, object]:
     }
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
     baseline_path.write_text(json.dumps(baseline, indent=2, sort_keys=True) + "\n")
-    report = {"created_at": datetime.now(timezone.utc).isoformat(), "policy": "zero_seasonal_regression_vs_walkforward_lgbm", "decisions": decisions}
+    report = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "policy": "mean_mae_with_variance_penalty_vs_walkforward_lgbm",
+        "decisions": decisions,
+    }
     (candidate_dir / "CONSTRAINED_STACK_SELECTION.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report
 

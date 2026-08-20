@@ -22,6 +22,10 @@ def test_raw_snap_aliases_fail_closed_at_model_boundary():
         assert_model_input_columns(["kalman_est_targets", "snap_pct_off"], consumer="test")
     with pytest.raises(AssertionError, match="routes_run_pct"):
         assert_model_input_columns(["routes_run_pct"], consumer="test")
+    with pytest.raises(AssertionError, match="rec_fantasy_points_exp"):
+        assert_model_input_columns(["kalman_est_targets", "rec_fantasy_points_exp"], consumer="test")
+    with pytest.raises(AssertionError, match="targets_exp"):
+        assert_model_input_columns(["targets_exp"], consumer="test")
 
 
 def test_prior_snap_share_uses_only_completed_game():

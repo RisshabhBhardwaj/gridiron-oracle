@@ -702,6 +702,34 @@ class FeatureEngineer:
         self._conn.commit()
         return len(rows)
 
+    def _fill_prior_routes_run(self, season: int) -> None:
+        """Fill routes_run_per_game from strictly prior participation rows."""
+        if not self._conn:
+            return
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE feature_matrix fm
+                    SET routes_run_per_game = (
+                        SELECT AVG(ppg.routes_run::double precision)
+                        FROM participation_player_game ppg
+                        WHERE ppg.player_id = fm.player_id
+                          AND ppg.routes_run IS NOT NULL
+                          AND (
+                                ppg.season < fm.season
+                                OR (ppg.season = fm.season AND ppg.week < fm.week)
+                              )
+                    )
+                    WHERE fm.season = %s
+                    """,
+                    (season,),
+                )
+            self._conn.commit()
+        except Exception as exc:
+            logger.warning("prior routes_run fill skipped for season=%s: %s", season, exc)
+            self._conn.rollback()
+
     def clear_seasons(self, seasons: list[int]) -> int:
         """Delete only the explicitly requested seasons before a clean rebuild."""
         if not seasons:
@@ -773,6 +801,7 @@ class FeatureEngineer:
             if feature_batch:
                 total += self._upsert_feature_rows(feature_batch)
 
+            self._fill_prior_routes_run(season)
             # Target-week depth, NGS, PBP, weather, and embedding joins are
             # disabled until they have a causal source contract.
             self._clear_disabled_feature_values(season)

@@ -43,6 +43,12 @@ FORBIDDEN_MODEL_FIELDS = frozenset({
     "wind_mph", "temp_bucket", "wind_bucket", "wind_x_qb", "wind_x_wr",
     "precip_x_pass", "years_exp", "exp_bucket",
     "snap_share_trailing", "snap_share_trend", "snap_vs_pos_avg",
+    # Contemporaneous expected-fantasy (xFP) is same-week realized opportunity.
+    # Lagged xFP may enter later as a role-quality feature; same-week *_exp must not.
+    "rec_fantasy_points_exp", "rush_fantasy_points_exp", "pass_fantasy_points_exp",
+    "fantasy_points_exp", "receptions_exp", "targets_exp", "carries_exp",
+    "pass_attempts_exp", "rushing_yards_exp", "receiving_yards_exp",
+    "passing_yards_exp", "completions_exp",
     *(f"player_emb_{i}" for i in range(32)),
 })
 

@@ -505,22 +505,22 @@ class TestStackingInferenceHelpers:
 
     def test_load_ridge_coefs_rejects_nan_and_unknown_learner(self, tmp_path):
         from ml.train import PipelineRunner
-        (tmp_path / "ridge_receiving_yards_WR_coefs.json").write_text(
+        (tmp_path / "ridge_fumbles_WR_coefs.json").write_text(
             '{"learner_order": ["lgbm", "catboost"], '
             '"weights": {"lgbm": NaN, "catboost": 0.4, "unknown_learner": 99}, '
             '"intercept": 0.0}'
         )
         with pytest.raises(ValueError):
-            PipelineRunner(oof_dir=tmp_path)._load_ridge_coefs("receiving_yards", "WR")
+            PipelineRunner(oof_dir=tmp_path)._load_ridge_coefs("fumbles", "WR")
 
     def test_load_ridge_coefs_requires_position_specific_file_when_position_given(self, tmp_path):
         import json
         from ml.train import PipelineRunner
-        (tmp_path / "ridge_passing_yards_coefs.json").write_text(json.dumps({
+        (tmp_path / "ridge_fumbles_coefs.json").write_text(json.dumps({
             "xgb": 1.0, "lgbm": 1.0, "catboost": 1.0, "tft": 1.0, "intercept": 0.0,
         }))
         runner = PipelineRunner(oof_dir=tmp_path)
-        assert runner._load_ridge_coefs("passing_yards", position="QB") is None
+        assert runner._load_ridge_coefs("fumbles", position="WR") is None
 
     # ── _run_stacking_step — no MLflow configured ────────────────────────────
 
@@ -611,7 +611,7 @@ class TestStackingInferenceHelpers:
         with TemporaryDirectory() as tmp:
             from pathlib import Path
             tmp_path = Path(tmp)
-            (tmp_path / "ridge_receiving_yards_WR_coefs.json").write_text(json.dumps({
+            (tmp_path / "ridge_fumbles_WR_coefs.json").write_text(json.dumps({
                 "learner_order": ["lgbm", "catboost"],
                 "weights": {"lgbm": 0.5, "catboost": 0.5}, "intercept": 0.0,
             }))
@@ -619,7 +619,7 @@ class TestStackingInferenceHelpers:
             runner._mlflow_reachable = True
             df = pd.DataFrame({
                 "player_id": ["p1", "p2"],
-                "kalman_est_receiving_yards": [10.0, 20.0],
+                "kalman_est_fumbles": [10.0, 20.0],
             })
 
             mock_xgb = MagicMock()
@@ -640,7 +640,7 @@ class TestStackingInferenceHelpers:
                     lambda learner, stat, position=None:
                     mock_lgbm if learner == "lgbm" else (mock_xgb if learner == "catboost" else None)
                 )
-                result = runner._run_stacking_step(df, "receiving_yards", "WR")
+                result = runner._run_stacking_step(df, "fumbles", "WR")
 
         assert abs(result[0] - np.mean([90.0, 100.0])) < 0.01
         assert abs(result[1] - np.mean([180.0, 200.0])) < 0.01

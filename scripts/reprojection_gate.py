@@ -30,6 +30,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ml.artifact_manifest import sha256_of  # noqa: E402
+from ml.multiplicity import require_dsr_pass  # noqa: E402
+
+FIRST_RELEASE_OVERRIDE = "no_prior_baseline_requires_human_override"
 
 logger = logging.getLogger(__name__)
 _OUT = ROOT / "ml" / "experiments" / "reprojection_gate"
@@ -98,6 +101,9 @@ def run_gate(
     baseline_manifest: Path,
     max_regression: float = 0.0,
     approval: str | None = None,
+    n_trials: int | None = None,
+    observed_sharpe: float | None = None,
+    n_observations: int | None = None,
 ) -> dict:
     if max_regression < 0:
         raise ValueError("max_regression cannot be negative")
@@ -107,10 +113,45 @@ def run_gate(
     oof_mae = _oof_mae(oof_df, holdout_season)
     if oof_mae is None:
         raise ValueError(f"Candidate OOF has no finite {holdout_season} predictions")
-    baseline = _load_baseline_measurement(baseline_manifest, position, target, holdout_season)
     candidate_sha256 = sha256_of(candidate_oof)
-    if candidate_sha256 == str(baseline["oof_sha256"]):
+
+    try:
+        baseline = _load_baseline_measurement(baseline_manifest, position, target, holdout_season)
+    except (FileNotFoundError, ValueError):
+        if approval != FIRST_RELEASE_OVERRIDE:
+            raise
+        baseline = None
+
+    if baseline is not None and candidate_sha256 == str(baseline["oof_sha256"]):
         raise ValueError("Candidate OOF is byte-identical to the frozen baseline; self-comparison is forbidden")
+
+    if n_trials is not None:
+        if observed_sharpe is None or n_observations is None:
+            raise ValueError("DSR check requires observed_sharpe and n_observations")
+        require_dsr_pass(observed_sharpe, n_trials, n_observations)
+
+    if baseline is None:
+        report = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "holdout_season": holdout_season,
+            "position": position.upper(),
+            "target": target,
+            "candidate_source": str(candidate_oof),
+            "candidate_mae": oof_mae,
+            "oof_mae": oof_mae,
+            "baseline_mae": None,
+            "baseline_manifest": str(baseline_manifest),
+            "approval": approval,
+            "promote": True,
+            "reasons": ["first release: no frozen baseline; human override recorded"],
+            "checks": [{
+                "name": "first_release_human_override",
+                "ok": True,
+                "candidate_mae": oof_mae,
+                "candidate_oof_sha256": candidate_sha256,
+            }],
+        }
+        return report
 
     baseline_mae = float(baseline["mae"])
     promote = oof_mae <= baseline_mae * (1.0 + max_regression)
@@ -156,6 +197,9 @@ def main() -> int:
     p.add_argument("--baseline-manifest", type=Path, required=True)
     p.add_argument("--max-regression", type=float, default=0.0)
     p.add_argument("--approval", default=None)
+    p.add_argument("--n-trials", type=int, default=None)
+    p.add_argument("--observed-sharpe", type=float, default=None)
+    p.add_argument("--n-observations", type=int, default=None)
     args = p.parse_args()
 
     report = run_gate(
@@ -166,6 +210,9 @@ def main() -> int:
         baseline_manifest=args.baseline_manifest,
         max_regression=args.max_regression,
         approval=args.approval,
+        n_trials=args.n_trials,
+        observed_sharpe=args.observed_sharpe,
+        n_observations=args.n_observations,
     )
     _OUT.mkdir(parents=True, exist_ok=True)
     path = _OUT / (

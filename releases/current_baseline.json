@@ -110,7 +110,9 @@
   "model_version": "causal_20260819_zero_regression",
   "product_mode": "artifact_backed",
   "projection_policy": {
-    "approved_pipeline_run_ids": [],
+    "approved_pipeline_run_ids": [
+      "stack_materialize_20260819T151555Z"
+    ],
     "require_interval_columns": true,
     "require_posterior_samples": false
   },

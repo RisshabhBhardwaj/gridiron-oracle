@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-08-19T15:16:13.542192+00:00",
-  "git_commit": "53735fdb6949e600d71a7642f2b63d0c8c0b6123",
+  "created_at": "2026-08-19T22:14:19.484310+00:00",
+  "git_commit": "f7eb25fc0c723aea12e786dde22cba91cd2e517b",
   "pipeline_run_id": "stack_materialize_20260819T151555Z",
   "n_rows": 80404,
   "cells": [
