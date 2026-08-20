@@ -42,6 +42,27 @@ set -euo pipefail
 
 export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
+
+# OpenMP, measured on this host 2026-08-19 (scripts/verify_openmp_runtime.py,
+# reports/openmp_runtime.json): three distinct libomp.dylib binaries are
+# reachable — homebrew's (xgboost, lightgbm), sklearn's bundled copy, and
+# torch's. Only the torch pairing actually crashes: LightGBM or XGBoost
+# multithreaded *with torch imported* segfaults; without torch both run
+# multithreaded cleanly and do not even need KMP_DUPLICATE_LIB_OK.
+#
+# This applies to LightGBM only. CatBoost does not honour OMP_NUM_THREADS —
+# it runs its own pool and was already using every core even under
+# OMP_NUM_THREADS=1 (measured: 1.38 s at "1 thread" vs 1.28 s at 5). Setting
+# the variable for it would be a no-op that reads like a change.
+#
+# ml.lgbm_model does not import torch, so it is safe to thread; the global
+# OMP_NUM_THREADS=1 above still guards the TFT stage. Expect well under the
+# 2.6x measured for a lone process (9.2 s -> 3.6 s on 100k x 80): this stage
+# shares cores with the concurrently running CatBoost stage. Set
+# GBDT_OMP_THREADS=1 to revert.
+GBDT_OMP_THREADS="${GBDT_OMP_THREADS:-$(( $(sysctl -n hw.ncpu 2>/dev/null || echo 2) / 2 ))}"
+if [ "$GBDT_OMP_THREADS" -lt 1 ]; then GBDT_OMP_THREADS=1; fi
+export GBDT_OMP_THREADS
 # Respect caller-provided MLflow URI; default only when unset.
 export MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI:-http://localhost:15091}"
 export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/oracle}
@@ -223,7 +244,7 @@ run_lgbm() {
         continue
       fi
       echo "→ [LGB] stat=$stat  position=$pos"
-      if $PYTHON -m ml.lgbm_model \
+      if OMP_NUM_THREADS="$GBDT_OMP_THREADS" $PYTHON -m ml.lgbm_model \
         --seasons "2019-2025" \
         --target "$stat" \
         --position "$pos" \

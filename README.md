@@ -33,26 +33,27 @@ The design principle throughout is that **the evaluation is the product.** Anyon
 
 ## Model status — read this before anything else
 
-**The system is built end to end. It has not yet demonstrated edge on yardage stats.**
+**The weekly stack has demonstrated edge versus naive and trailing-3 baselines.** Do not cite `reports/yardage_diagnostic.json` (60 rows, one season, `temporal_ordered: false`, no features) as a product result; that file is quarantined.
 
-The most recent yardage diagnostic (`reports/yardage_diagnostic.json`, WR receiving yards):
+Live causal OOF (15 cells × seasons 2021–2025):
 
-| Metric | Value |
+| Result | Value |
 |---|---|
-| MAE | 35.43 |
-| Rows evaluated | 60 (single season, 2023) |
-| Target mean / std | 52.81 / 43.68 |
-| Residual mean | +5.14 (biased low) |
-| `temporal_ordered` | `false` |
-| `feature_actual_columns` | `[]` |
+| Cell-seasons beating both naive and trailing-3 | **74 / 75** |
+| Typical MAE vs trailing-3 (yardage / PPR) | ~7% better |
+| Serving vs OOF | bit-exact on 80,404 rows |
 
-For a roughly normal target, a constant predictor that always guesses the mean achieves MAE ≈ σ·√(2/π) ≈ **34.85**. The model's 35.43 is *slightly worse than that baseline.*
+Five of the 15 served cells are **LGBM identity**, not a 4-learner Ridge stack. The gate vs same-day bootstrap cannot fail on those cells. Disclosed in `releases/candidates/causal_20260810/CONSTRAINED_STACK_SELECTION.json`:
 
-Three caveats cut both ways. 60 rows from one season is far too small to conclude anything — the diagnostic is under-powered, not damning. The rows were not temporally ordered, so this is not a clean walk-forward measurement. And no feature columns were recorded, so the run's provenance is incomplete.
+- `fantasy_ppr` / QB
+- `fantasy_ppr` / WR
+- `passing_yards` / QB
+- `receiving_yards` / WR
+- `rushing_yards` / QB
 
-The correct reading: **the honest evaluator was built, it was pointed at the yardage models, and it returned approximately baseline.** That is a result worth having. The next step is to widen the diagnostic to a properly ordered, multi-season sample before drawing conclusions — not to tune until the number improves.
+Season / rest-of-season endpoints are **fail-closed** until playing-time (SP2). Draft ranks use 8-team PPR VOR (K/DST out of scope). Contemporaneous xFP is a leak and is forbidden as a model input.
 
-Count and touchdown stats show more consistent separation from the naive baseline than passing and rushing yardage. Yardage repair is the main open workstream.
+The next scoreboard check is Marcel (prior-season rates, shrunk to position mean) versus this stack. If the stack cannot beat Marcel, the program reframes.
 
 ---
 
@@ -198,7 +199,26 @@ export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS=1
 ```
 
-Without them, XGBoost, PyTorch, and scikit-learn deadlock in the OpenMP thread barrier and the process dies with SIGSEGV.
+The crash they prevent is real — but they are broader than it needs to be, and
+`OMP_NUM_THREADS=1` costs multi-core gradient-boosting training.
+`scripts/verify_openmp_runtime.py` measures the actual condition on your host and
+writes `reports/openmp_runtime.json`. Measured here on 2026-08-19:
+
+- Three **distinct** `libomp.dylib` binaries are reachable: Homebrew's (used by
+  XGBoost and LightGBM), scikit-learn's bundled copy, and PyTorch's.
+- Only the **PyTorch** pairing crashes. LightGBM or XGBoost multithreaded with
+  `torch` imported dies with SIGSEGV; without `torch` both run multithreaded
+  cleanly and do not even need `KMP_DUPLICATE_LIB_OK`.
+- Threading is worth having: 9.2 s → 3.6 s (**2.6×**) on a 100k × 80 benchmark.
+
+`ml/lgbm_model` does not import `torch`, so `ml/train_all_models.sh` now runs the
+LightGBM stage under `GBDT_OMP_THREADS` (default: half the cores) while leaving
+`OMP_NUM_THREADS=1` in force for the TFT stage. CatBoost is deliberately left
+alone: it ignores `OMP_NUM_THREADS` and was already using every core. Expect well
+under 2.6× in practice — LightGBM shares the machine with the concurrent CatBoost
+stage. Set `GBDT_OMP_THREADS=1` to revert. A conda-forge/pixi environment with a
+single unified `llvm-openmp` would remove the constraint everywhere, including
+for `torch`; that migration has not been done.
 
 ## Documentation
 
