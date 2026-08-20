@@ -20,6 +20,7 @@ from scipy.stats import spearmanr
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.schema import normalize_dsn
+from ml.consensus_baseline import points_lost_vs_optimal, top_n_hit_rate
 
 logger = logging.getLogger(__name__)
 _OUT = Path(__file__).resolve().parent / "experiments" / "adp_eval"
@@ -40,6 +41,8 @@ class AdpEvalResult:
     gap_vs_actuals_oracle: float | None
     gap_vs_prev_season_baseline: float | None
     created_at: str
+    top24_hit_rate: float | None = None
+    points_lost_vs_optimal: float | None = None
 
 
 def _normalize_name(name: str) -> str:
@@ -122,6 +125,22 @@ def evaluate(season: int, source: str = "historical", scoring: str = "ppr", from
     oracle_rho, _, _, _ = spearman_vs_adp(actuals, adp)
     previous_rho, _, _, _ = spearman_vs_adp(previous, adp)
     clean_rho, clean_oracle, clean_previous = _finite(rho), _finite(oracle_rho), _finite(previous_rho)
+    ranked = model.merge(adp[["player_id", "adp"]], on="player_id", how="inner") if "player_id" in model.columns else pd.DataFrame()
+    hit_rate = None
+    lost_points = None
+    if not ranked.empty and "fantasy_ppr" in ranked.columns:
+        ranked = ranked.merge(
+            actuals[["player_id", "fantasy_ppr"]].rename(columns={"fantasy_ppr": "realized"}),
+            on="player_id",
+            how="inner",
+        )
+        if not ranked.empty:
+            model_rank = ranked["fantasy_ppr"].rank(ascending=False, method="average")
+            market_rank = ranked["adp"].rank(ascending=True, method="average")
+            hit_rate = _finite(top_n_hit_rate(model_rank.to_numpy(), market_rank.to_numpy(), n=24))
+            lost_points = _finite(points_lost_vs_optimal(
+                ranked["fantasy_ppr"].to_numpy(), ranked["realized"].to_numpy(), slots=24
+            ))
     return AdpEvalResult(
         season=season, source=source, scoring=scoring,
         mode="actuals_oracle" if from_actuals else "preseason_projections", n_matched=n,
@@ -129,6 +148,8 @@ def evaluate(season: int, source: str = "historical", scoring: str = "ppr", from
         actuals_oracle_rho=clean_oracle, prev_season_baseline_rho=clean_previous,
         gap_vs_actuals_oracle=(clean_rho - clean_oracle) if clean_rho is not None and clean_oracle is not None else None,
         gap_vs_prev_season_baseline=(clean_rho - clean_previous) if clean_rho is not None and clean_previous is not None else None,
+        top24_hit_rate=hit_rate,
+        points_lost_vs_optimal=lost_points,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
 
