@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def materialize(season: int, as_of: date, database_url: str, *, dry_run: bool = False) -> int:
     with psycopg2.connect(normalize_dsn(database_url)) as conn:
-        players = pd.read_sql("SELECT id, full_name, position, team, entry_year FROM players", conn)
+        players = pd.read_sql("SELECT id, full_name, position, team, entry_year, draft_round, draft_number, birth_date FROM players", conn)
         logs = pd.read_sql(
             "SELECT player_id, season, week, season_type, fantasy_points_ppr FROM game_logs WHERE season < %s",
             conn, params=(season,),
@@ -34,20 +34,40 @@ def materialize(season: int, as_of: date, database_url: str, *, dry_run: bool = 
         if dry_run:
             return len(projections)
         with conn.cursor() as cur:
+            # Re-running a run must *replace* it, not merge into it. Upsert-only
+            # left every player the projection universe had since dropped -- a
+            # retired Tom Brady kept a 157-point projection through two rebuilds
+            # of this table because his row was never revisited.
+            keep = [str(value) for value in projections["player_id"]]
+            cur.execute(
+                """
+                DELETE FROM draft_preseason_projections
+                WHERE season = %s AND as_of = %s AND source = %s
+                  AND NOT (player_id = ANY(%s))
+                """,
+                (season, as_of, "preseason_historical_per_game", keep),
+            )
+            removed = cur.rowcount
+            if removed:
+                logger.info("Dropped %d projections no longer in the %d universe", removed, season)
             rows = [
                 (season, as_of, "preseason_historical_per_game", r.player_id, r.player_name,
-                 r.position, r.team, float(r.per_game_mean), float(r.games_played_prior), float(r.projection))
+                 r.position, r.team, float(r.per_game_mean), float(r.games_played_prior),
+                 float(r.projection), int(r.historical_games),
+                 getattr(r, "projection_basis", "historical_ppr_x_games_prior"))
                 for r in projections.itertuples(index=False)
             ]
             psycopg2.extras.execute_values(cur, """
                 INSERT INTO draft_preseason_projections
                     (season, as_of, source, player_id, player_name, position, team,
-                     per_game_mean, games_played_prior, projection)
+                     per_game_mean, games_played_prior, projection, historical_games, projection_basis)
                 VALUES %s
                 ON CONFLICT (season, as_of, source, player_id) DO UPDATE SET
                     player_name = EXCLUDED.player_name, position = EXCLUDED.position,
                     team = EXCLUDED.team, per_game_mean = EXCLUDED.per_game_mean,
                     games_played_prior = EXCLUDED.games_played_prior, projection = EXCLUDED.projection,
+                    historical_games = EXCLUDED.historical_games,
+                    projection_basis = EXCLUDED.projection_basis,
                     created_at = NOW()
             """, rows)
         conn.commit()

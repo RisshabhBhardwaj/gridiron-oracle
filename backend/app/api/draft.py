@@ -12,9 +12,23 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.app.core.config import settings
+from ml.vor import attach_vor
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["draft"])
+
+_K_DST_NOTE = (
+    "Ranks use VOR for an 8-team PPR league (1QB / 2RB / 2WR / 1TE / 1FLEX). "
+    "K and DST are out of scope. Rookies are ranked from a draft-capital curve fitted on prior seasons; a zero-history player without that basis stays unranked. "
+    "Projections are a pre-draft fixed-universe historical PPR prior; "
+    "target-season OOF and actuals are refused. "
+    "model_rank is the independent board (no market input); blended_rank averages it "
+    "with ADP. On the roster-aware walk-forward harness (reports/draft_walkforward.json, "
+    "reports/draft_board_experiments.json) the independent board beat ADP in 3 of 6 "
+    "seasons and the blend in 5 of 6, so blended_rank is the recommended sort. The "
+    "blend consumes market information and its edge over ADP is therefore a weaker "
+    "claim than an independent board's would be."
+)
 
 
 class DraftBoardPlayer(BaseModel):
@@ -26,8 +40,10 @@ class DraftBoardPlayer(BaseModel):
     source: str  # ADP source
     model_rank: Optional[int] = None
     model_fantasy_ppr: Optional[float] = None
+    projection_basis: Optional[str] = None
     adp_rank: Optional[int] = None
     value_vs_adp: Optional[float] = None
+    blended_rank: Optional[int] = None
 
 
 class DraftBoardResponse(BaseModel):
@@ -40,12 +56,8 @@ class DraftBoardResponse(BaseModel):
     players: list[DraftBoardPlayer]
     spearman_rho: Optional[float] = None
     model_source: Optional[str] = None  # compatibility alias for older clients
-    note: str = Field(
-        default=(
-            "Ranks use a pre-draft fixed-universe projection: historical per-game PPR "
-            "multiplied by a historical games-played prior. Target-season OOF and actuals are refused."
-        )
-    )
+    recommended_rank_field: str = "blended_rank"
+    note: str = Field(default=_K_DST_NOTE)
 
 
 def _fetch_adp(conn: Any, season: int, source: Optional[str], scoring: str, position: Optional[str]) -> list[dict]:
@@ -83,6 +95,46 @@ def _unique_projection_map(rows: list[dict], *, source: str) -> dict[str, dict]:
     return out
 
 
+ROOKIE_CURVE_BASIS = "rookie_draft_capital_vacated_opportunity"
+
+
+def model_ranks_by_vor(
+    adp_rows: list[dict],
+    model_by_id: dict[str, dict],
+) -> dict[str, int]:
+    """Rank ADP-matched players by 8-team VOR.
+
+    A player with no prior games is ranked only when his projection carries the
+    fitted rookie basis. The blanket exclusion dates from when every rookie got
+    one of three constants, so ranking them was noise; the curve in
+    ml/rookie_priors.py is fitted from draft capital and ranks rookies better
+    than the market does (Spearman 0.53 vs ADP's 0.42 over 127 rookie seasons,
+    reports/draft_component_eval.json). Continuing to discard them would throw
+    away the one component measured to beat consensus. A zero-history player
+    with no such basis still stays out -- that projection is backed by nothing.
+    """
+    eligible: list[dict] = []
+    for row in adp_rows:
+        player_id = str(row["player_id"])
+        projection = model_by_id.get(player_id)
+        if projection is None:
+            continue
+        historical = projection.get("historical_games")
+        if historical is not None and int(historical) == 0:
+            if projection.get("projection_basis") != ROOKIE_CURVE_BASIS:
+                continue
+        eligible.append(
+            {
+                "player_id": player_id,
+                "position": projection.get("position") or row.get("position"),
+                "projection": float(projection["fantasy_ppr"]),
+            }
+        )
+    ranked = attach_vor(eligible)
+    ranked.sort(key=lambda item: (-(item["vor"] if item.get("vor") is not None else -1e18), item["player_id"]))
+    return {str(item["player_id"]): index for index, item in enumerate(ranked, start=1)}
+
+
 def _fetch_preseason_projection_ppr(
     conn: Any, season: int, as_of: Optional[date] = None
 ) -> tuple[dict[str, dict], Optional[str], Optional[date]]:
@@ -96,7 +148,9 @@ def _fetch_preseason_projection_ppr(
                 WHERE season = %s AND as_of <= COALESCE(%s, CURRENT_DATE)
             )
             SELECT player_id, player_name, position, team, projection AS fantasy_ppr,
-                   source AS projection_source, as_of
+                   source AS projection_source, as_of,
+                   COALESCE(historical_games, 0) AS historical_games,
+                   projection_basis
             FROM draft_preseason_projections dp
             JOIN latest USING (as_of)
             WHERE dp.season = %s
@@ -158,6 +212,23 @@ def _fetch_model_ppr(conn: Any, season: int, as_of: Optional[date]) -> tuple[dic
     raise LookupError("No causal preseason projection run is available")
 
 
+def blended_ranks(players: list["DraftBoardPlayer"]) -> dict[str, int]:
+    """Rank the 50/50 average of model and ADP rank, for players holding both.
+
+    Rank-averaging two boards is a variance-reduction move, not a new
+    projection: it is expected to beat either input, and it does so only
+    because it consumes the market. Callers that need a market-independent
+    ranking must use ``model_rank``.
+    """
+    scored = [
+        (player.player_id, 0.5 * float(player.model_rank) + 0.5 * float(player.adp_rank))
+        for player in players
+        if player.player_id and player.model_rank is not None and player.adp_rank is not None
+    ]
+    scored.sort(key=lambda item: (item[1], item[0]))
+    return {player_id: index for index, (player_id, _score) in enumerate(scored, start=1)}
+
+
 @router.get("/draft/board", response_model=DraftBoardResponse)
 def draft_board(
     season: int = Query(..., ge=2010, le=2030),
@@ -185,8 +256,7 @@ def draft_board(
 
         matched = [(str(row["player_id"]), float(model_by_id[str(row["player_id"])]["fantasy_ppr"]))
                    for row in adp_rows if str(row["player_id"]) in model_by_id]
-        matched.sort(key=lambda item: (-item[1], item[0]))
-        model_rank = {player_id: index for index, (player_id, _) in enumerate(matched, start=1)}
+        model_rank = model_ranks_by_vor(adp_rows, model_by_id)
         model_value = dict(matched)
 
         players: list[DraftBoardPlayer] = []
@@ -204,7 +274,11 @@ def draft_board(
                 adp=float(row["adp"]), player_id=player_id, source=row.get("source") or selected_source,
                 model_rank=rank, model_fantasy_ppr=model_value.get(player_id), adp_rank=adp_rank,
                 value_vs_adp=value,
+                projection_basis=(model_by_id.get(player_id) or {}).get("projection_basis"),
             ))
+        blended = blended_ranks(players)
+        for player in players:
+            player.blended_rank = blended.get(player.player_id)
         rho = None
         if len(adp_values) >= 5:
             from scipy.stats import spearmanr
