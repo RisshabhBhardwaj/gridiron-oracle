@@ -1,6 +1,0 @@
-stat,metric,n,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,season,position
-targets,poisson_deviance,789,1.5288679111808041,2.938072136571067,5.066022578139285,True,True,True,2021,RB
-targets,poisson_deviance,814,1.5196194839852635,4.654063026453786,3.5623687880806036,True,True,True,2022,RB
-targets,poisson_deviance,802,1.3599540919258448,6.0666681316090285,3.082815907649109,True,True,True,2023,RB
-targets,poisson_deviance,772,1.3520891737364318,1.9166008495682414,3.561321568995169,True,True,True,2024,RB
-targets,poisson_deviance,810,1.2956906332866422,1.829904787043075,3.3169747442718602,True,True,True,2025,RB

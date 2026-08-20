@@ -1,6 +1,0 @@
-stat,metric,n,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,season,position
-passing_yards,mae,588,57.44398220036389,70.81905465744192,71.54228395061729,True,True,True,2021,QB
-passing_yards,mae,583,52.495956196860156,67.16971816673302,67.7138783269962,True,True,True,2022,QB
-passing_yards,mae,587,53.055275233338264,74.7220934524027,70.54965859714464,True,True,True,2023,QB
-passing_yards,mae,586,52.83429782983649,76.10116861903929,71.22828096118299,True,True,True,2024,QB
-passing_yards,mae,585,51.59464513815641,68.98080412275229,71.00061842918987,True,True,True,2025,QB

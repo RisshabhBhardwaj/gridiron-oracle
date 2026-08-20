@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-09T19:17:56.318961+00:00",
+  "updated_at": "2026-08-19T23:13:46.254047+00:00",
   "serving_manifest": {
     "path": "releases/current_baseline.json",
     "authoritative_for": "serving artifact selection (ml/oof/ stacks)",
     "note": "Serving artifacts are pinned there and resolved through ml/artifact_manifest.py, which fails closed on a missing entry or digest mismatch. This registry covers evidence only and must not list anything under ml/oof/ or duplicate a digest the serving manifest already records; entries for a serving-pinned path use \"sha256_authority\" instead. Enforced by scripts/verify_evidence_manifest.py."
   },
-  "note": "See releases/artifacts/README.md. Every entry is currently `provisional`: the audit found the evidence itself invalid (C-01 leakage), so nothing here is frozen. Entries flip to `frozen` when regenerated from a clean rebuild.",
+  "note": "See releases/artifacts/README.md. Every entry is currently `provisional`: the audit found the evidence itself invalid (C-01 leakage), so nothing here is frozen. Entries flip to `frozen` when regenerated from a clean rebuild. Pre-leak-fix eval_causal_stack_*.csv entries were removed on 2026-08-19; see reports/REMOVED_PRE_LEAK_FIX_EVIDENCE.md.",
   "artifacts": [
     {
       "path": "ml/experiments/reprojection_gate/gate_fantasy_ppr_QB_2024.json",
@@ -63,102 +63,6 @@
       "status": "provisional",
       "produced_by": "python -m ml.adp_eval",
       "description": "ADP Spearman correlation report."
-    },
-    {
-      "path": "reports/eval_causal_stack_carries_RB.csv",
-      "sha256": "23ca08847b45623e835af156431110550b5727bf1cc9a83b48ecedf63bd73732",
-      "bytes": 653,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_pass_attempts_QB.csv",
-      "sha256": "6d42131f6d16adde95d31ef3be3affb949471132a36bc6311538c2c922100432",
-      "bytes": 685,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_passing_yards_QB.csv",
-      "sha256": "bc2431d9b0efcd7579e03b6792bb90ecce136b052ec76cae4de63da663235920",
-      "bytes": 613,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_phase5_fantasy_ppr_all.csv",
-      "sha256": "b31676127c8483452510573e764f880a717e0587924731a7f148c6f4a153ec74",
-      "bytes": 2068,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_receiving_yards_RB.csv",
-      "sha256": "29a497193923c9d33d966c33797d8d9504686c54a3145cddc64d02c7698cfe35",
-      "bytes": 634,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_receiving_yards_TE.csv",
-      "sha256": "30895c94295b76ee678e25eb219f335bfd2351b45e3e36a935442adc3a348b12",
-      "bytes": 633,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_receiving_yards_WR.csv",
-      "sha256": "0e817e40ab3cdaefd2e49e7edf8414ea80b4c4e6cf01b62c8ac0f096345ea2cc",
-      "bytes": 635,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_rushing_yards_QB.csv",
-      "sha256": "ecd10f5d7c130dca912b23c08c95ce8814f21c0df9e52a3602da6e2cd4269c71",
-      "bytes": 622,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_rushing_yards_RB.csv",
-      "sha256": "f8d8ab87aac269b5f9c7a1d868808ec83a1f949ae41817a0cd7cc21cd04f7dc9",
-      "bytes": 625,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_targets_RB.csv",
-      "sha256": "47e6bdbd210cc0359cbc5729f7176cb4a224c6878db813174eef3423a40466df",
-      "bytes": 657,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_targets_TE.csv",
-      "sha256": "baab28ac777b0a1b45945e35c481740408e20e02fa00420c23e21cbfc4c0396a",
-      "bytes": 661,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
-    },
-    {
-      "path": "reports/eval_causal_stack_targets_WR.csv",
-      "sha256": "640af635473e3cfa5528e140cfb83355cd14ef27f8d62801d55379d540b4b42a",
-      "bytes": 662,
-      "status": "provisional",
-      "produced_by": "python -m ml.eval_causal",
-      "description": "Per-season causal eval of a stack cell against naive and trailing-3 baselines."
     },
     {
       "path": "reports/fantasy_ppr_2022_autopsy.json",
