@@ -59,8 +59,16 @@ def normalize_position(value: object) -> str:
     return "".join(ch for ch in str(value or "").upper() if ch.isalpha())
 
 
-def resolve_rows(rows: Iterable[dict[str, Any]], players: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Resolve a batch without database side effects (also useful in tests)."""
+def resolve_rows(
+    rows: Iterable[dict[str, Any]],
+    players: Iterable[dict[str, Any]],
+    id_maps: Iterable[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve a batch without database side effects (also useful in tests).
+
+    ``id_maps`` are ``fantasy_player_ids`` rows. Vendor IDs (sleeper, espn, …)
+    are tried before name matching.
+    """
     by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_id: dict[str, dict[str, Any]] = {}
     for player in players:
@@ -68,15 +76,46 @@ def resolve_rows(rows: Iterable[dict[str, Any]], players: Iterable[dict[str, Any
         by_id[pid] = player
         by_name[normalize_name(player.get("full_name"))].append(player)
 
+    crosswalk: dict[tuple[str, str], str] = {}
+    for mapping in id_maps or []:
+        gsis = mapping.get("gsis_id") or mapping.get("player_id")
+        if not gsis:
+            continue
+        gsis = str(gsis)
+        for namespace in (
+            "sleeper_id", "espn_id", "yahoo_id", "mfl_id",
+            "fantasypros_id", "pff_id", "cbs_id", "rotowire_id",
+        ):
+            vendor_id = mapping.get(namespace)
+            if vendor_id:
+                crosswalk[(namespace, str(vendor_id))] = gsis
+
     resolved: list[dict[str, Any]] = []
     for raw in rows:
         candidate: dict[str, Any] | None = None
+        method = "unmatched"
         normalized_position = normalize_position(raw.get("position"))
-        supplied_id = raw.get("player_id")
+        supplied_id = raw.get("player_id") or raw.get("gsis_id")
         if supplied_id and str(supplied_id) in by_id:
             candidate = by_id[str(supplied_id)]
             method = "vendor_id"
-        else:
+        if candidate is None:
+            for namespace, raw_key in (
+                ("sleeper_id", "sleeper_id"),
+                ("espn_id", "espn_id"),
+                ("yahoo_id", "yahoo_id"),
+                ("mfl_id", "mfl_id"),
+                ("fantasypros_id", "fantasypros_id"),
+            ):
+                vendor_id = raw.get(raw_key)
+                if not vendor_id:
+                    continue
+                gsis = crosswalk.get((namespace, str(vendor_id)))
+                if gsis and gsis in by_id:
+                    candidate = by_id[gsis]
+                    method = f"fantasy_player_ids:{namespace}"
+                    break
+        if candidate is None:
             candidates = by_name.get(normalize_name(raw.get("player_name")), [])
             team = str(raw.get("team") or "").upper()
             narrowed = [
@@ -112,7 +151,24 @@ def resolve_and_audit(conn: Any, *, season: int, source: str, scoring: str, rows
         cur.execute(CREATE_ADP_PLAYER_MATCHES)
         cur.execute("SELECT id, full_name, position, team FROM players")
         players = [dict(zip((d.name for d in cur.description), values)) for values in cur.fetchall()]
-        resolved = resolve_rows(rows, players)
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'fantasy_player_ids'
+            )
+            """
+        )
+        id_maps: list[dict[str, Any]] = []
+        if cur.fetchone()[0]:
+            cur.execute(
+                """
+                SELECT gsis_id, sleeper_id, espn_id, yahoo_id, mfl_id, fantasypros_id
+                FROM fantasy_player_ids
+                """
+            )
+            id_maps = [dict(zip((d.name for d in cur.description), values)) for values in cur.fetchall()]
+        resolved = resolve_rows(rows, players, id_maps=id_maps)
         for row in resolved:
             cur.execute(
                 """

@@ -1,0 +1,19 @@
+# Unified conda-forge OpenMP runtime for Apple Silicon.
+# Keep .venv_311 until `otool -L` shows exactly one libomp.dylib and a timed
+# 2019-2020 train beats OMP_NUM_THREADS=1 without SIGSEGV.
+# See prediction-surfaces rebuild SP0 / OSS sweep Q1.
+
+[workspace]
+name = "gridiron_oracle"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[dependencies]
+python = "3.11.*"
+llvm-openmp = "*"
+xgboost = "*"
+lightgbm = "*"
+pytorch = "*"
+scikit-learn = "*"
+numpy = "*"
+pandas = "*"

@@ -129,9 +129,42 @@ class ScraperScheduler:
                 misfire_grace_time=600,
             )
         else:
-            logger.warning("OPENWEATHER_API_KEY not set — weather job disabled")
+            logger.warning("OPENWEATHER_API_KEY not set — OpenWeather job disabled")
 
-        # Odds / market data: every hour
+        # Open-Meteo: free, no key. Fills weather_forecasts for upcoming games.
+        self._scheduler.add_job(
+            self._run_open_meteo,
+            trigger="interval",
+            hours=2,
+            id="open_meteo_forecast",
+            replace_existing=True,
+            misfire_grace_time=600,
+        )
+
+        # DynastyProcess / nflverse ID map: weekly with nflreadpy
+        self._scheduler.add_job(
+            self._run_ff_playerids,
+            trigger="cron",
+            day_of_week="tue",
+            hour=6,
+            minute=15,
+            id="ff_playerids_weekly",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+
+        # Pregame Sleeper weekly consensus — capture only before kickoff
+        self._scheduler.add_job(
+            self._run_sleeper_consensus,
+            trigger="interval",
+            hours=6,
+            id="sleeper_weekly_consensus",
+            replace_existing=True,
+            misfire_grace_time=600,
+        )
+
+        # Odds / market data: every hour. Prediction-surface rebuild does not
+        # use The Odds API; the job stays key-gated for unrelated consumers.
         if self._odds_key:
             self._scheduler.add_job(
                 self._run_odds,
@@ -160,14 +193,12 @@ class ScraperScheduler:
             logger.error("[scheduler] nflreadpy ingest failed: %s", exc, exc_info=True)
 
     def _run_espn(self) -> None:
-        """Every 4h: scrape ESPN for injury/practice participation updates."""
+        """Every 4h: dated ESPN injury/practice capture (forward-only)."""
         logger.info("[scheduler] Starting ESPN injury/practice report scrape")
         try:
-            from scraper.adapters.espn_adapter import EspnAdapter
-            adapter = EspnAdapter()
-            # ESPN adapter publishes directly to DB via its internal session
-            adapter.ingest_injury_reports(db_url=self._db_url)
-            logger.info("[scheduler] ESPN scrape complete")
+            from scraper.adapters.injury_capture import capture_current_week
+            n = capture_current_week(self._db_url)
+            logger.info("[scheduler] ESPN scrape complete (%s rows)", n)
         except Exception as exc:
             logger.error("[scheduler] ESPN scrape failed: %s", exc, exc_info=True)
 
@@ -180,6 +211,36 @@ class ScraperScheduler:
             logger.info("[scheduler] Weather update complete")
         except Exception as exc:
             logger.error("[scheduler] Weather update failed: %s", exc, exc_info=True)
+
+    def _run_open_meteo(self) -> None:
+        """Every 2h: free Open-Meteo forecasts into weather_forecasts."""
+        logger.info("[scheduler] Starting Open-Meteo forecast capture")
+        try:
+            from scraper.adapters.open_meteo import capture_upcoming
+            n = capture_upcoming(self._db_url)
+            logger.info("[scheduler] Open-Meteo capture complete (%s rows)", n)
+        except Exception as exc:
+            logger.error("[scheduler] Open-Meteo capture failed: %s", exc, exc_info=True)
+
+    def _run_ff_playerids(self) -> None:
+        """Weekly: refresh sleeper_id → gsis_id map."""
+        logger.info("[scheduler] Starting ff_playerids upsert")
+        try:
+            from scraper.adapters.ff_playerids import upsert_playerids
+            n = upsert_playerids(self._db_url)
+            logger.info("[scheduler] ff_playerids upsert complete (%s rows)", n)
+        except Exception as exc:
+            logger.error("[scheduler] ff_playerids upsert failed: %s", exc, exc_info=True)
+
+    def _run_sleeper_consensus(self) -> None:
+        """Pregame Sleeper weekly consensus snapshot."""
+        logger.info("[scheduler] Starting Sleeper weekly consensus capture")
+        try:
+            from scraper.adapters.sleeper_weekly_consensus import capture_pregame
+            n = capture_pregame(self._db_url)
+            logger.info("[scheduler] Sleeper consensus capture complete (%s rows)", n)
+        except Exception as exc:
+            logger.error("[scheduler] Sleeper consensus capture failed: %s", exc, exc_info=True)
 
     def _run_odds(self) -> None:
         """Every 1h: pull latest market odds from The Odds API."""
