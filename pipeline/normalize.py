@@ -231,6 +231,9 @@ CREATE TABLE IF NOT EXISTS depth_charts (
     team        TEXT NOT NULL,
     position    TEXT,
     depth_rank  FLOAT NOT NULL,
+    published_at TIMESTAMPTZ,
+    source TEXT,
+    ingest_at TIMESTAMPTZ,
     PRIMARY KEY (player_id, season, week)
 );
 CREATE INDEX IF NOT EXISTS idx_depth_charts_lookup
@@ -463,6 +466,7 @@ class NormalizeSummary:
     staging_rows_processed: int = 0
     skipped: int = 0
     errors: int = 0
+    reconciled_players: int = 0
 
     def log(self) -> None:
         logger.info(
@@ -1189,9 +1193,11 @@ class Normalizer:
             published_at = (
                 raw.get("published_at") or raw.get("timestamp") or raw.get("last_updated")
             )
+            ingest_at = raw.get("ingest_at")
             rows.append((
                 gsis_id, season, week, team, position, rank, published_at,
                 "nflreadpy.load_depth_charts" if published_at else None,
+                ingest_at,
             ))
 
         # Deduplicate: keep best (lowest) depth_rank per (player_id, season, week)
@@ -1216,26 +1222,57 @@ class Normalizer:
                 cur,
                 """
                 INSERT INTO depth_charts
-                    (player_id, season, week, team, position, depth_rank, published_at, source)
+                    (player_id, season, week, team, position, depth_rank, published_at, source, ingest_at)
                 VALUES %s
                 ON CONFLICT (player_id, season, week) DO UPDATE SET
                     team = EXCLUDED.team,
                     position = EXCLUDED.position,
                     depth_rank = EXCLUDED.depth_rank,
                     published_at = EXCLUDED.published_at,
-                    source = EXCLUDED.source
-                WHERE EXCLUDED.published_at IS NOT NULL
-                  AND EXISTS (
-                    SELECT 1 FROM games g
-                    WHERE g.season = EXCLUDED.season
-                      AND g.week = EXCLUDED.week
-                      AND (g.home_team = EXCLUDED.team OR g.away_team = EXCLUDED.team)
-                      AND g.kickoff_at > EXCLUDED.published_at
-                  )
-                  AND (depth_charts.published_at IS NULL OR EXCLUDED.published_at > depth_charts.published_at)
+                    source = EXCLUDED.source,
+                    ingest_at = EXCLUDED.ingest_at
+                WHERE (
+                    EXCLUDED.published_at IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM games g
+                        WHERE g.season = EXCLUDED.season
+                          AND g.week = EXCLUDED.week
+                          AND (g.home_team = EXCLUDED.team OR g.away_team = EXCLUDED.team)
+                          AND g.kickoff_at > EXCLUDED.published_at
+                    )
+                    AND (depth_charts.published_at IS NULL OR EXCLUDED.published_at > depth_charts.published_at)
+                ) OR (
+                    EXCLUDED.published_at IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM games g
+                        WHERE g.season = EXCLUDED.season
+                          AND g.week = EXCLUDED.week
+                          AND (g.home_team = EXCLUDED.team OR g.away_team = EXCLUDED.team)
+                          AND g.kickoff_at > NOW()
+                    )
+                )
                 """,
                 rows,
             )
+            # Depth chart wins for current roster assignment only for active
+            # players.  Injured/reserve status remains the players-table truth.
+            cur.execute(
+                """
+                WITH latest AS (
+                    SELECT DISTINCT ON (player_id) player_id, team
+                    FROM depth_charts
+                    WHERE season = %s
+                    ORDER BY player_id, week DESC, COALESCE(ingest_at, published_at) DESC NULLS LAST
+                )
+                UPDATE players p SET team = latest.team, updated_at = NOW()
+                FROM latest
+                WHERE p.id = latest.player_id
+                  AND p.status = 'ACT'
+                  AND p.team IS DISTINCT FROM latest.team
+                """,
+                (rows[0][1],),
+            )
+            summary.reconciled_players += cur.rowcount or 0
         self._conn.commit()
         logger.info("Upserted %d depth_chart rows", len(rows))
 

@@ -69,7 +69,10 @@ For a dry-run sanity check of the CLI wiring:
 
 **Prerequisites:**
 - PostgreSQL + feature_matrix populated (Step 1)
-- MLflow server: `mlflow server --backend-store-uri sqlite:///ml/mlruns.db --default-artifact-root ml/mlartifacts --host 127.0.0.1 --port 5001`
+- MLflow server: Docker publishes the service at `http://localhost:15091`
+  (the container itself listens on `5001`). Set host processes to
+  `MLFLOW_TRACKING_URI=http://localhost:15091`; do not use the container port
+  from the host.
 - `DATABASE_URL`, `MLFLOW_TRACKING_URI` set
 
 ---
@@ -253,7 +256,7 @@ if the DB has existing projections.
 mlflow server \
   --backend-store-uri sqlite:///ml/mlruns.db \
   --default-artifact-root ml/mlartifacts \
-  --host 127.0.0.1 --port 5001
+  --host 127.0.0.1 --port 15091
 ```
 
 If `mlruns.db` is missing (data loss), restart from the last model checkpoint:

@@ -22,6 +22,9 @@ export DATABASE_URL=${DATABASE_URL:-postgresql://oracle:oracle@localhost:15439/o
 export ODDS_API_KEY=${ODDS_API_KEY:-}
 export OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
 export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd)"
+FORWARD_SEASON=${FORWARD_SEASON:-}
+FORWARD_WEEK=${FORWARD_WEEK:-}
+FORWARD_AS_OF=${FORWARD_AS_OF:-}
 
 # Artifact-backed runs are evidence-producing runs.  Do not continue with stale
 # or NULL feature groups after an enrichment failure; graceful fallback remains
@@ -118,6 +121,18 @@ $PYTHON -m scraper.adapters.weather_adapter --db-url "$DATABASE_URL" --capture-f
   || { require_artifact_source "Weather forecast capture"; echo "  (Weather skipped — set OPENWEATHER_API_KEY for forecast capture)"; }
 $PYTHON -m scraper.adapters.odds_adapter --db-url "$DATABASE_URL" \
   || { require_artifact_source "Odds enrichment"; echo "  (Odds skipped — set ODDS_API_KEY for prop lines)"; }
+
+if [[ -n "$FORWARD_SEASON" || -n "$FORWARD_WEEK" || -n "$FORWARD_AS_OF" ]]; then
+  if [[ -z "$FORWARD_SEASON" || -z "$FORWARD_WEEK" || -z "$FORWARD_AS_OF" ]]; then
+    echo "ERROR: FORWARD_SEASON, FORWARD_WEEK, and FORWARD_AS_OF must all be set together" >&2
+    exit 2
+  fi
+  FEATURE_RUN_ID="forward_features_${FORWARD_SEASON}_w$(printf '%02d' "$FORWARD_WEEK")_$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "Building forward feature snapshot: $FEATURE_RUN_ID"
+  $PYTHON scripts/build_forward_features.py \
+    --season "$FORWARD_SEASON" --week "$FORWARD_WEEK" --as-of "$FORWARD_AS_OF" \
+    --pipeline-run-id "$FEATURE_RUN_ID" --database-url "$DATABASE_URL"
+fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"

@@ -99,6 +99,8 @@ from pipeline.features.buckets import (
     _sum_fumbles,
 )
 
+_FORWARD_POSITIONS = ("QB", "RB", "WR", "TE")
+
 # ── Core assembly function ────────────────────────────────────────────────────
 
 def build_feature_row(
@@ -556,6 +558,7 @@ CREATE TABLE IF NOT EXISTS feature_matrix (
     actual_rushing_yards            FLOAT,
     actual_passing_yards            FLOAT,
     computed_at                     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    as_of                           TIMESTAMPTZ,
     CONSTRAINT uq_feature_matrix_player_game UNIQUE (player_id, game_id)
 );
 CREATE INDEX IF NOT EXISTS idx_feature_matrix_lookup
@@ -702,6 +705,94 @@ class FeatureEngineer:
         self._conn.commit()
         return len(rows)
 
+    def build_forward_week(
+        self, *, season: int, week: int, as_of: datetime,
+    ) -> int:
+        """Build pre-kickoff feature rows from only an as-of roster snapshot.
+
+        Historical feature building requires completed game logs.  This path is
+        intentionally separate: it uses a depth-chart snapshot no newer than
+        ``as_of``, retains only a player's latest *prior-season* feature state,
+        and clears every target label.
+        """
+        if as_of.tzinfo is None:
+            raise ValueError("as_of must be timezone-aware")
+        assert self._conn
+        with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT g.id AS game_id, g.home_team, g.away_team, g.roof, g.surface,
+                       g.total_line, g.spread_line, g.home_rest, g.away_rest,
+                       dc.player_id, dc.position, dc.team, p.height AS player_height,
+                       p.weight AS player_weight, p.draft_round, p.draft_number
+                FROM games g
+                JOIN LATERAL (
+                    SELECT DISTINCT ON (d.player_id) d.player_id, d.position, d.team
+                    FROM depth_charts d
+                    WHERE d.season = %s AND d.week <= %s
+                      AND d.team IN (g.home_team, g.away_team)
+                      AND COALESCE(d.published_at, d.ingest_at) <= %s
+                    ORDER BY d.player_id, COALESCE(d.published_at, d.ingest_at) DESC, d.week DESC
+                ) dc ON TRUE
+                JOIN players p ON p.id = dc.player_id
+                WHERE g.season = %s AND g.week = %s
+                  AND UPPER(COALESCE(dc.position, p.position, '')) = ANY(%s)
+                ORDER BY g.id, dc.team, dc.player_id
+                """,
+                (season, week, as_of, season, week, list(_FORWARD_POSITIONS)),
+            )
+            candidates = [dict(row) for row in cur.fetchall()]
+            if not candidates:
+                raise ValueError("No as-of depth-chart roster found; refresh depth charts first")
+            teams = {str(row["team"]) for row in candidates}
+            if len(teams) != 32:
+                raise ValueError(f"Forward roster has {len(teams)} teams, expected 32")
+            player_ids = sorted({str(row["player_id"]) for row in candidates})
+            cur.execute(
+                f"""
+                SELECT DISTINCT ON (player_id) {', '.join(_FM_COLS)}
+                FROM feature_matrix WHERE player_id = ANY(%s) AND season < %s
+                ORDER BY player_id, season DESC, week DESC, computed_at DESC
+                """,
+                (player_ids, season),
+            )
+            priors = {str(row["player_id"]): dict(row) for row in cur.fetchall()}
+
+        feature_rows: list[FeatureRow] = []
+        identity = {"player_id", "game_id", "season", "week", "position", "team", "opponent_team", "is_home", "as_of"}
+        for row in candidates:
+            team = str(row["team"])
+            home = team == row["home_team"]
+            target = {
+                "player_id": row["player_id"], "game_id": row["game_id"], "season": season,
+                "week": week, "position": row["position"], "team": team,
+                "opponent_team": row["away_team"] if home else row["home_team"],
+                "player_height": row["player_height"], "player_weight": row["player_weight"],
+                "draft_round": row["draft_round"], "draft_number": row["draft_number"],
+            }
+            game = {key: row.get(key) for key in (
+                "home_team", "away_team", "roof", "surface", "total_line", "spread_line", "home_rest", "away_rest"
+            )}
+            context = build_feature_row(target, [], game, [])
+            values = {name: getattr(context, name) for name in _FM_COLS}
+            prior = priors.get(str(row["player_id"]))
+            if prior:
+                for name in _FM_COLS:
+                    if name not in identity and not name.startswith("actual_"):
+                        values[name] = prior.get(name)
+            values.update({
+                "player_id": str(row["player_id"]), "game_id": str(row["game_id"]),
+                "season": season, "week": week, "position": row["position"], "team": team,
+                "opponent_team": target["opponent_team"], "is_home": int(home), "as_of": as_of,
+            })
+            for name in _FM_COLS:
+                if name.startswith("actual_"):
+                    values[name] = None
+            feature_rows.append(FeatureRow(**values))
+        written = self._upsert_feature_rows(feature_rows)
+        self._fill_lagged_depth_chart_rank(season)
+        return written
+
     def _fill_prior_routes_run(self, season: int) -> None:
         """Fill routes_run_per_game from strictly prior participation rows."""
         if not self._conn:
@@ -729,6 +820,32 @@ class FeatureEngineer:
         except Exception as exc:
             logger.warning("prior routes_run fill skipped for season=%s: %s", season, exc)
             self._conn.rollback()
+
+    def _fill_lagged_depth_chart_rank(self, season: int) -> None:
+        """Populate role rank from a strictly prior chart, never target week."""
+        if not self._conn:
+            return
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE feature_matrix fm
+                SET depth_chart_rank = (
+                    SELECT dc.depth_rank
+                    FROM depth_charts dc
+                    WHERE dc.player_id = fm.player_id
+                      AND (
+                           (dc.season = fm.season AND dc.week < fm.week)
+                        OR (fm.week = 1 AND dc.season = fm.season - 1)
+                      )
+                    ORDER BY dc.season DESC, dc.week DESC,
+                             COALESCE(dc.published_at, dc.ingest_at) DESC NULLS LAST
+                    LIMIT 1
+                )
+                WHERE fm.season = %s
+                """,
+                (season,),
+            )
+        self._conn.commit()
 
     def clear_seasons(self, seasons: list[int]) -> int:
         """Delete only the explicitly requested seasons before a clean rebuild."""
@@ -802,6 +919,7 @@ class FeatureEngineer:
                 total += self._upsert_feature_rows(feature_batch)
 
             self._fill_prior_routes_run(season)
+            self._fill_lagged_depth_chart_rank(season)
             # Target-week depth, NGS, PBP, weather, and embedding joins are
             # disabled until they have a causal source contract.
             self._clear_disabled_feature_values(season)
@@ -826,7 +944,7 @@ class FeatureEngineer:
                 "snap_pct_off", "routes_run_pct", "blitz_exposure",
                 "temp_f", "wind_mph", "temp_bucket", "wind_bucket",
                 "wind_x_qb", "wind_x_wr", "precip_x_pass", "injury_status_encoded",
-                "depth_chart_rank", "avg_separation", "avg_cushion",
+                "avg_separation", "avg_cushion",
                 "epa_per_play", "epa_per_target", "epa_per_rush", "qb_epa_per_dropback",
                 "adot", "yac_per_reception", "xyac_per_reception", "target_share_pbp",
                 "air_yards_share_pbp", "red_zone_targets", "end_zone_targets",

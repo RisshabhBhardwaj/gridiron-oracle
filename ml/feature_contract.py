@@ -39,7 +39,7 @@ FORBIDDEN_MODEL_FIELDS = frozenset({
     "air_yards_share_pbp", "red_zone_targets", "end_zone_targets",
     "red_zone_target_share", "drop_rate", "ol_pressure_rate", "ol_sack_rate",
     "pass_left_rate", "pass_middle_rate", "pass_right_rate", "avg_separation",
-    "avg_cushion", "depth_chart_rank", "injury_status_encoded", "temp_f",
+    "avg_cushion", "injury_status_encoded", "temp_f",
     "wind_mph", "temp_bucket", "wind_bucket", "wind_x_qb", "wind_x_wr",
     "precip_x_pass", "years_exp", "exp_bucket",
     "snap_share_trailing", "snap_share_trend", "snap_vs_pos_avg",
@@ -59,6 +59,8 @@ def _spec_for(name: str) -> FeatureSpec:
         return FeatureSpec(name, AsOf.ILLEGAL, "removed or disabled pending a causal source")
     if name in {"height", "weight"}:
         return FeatureSpec(name, AsOf.SEASON_PROFILE, "player_season_profiles.effective_season")
+    if name == "depth_chart_rank":
+        return FeatureSpec(name, AsOf.PRIOR_GAMES, "lagged depth_charts; week N uses chart week < N")
     if name in {"game_total_line", "spread_line", "is_home", "days_rest", "is_short_week", "is_bye_prior", "is_dome", "surface_turf", "rule_coeff", "draft_round"}:
         return FeatureSpec(name, AsOf.PREGAME, "schedule, venue, or immutable draft fact")
     return FeatureSpec(name, AsOf.PRIOR_GAMES, "completed games strictly before target kickoff")

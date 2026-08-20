@@ -180,7 +180,13 @@ def assert_learner_policy(
     return seen
 
 
-def assert_coef_keys_allowed(target: str, coefs: Mapping[str, object], *, context: str) -> None:
+def assert_coef_keys_allowed(
+    target: str,
+    coefs: Mapping[str, object],
+    *,
+    context: str,
+    require_minimum: bool = True,
+) -> None:
     """
     Reject a coefficient mapping carrying a killed learner's key.
 
@@ -203,7 +209,12 @@ def assert_coef_keys_allowed(target: str, coefs: Mapping[str, object], *, contex
             )
         learner_keys.add(prefix)
 
-    assert_learner_policy(target, learner_keys, context=context)
+    assert_learner_policy(
+        target,
+        learner_keys,
+        context=context,
+        require_minimum=require_minimum,
+    )
 
 
 # ── Digests ───────────────────────────────────────────────────────────────────

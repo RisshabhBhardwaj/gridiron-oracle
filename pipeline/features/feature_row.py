@@ -8,6 +8,7 @@ Field names mirror feature_matrix table columns exactly.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 
@@ -26,6 +27,9 @@ class FeatureRow:
     team: Optional[str] = None
     opponent_team: Optional[str] = None
     is_home: Optional[int] = None
+    # Latest time at which source data was allowed to contribute. Forward
+    # feature rows require this; historical training rows leave it NULL.
+    as_of: Optional[datetime] = None
 
     # Bucket 1 — Kalman Form (posterior mean + variance per stat)
     kalman_est_receiving_yards: Optional[float] = None

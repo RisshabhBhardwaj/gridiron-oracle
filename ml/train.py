@@ -414,8 +414,24 @@ class PipelineRunner:
 
             n_samples = _DRY_RUN_N_SAMPLES if dry_run_mode else self.n_bayesian_samples
 
+            # In artifact_backed mode, only the cells the release manifest pins
+            # are servable — trainers run a wider stat×position cross product
+            # (see scripts/guard_release_artifacts.py --list-cells) in which some
+            # combinations are trained but never promoted. Restricting to the
+            # manifest here keeps that a routine skip instead of a hard failure
+            # deep in conformal calibration.
+            artifact_backed = (
+                not dry_run_mode
+                and os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed"
+            )
+            manifest_cells = get_manifest().stack_index if artifact_backed else None
+
             for stat in stats:
                 for position in positions:
+                    if not dry_run_mode and stat not in POSITION_STAT_MAP.get(position, []):
+                        continue
+                    if manifest_cells is not None and (stat, position) not in manifest_cells:
+                        continue
                     mc_df = self._run_single_stat_position(
                         stat=stat,
                         position=position,
@@ -1552,6 +1568,11 @@ if __name__ == "__main__":
     parser.add_argument("--fast",    action="store_true", default=False,
                         help="Laplace/Gaussian approximation instead of NUTS (~100x faster)")
     parser.add_argument(
+        "--oof-dir",
+        default=None,
+        help="Directory containing the candidate Ridge coefficient artifacts.",
+    )
+    parser.add_argument(
         "--positions", nargs="+", default=_DEFAULT_POSITIONS,
         choices=["QB", "RB", "WR", "TE"],
     )
@@ -1568,6 +1589,7 @@ if __name__ == "__main__":
     runner = PipelineRunner(
         fast=args.fast,
         mlflow_tracking_uri=os.environ.get("MLFLOW_TRACKING_URI", ""),
+        oof_dir=Path(args.oof_dir) if args.oof_dir else None,
     )
 
     total_projections: int = 0

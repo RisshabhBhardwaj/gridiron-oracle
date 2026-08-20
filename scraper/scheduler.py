@@ -108,6 +108,19 @@ class ScraperScheduler:
             misfire_grace_time=3600,
         )
 
+        # Roster snapshots change far more often than the historical weekly
+        # ingest.  Refresh daily in preseason and on the normal post-game
+        # cadence in season; the refresh script validates all 32 teams.
+        self._scheduler.add_job(
+            self._run_depth_charts,
+            trigger="cron",
+            hour=12,
+            minute=0,
+            id="depth_chart_daily",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+
         # ESPN injury / practice reports: every 4 hours
         self._scheduler.add_job(
             self._run_espn,
@@ -191,6 +204,24 @@ class ScraperScheduler:
             logger.info("[scheduler] nflreadpy weekly ingest complete")
         except Exception as exc:
             logger.error("[scheduler] nflreadpy ingest failed: %s", exc, exc_info=True)
+
+    def _run_depth_charts(self) -> None:
+        """Daily roster refresh with source-time validation."""
+        logger.info("[scheduler] Starting depth-chart refresh")
+        try:
+            from datetime import datetime, timezone
+            from pipeline.normalize import Normalizer
+            from scraper.adapters.nflreadpy_adapter import NFLReadPyAdapter
+            season = datetime.now(timezone.utc).year
+            with NFLReadPyAdapter(self._db_url) as adapter:
+                _, failed = adapter.fetch_depth_charts([season])
+            with Normalizer(self._db_url) as normalizer:
+                normalizer.run(seasons=[season])
+            if failed:
+                raise RuntimeError(f"depth-chart staging failures={failed}")
+            logger.info("[scheduler] depth-chart refresh complete")
+        except Exception as exc:
+            logger.error("[scheduler] depth-chart refresh failed: %s", exc, exc_info=True)
 
     def _run_espn(self) -> None:
         """Every 4h: dated ESPN injury/practice capture (forward-only)."""

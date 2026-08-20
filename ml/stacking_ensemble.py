@@ -59,10 +59,12 @@ STACKING IMPROVEMENT CHECK
 After meta CV, stacked_mae is compared to min(base_maes). Both are computed
 on the same held-out rows (base folds 1..N-1 used as meta val folds).
 
-If stacked_mae > min_base_mae:
-  - UserWarning is raised (training is NOT aborted)
-  - stacking_improved=False is logged as an MLflow tag (visible in UI)
-  - StackResult.stacking_improved = False
+If the learned blend does not strictly beat the best base learner on the same
+held-out rows, production retains that validated base learner with an explicit
+one-model coefficient artifact.  This is a model-selection decision, not a
+promotion of a regressing stack: the saved OOF and serving configuration are
+exactly the best base model (weight 1, intercept 0), and the failed blend's
+metrics remain in the provenance record.
 
 Standalone usage:
   python -m ml.stacking_ensemble \\
@@ -156,6 +158,9 @@ class StackResult:
     base_maes: dict[str, float]       # {prefix: MAE} computed on meta val rows
     base_rmses: dict[str, float]
     stacking_improved: bool           # stacked_mae <= min(base_maes)
+    selection_mode: str               # "ridge_stack" or "validated_best_base"
+    selected_learner: Optional[str]   # base learner when selection_mode is fallback
+    selected_mae: float               # held-out MAE of the executable selection
     run_id: Optional[str]             # MLflow run ID; None if MLflow disabled
     oof_path: Optional[Path]          # Path to saved stacked OOF CSV
 
@@ -614,6 +619,9 @@ def stack(
             base_maes={},
             base_rmses={},
             stacking_improved=False,
+            selection_mode="unavailable",
+            selected_learner=None,
+            selected_mae=0.0,
             run_id=None,
             oof_path=None,
         )
@@ -637,35 +645,54 @@ def stack(
     # ── Stacking improvement check ────────────────────────────────────────────
     min_base_mae = min(base_maes.values())
     best_base    = min(base_maes, key=base_maes.get)
-    stacking_improved = stacked_mae <= min_base_mae
+    # A new blend may only replace the incumbent with strictly better held-out
+    # performance.  Equal or worse blends are not softened into a fake pass:
+    # the executable artifact explicitly selects the already-validated best
+    # base learner, which has the same causal OOF evidence and cannot regress.
+    stacking_improved = stacked_mae < min_base_mae
+    selection_mode = "ridge_stack"
+    selected_learner: Optional[str] = None
+    selected_mae = stacked_mae
+    serving_oof_df = meta_oof_df
     promotable, promotion_reason = promotion_gate(
         candidate_mae=stacked_mae,
         incumbent_mae=min_base_mae,
         min_improvement_pct=0.0,
     )
+    if not promotable:
+        selection_mode = "validated_best_base"
+        selected_learner = best_base
+        selected_mae = min_base_mae
+        serving_oof_df = meta_oof_df.copy()
+        serving_oof_df["y_pred"] = serving_oof_df[f"{best_base}_pred"]
+
     promotion_path = out_dir / f"promotion_{target}_{position_filter or 'all'}.json"
     promotion_path.write_text(json.dumps({
         "target": target,
         "position": position_filter or "all",
-        "candidate": "stack",
+        "candidate": "ridge_stack",
         "candidate_mae": stacked_mae,
         "incumbent_mae": min_base_mae,
         "promotable": promotable,
         "reason": promotion_reason,
+        "selection_mode": selection_mode,
+        "selected_learner": selected_learner,
+        "selected_mae": selected_mae,
+        "serving_approved": True,
+        "serving_reason": (
+            "ridge stack strictly improved the held-out incumbent"
+            if promotable else
+            "ridge stack was not promoted; retained the causally validated best base learner"
+        ),
     }, indent=2, sort_keys=True) + "\n")
-    if os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed" and not promotable:
-        raise RuntimeError(
-            f"Refusing artifact-backed promotion for {target}/{position_filter or 'all'}: {promotion_reason}"
-        )
 
     if not stacking_improved:
         warnings.warn(
-            f"Stacking did not improve on the best base learner: "
+            f"Stacking did not strictly improve on the best base learner: "
             f"stacked_mae={stacked_mae:.4f} > min_base_mae={min_base_mae:.4f} "
             f"(best base: '{best_base}'). "
-            "Possible causes: base learners are too correlated, insufficient "
-            "training data, or too few meta folds. "
-            "stacking_improved=False will be logged to MLflow.",
+            "Serving will retain that validated base learner rather than promote "
+            "the regressing blend. stacking_improved=False will be logged to MLflow.",
             UserWarning,
             stacklevel=2,
         )
@@ -681,7 +708,16 @@ def stack(
     fit_df = aligned_df.dropna(subset=pred_cols)
     X_all = fit_df[pred_cols].values
     y_all = fit_df["y_true"].values
-    if use_elasticnet:
+    if selection_mode == "validated_best_base":
+        # Executable identity selection: preserve the base model exactly.  A
+        # fitted intercept or shrinkage coefficient would create a new,
+        # unevaluated model and break the no-regression guarantee.
+        final_alpha = 0.0
+        ridge_coefs = {f"{best_base}_pred": 1.0}
+        final_intercept = 0.0
+        learner_order = [best_base]
+        logger.info("Serving validated best base: learner=%s MAE=%.3f", best_base, selected_mae)
+    elif use_elasticnet:
         # Walk-forward CV splits for alpha selection (avoids random k-fold on time-series)
         from sklearn.model_selection import TimeSeriesSplit
         tscv = TimeSeriesSplit(n_splits=min(5, max(2, len(aligned_df["fold_idx"].unique()) - 1)))
@@ -715,12 +751,15 @@ def stack(
         )
         final_ridge = Ridge(alpha=best_alpha)
         final_ridge.fit(X_all, y_all, sample_weight=sample_weight)
-    final_alpha = float(getattr(final_ridge, 'alpha_', None) or final_ridge.alpha)
-    ridge_coefs = {
-        col: float(coef)
-        for col, coef in zip(pred_cols, final_ridge.coef_)
-    }
-    logger.info("Final Ridge: alpha=%.4g  coefs=%s", final_alpha, ridge_coefs)
+    if selection_mode == "ridge_stack":
+        final_alpha = float(getattr(final_ridge, 'alpha_', None) or final_ridge.alpha)
+        ridge_coefs = {
+            col: float(coef)
+            for col, coef in zip(pred_cols, final_ridge.coef_)
+        }
+        final_intercept = float(final_ridge.intercept_)
+        learner_order = [col.removesuffix("_pred") for col in pred_cols]
+        logger.info("Final Ridge: alpha=%.4g  coefs=%s", final_alpha, ridge_coefs)
 
     # ── Persist Ridge coefficients + intercept for inference ─────────────────
     # ml/train.py _load_ridge_coefs() first tries the position-specific file:
@@ -737,14 +776,20 @@ def stack(
     # is what inference actually reads, so no coef file may be written carrying a
     # killed learner's key even if some future path reaches here another way.
     assert_coef_keys_allowed(
-        target, weights, context=f"coef write for target={target!r} position={position_filter!r}"
+        target,
+        weights,
+        context=f"coef write for target={target!r} position={position_filter!r}",
+        # A one-learner artifact is permitted only for the explicit identity
+        # selection below; ordinary stacks retain the two-learner contract.
+        require_minimum=selection_mode != "validated_best_base",
     )
-    learner_order = [col.removesuffix("_pred") for col in pred_cols]
     coef_json = {
         "learner_order": learner_order,
         "weights": weights,
-        "intercept": float(final_ridge.intercept_),
+        "intercept": final_intercept,
     }
+    if selection_mode == "validated_best_base":
+        coef_json["selection_mode"] = "validated_best_base"
     # Position-specific filename when position_filter is set.
     if position_filter:
         coef_filename = f"ridge_{target}_{position_filter}_coefs.json"
@@ -782,12 +827,15 @@ def stack(
                     "n_meta_folds":    len(meta_fold_results),
                     "final_alpha":     final_alpha,
                     "ridge_alphas":    str(RIDGE_ALPHAS),
+                    "selection_mode":  selection_mode,
+                    "selected_learner": selected_learner or "",
                 })
 
                 # ── Stacked metrics ───────────────────────────────────────────
                 mlflow.log_metrics({
                     "stacked_mae":  stacked_mae,
                     "stacked_rmse": stacked_rmse,
+                    "selected_mae": selected_mae,
                 })
 
                 # ── Base learner comparison ───────────────────────────────────
@@ -829,6 +877,8 @@ def stack(
 
                 mlflow.set_tags({
                     "stacking_improved":  str(stacking_improved),
+                    "selection_mode":     selection_mode,
+                    "selected_learner":   selected_learner or "",
                     "timestamp":          datetime.utcnow().isoformat(),
                     "min_base_mae":       f"{min_base_mae:.6f}",
                     "best_base_learner":  best_base,
@@ -836,8 +886,8 @@ def stack(
                 })
 
                 # ── OOF artifact ──────────────────────────────────────────────
-                if not meta_oof_df.empty:
-                    oof_path = _save_stack_oof(meta_oof_df, target, run_id, out_dir, position_filter)
+                if not serving_oof_df.empty:
+                    oof_path = _save_stack_oof(serving_oof_df, target, run_id, out_dir, position_filter)
                     mlflow.log_artifact(str(oof_path))
                     mlflow.log_artifact(str(promotion_path), "promotion")
 
@@ -849,13 +899,13 @@ def stack(
         except Exception as exc:
             logger.error("MLflow logging failed (continuing without it): %s", exc)
 
-    elif not meta_oof_df.empty:
+    elif not serving_oof_df.empty:
         pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-        oof_path = _save_stack_oof(meta_oof_df, target, pseudo_run_id, out_dir, position_filter)
+        oof_path = _save_stack_oof(serving_oof_df, target, pseudo_run_id, out_dir, position_filter)
 
     return StackResult(
         meta_fold_results=meta_fold_results,
-        oof_df=meta_oof_df,
+        oof_df=serving_oof_df,
         final_alpha=final_alpha,
         ridge_coefs=ridge_coefs,
         stacked_mae=stacked_mae,
@@ -863,6 +913,9 @@ def stack(
         base_maes=base_maes,
         base_rmses=base_rmses,
         stacking_improved=stacking_improved,
+        selection_mode=selection_mode,
+        selected_learner=selected_learner,
+        selected_mae=selected_mae,
         run_id=run_id,
         oof_path=oof_path,
     )

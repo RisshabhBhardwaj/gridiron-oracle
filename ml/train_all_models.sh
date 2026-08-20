@@ -85,7 +85,12 @@ PYTHON="$VENV_DIR/bin/python3.11"
 if [ "${PRODUCT_MODE:-graceful_fallback}" = "artifact_backed" ]; then
   "$PYTHON" scripts/verify_artifact_prerequisites.py
 fi
-OOF_DIR=ml/oof
+# Keep candidate rebuilds isolated from the currently promoted artifact set.
+# A release rebuild must never discover a mixture of stale OOF rows and the
+# new run simply because both happen to live under ``ml/oof``.  Callers may
+# point this at a fresh candidate directory; the default preserves the
+# established developer workflow.
+OOF_DIR=${OOF_DIR:-ml/oof}
 
 # Per-position stat sets — matches POSITION_STAT_MAP in ml/train.py.
 # Training a separate model per (stat, position) captures position-specific
@@ -448,13 +453,14 @@ TRAIN_FAST_FLAG=""
 $PYTHON -m ml.train \
   --seasons 2019 2020 2021 2022 2023 2024 2025 \
   --all-weeks \
+  --oof-dir "$OOF_DIR" \
   $TRAIN_FAST_FLAG \
   $([ "$RESUME" = "true" ] && echo "--resume")
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"
 echo "  ALL DONE"
-echo "  Ridge coefs written to ml/oof/ridge_*_coefs.json"
+echo "  Ridge coefs written to $OOF_DIR/ridge_*_coefs.json"
 echo "  Projections updated in the database"
 echo "  MLflow runs visible at: $MLFLOW_TRACKING_URI"
 echo "════════════════════════════════════════════════════════════════"

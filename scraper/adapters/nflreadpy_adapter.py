@@ -24,7 +24,7 @@ import os
 import re
 import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 import psycopg2
@@ -298,6 +298,9 @@ class DepthChartRow(BaseModel):
     published_at: Optional[datetime] = None
     timestamp: Optional[datetime] = None
     last_updated: Optional[datetime] = None
+    # Local acquisition time, injected by ``fetch_depth_charts``.  This is
+    # provenance, not a claim that the source published the chart then.
+    ingest_at: Optional[datetime] = None
 
 
 class NextGenStatsRow(BaseModel):
@@ -812,6 +815,13 @@ class NFLReadPyAdapter:
             except Exception as exc:
                 logger.error("load_depth_charts FAILED season=%d: %s", season, exc)
                 continue
+            # nflreadpy's current depth feed generally has no publication
+            # timestamp.  Preserve when we acquired this snapshot so freshness
+            # checks can fail closed instead of guessing.
+            stamp = datetime.now(timezone.utc).isoformat()
+            if hasattr(df, "with_columns"):
+                import polars as pl
+                df = df.with_columns(pl.lit(stamp).alias("ingest_at"))
             ok, fail, preview = self._process_source(
                 SOURCE_DEPTH_CHARTS, df, season, WEEK_COL[SOURCE_DEPTH_CHARTS], dry_run
             )

@@ -25,7 +25,7 @@ hooks:
 
 .PHONY: migrate
 migrate:
-	$(PYTHON) scripts/migrate.py upgrade
+	PYTHONPATH=. $(PYTHON) scripts/migrate.py upgrade
 
 .PHONY: migrate-stamp
 migrate-stamp:

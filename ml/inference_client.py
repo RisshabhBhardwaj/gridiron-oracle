@@ -525,6 +525,9 @@ class InferenceClient:
                 raise ValueError(f"Invalid Ridge coefficient JSON at {coef_path}: {exc}") from exc
 
             expected_keys = {"learner_order", "weights", "intercept"}
+            identity_selection = data.get("selection_mode") == "validated_best_base" if isinstance(data, dict) else False
+            if identity_selection:
+                expected_keys = {*expected_keys, "selection_mode"}
             if not isinstance(data, dict) or set(data) != expected_keys:
                 raise ValueError(
                     f"Invalid Ridge coefficient schema at {coef_path}: expected exactly "
@@ -546,13 +549,28 @@ class InferenceClient:
                     f"got weights={sorted(weights) if isinstance(weights, dict) else type(weights).__name__}."
                 )
 
+            if identity_selection and (
+                len(learner_order) != 1
+                or weights[learner_order[0]] != 1.0
+                or data["intercept"] != 0.0
+            ):
+                raise ValueError(
+                    f"Identity base selection at {coef_path} must have exactly one "
+                    "learner with weight=1.0 and intercept=0.0"
+                )
+
             raw_values = [weights[learner] for learner in learner_order] + [data["intercept"]]
             if any(isinstance(value, bool) or not isinstance(value, numbers.Real) for value in raw_values):
                 raise ValueError(f"Ridge coefficients at {coef_path} must be JSON numbers, not strings/bools")
 
             try:
                 from ml.artifact_manifest import assert_learner_policy
-                assert_learner_policy(stat, learner_order, context=f"Ridge coefficients {coef_path}")
+                assert_learner_policy(
+                    stat,
+                    learner_order,
+                    context=f"Ridge coefficients {coef_path}",
+                    require_minimum=not identity_selection,
+                )
                 coefs = [float(weights[learner]) for learner in learner_order]
                 intercept = float(data["intercept"])
             except (TypeError, ValueError) as exc:

@@ -19,16 +19,17 @@ class Check:
     status: str
     rows: int | None
     detail: str
+    required: bool = True
 
 
-def _check(cur, source: str, query: str, minimum: int = 1) -> Check:
+def _check(cur, source: str, query: str, minimum: int = 1, *, required: bool = True) -> Check:
     try:
         cur.execute(query)
         rows = int(cur.fetchone()[0] or 0)
-        return Check(source, "ok" if rows >= minimum else "error", rows,
-                     f"requires at least {minimum} qualifying rows")
+        status = "ok" if rows >= minimum else ("error" if required else "unavailable")
+        return Check(source, status, rows, f"requires at least {minimum} qualifying rows", required)
     except Exception as exc:  # database/schema failures are prerequisite failures
-        return Check(source, "error", None, str(exc))
+        return Check(source, "error" if required else "unavailable", None, str(exc), required)
 
 
 def build_report(db_url: str) -> dict:
@@ -42,11 +43,16 @@ def build_report(db_url: str) -> dict:
                 _check(cur, "participation_routes", "SELECT COUNT(*) FROM participation_player_game WHERE routes_run IS NOT NULL"),
                 _check(cur, "depth_chart", "SELECT COUNT(*) FROM depth_charts WHERE depth_rank IS NOT NULL"),
                 _check(cur, "weather", "SELECT COUNT(*) FROM games WHERE temp IS NOT NULL AND wind IS NOT NULL"),
-                _check(cur, "historical_props", "SELECT COUNT(*) FROM prop_odds WHERE game_id IS NOT NULL AND line_value IS NOT NULL AND over_odds IS NOT NULL"),
+                # Historical player-prop lines are valuable for measuring edge
+                # versus the market, but are not a feature used to produce a
+                # forward football forecast.  The live Odds API does not
+                # provide a backfill with game IDs, so making this mandatory
+                # would block every otherwise reproducible artifact release.
+                _check(cur, "historical_props", "SELECT COUNT(*) FROM prop_odds WHERE game_id IS NOT NULL AND line_value IS NOT NULL AND over_odds IS NOT NULL", required=False),
             ]
     finally:
         conn.close()
-    return {"overall_status": "ok" if all(c.status == "ok" for c in checks) else "blocked",
+    return {"overall_status": "ok" if all(not c.required or c.status == "ok" for c in checks) else "blocked",
             "checks": [asdict(c) for c in checks]}
 
 
