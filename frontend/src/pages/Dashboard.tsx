@@ -153,9 +153,9 @@ function PlayerCard({ row, onClick, bookLine, week, season, stat, style }: Playe
           />
         </div>
         <div className="flex justify-between text-[10px] font-mono">
-          <span style={{ color: '#FF3B5C' }}>{row.floor.toFixed(0)}</span>
+          <span style={{ color: '#FF3B5C' }}>{row.floor == null ? '—' : row.floor.toFixed(0)}</span>
           <span className="text-oracle-muted">range</span>
-          <span style={{ color: '#00FFA3' }}>{row.ceiling.toFixed(0)}</span>
+          <span style={{ color: '#00FFA3' }}>{row.ceiling == null ? '—' : row.ceiling.toFixed(0)}</span>
         </div>
       </div>
 

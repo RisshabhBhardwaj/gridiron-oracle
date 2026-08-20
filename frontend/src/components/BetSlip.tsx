@@ -104,14 +104,14 @@ function LegCard({ leg, onRemove }: LegCardProps) {
 
       {/* Floor/ceiling range */}
       <div className="flex items-center gap-2 text-[10px]">
-        <span style={{ color: '#FF3B5C' }}>{leg.floor.toFixed(0)}</span>
+        <span style={{ color: '#FF3B5C' }}>{leg.floor == null ? '—' : leg.floor.toFixed(0)}</span>
         <div className="flex-1 h-1 rounded-full" style={{ background: 'rgba(26,47,78,0.8)' }}>
           <div
             className="h-full rounded-full"
             style={{ background: `linear-gradient(90deg, rgba(255,59,92,0.6), ${posColor}80, rgba(0,255,163,0.6))` }}
           />
         </div>
-        <span style={{ color: '#00FFA3' }}>{leg.ceiling.toFixed(0)}</span>
+        <span style={{ color: '#00FFA3' }}>{leg.ceiling == null ? '—' : leg.ceiling.toFixed(0)}</span>
       </div>
     </div>
   )
@@ -152,7 +152,7 @@ export function BetSlip() {
         style={{
           width: '360px',
           transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
-          transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          transition: 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
           background: 'rgba(5,11,24,0.97)',
           borderLeft: '1px solid rgba(0,194,255,0.15)',
           boxShadow: isOpen ? '-8px 0 40px rgba(0,0,0,0.6), -2px 0 0 rgba(0,194,255,0.08)' : 'none',

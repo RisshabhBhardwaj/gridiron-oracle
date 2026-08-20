@@ -540,4 +540,6 @@ class Projection(SQLModel, table=True):
         default=None, sa_column=Column(JSON, nullable=True)
     )
 
+    interval_method: Optional[str] = None  # causal_oof_conformal_90 | posterior_samples | unavailable
+
     created_at: datetime = Field(default_factory=datetime.utcnow)

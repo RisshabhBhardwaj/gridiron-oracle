@@ -88,6 +88,7 @@ class PredictResponse(BaseModel):
     projection:              StatProjection
     percentiles:             Percentiles
     interval_method:          str
+    served_learner:           str = "unknown"
     degraded:                 bool = False
     pipeline_run_id:          Optional[str] = None
     confidence_score:        Optional[float] = None
@@ -112,6 +113,7 @@ class WeekPlayerProjection(BaseModel):
     floor:              Optional[float] = None
     ceiling:            Optional[float] = None
     interval_method:    str
+    served_learner:     str = "unknown"
     degraded:           bool = False
     pipeline_run_id:    Optional[str] = None
     p5:                 Optional[float] = None
@@ -152,6 +154,9 @@ class SeasonPlayerProjection(BaseModel):
     rushing_yards:      Optional[SeasonStatProjection] = None
     receiving_yards:    Optional[SeasonStatProjection] = None
     fantasy_ppr:        Optional[SeasonStatProjection] = None
+    degraded:           bool = False
+    interval_method:    str = "unavailable"
+    p_active:           Optional[float] = None
 
 
 class SeasonProjectionsResponse(BaseModel):
@@ -230,6 +235,7 @@ def predict(
             p90=result.ceiling,
         ),
         interval_method=result.interval_method,
+        served_learner=result.served_learner,
         degraded=result.degraded,
         pipeline_run_id=result.pipeline_run_id,
         confidence_score=result.confidence_score,
@@ -277,6 +283,7 @@ def projections_for_week(
             floor=r.floor,
             ceiling=r.ceiling,
             interval_method=r.interval_method,
+            served_learner=r.served_learner,
             degraded=r.degraded,
             pipeline_run_id=r.pipeline_run_id,
             boom_probability=r.boom_probability,
@@ -327,6 +334,9 @@ def season_projections(
             "player_name": r["player_name"],
             "position": r["position"],
             "team": r.get("team"),
+            "degraded": bool(r.get("degraded", False)),
+            "interval_method": str(r.get("interval_method") or "unavailable"),
+            "p_active": r.get("p_active"),
         }
         for stat in ["passing_yards", "rushing_yards", "receiving_yards", "fantasy_ppr"]:
             if stat in r:

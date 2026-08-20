@@ -74,8 +74,8 @@ export function PlayerDetail() {
   }
 
   const projection = predictData?.percentiles.p50 ?? 0
-  const floor      = predictData?.percentiles.p10 ?? 0
-  const ceiling    = predictData?.percentiles.p90 ?? 0
+  const floor      = predictData?.percentiles.p10 ?? null
+  const ceiling    = predictData?.percentiles.p90 ?? null
   const position   = predictData?.position ?? ''
   const posColor   = POS_COLORS[position] ?? '#607B9B'
 

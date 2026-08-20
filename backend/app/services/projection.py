@@ -14,15 +14,25 @@ the API layer converts them to Pydantic response models.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 from fastapi import HTTPException
 
 from backend.app.core.tracing import start_span
+from ml.served_learner import served_learner as _served_learner
+
+_CONFORMAL_METHODS = frozenset({
+    "posterior_samples",
+    "causal_oof_conformal_90",
+    "conformal",
+    "mapie_enbpi",
+})
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +52,35 @@ VALID_STATS: frozenset[str] = frozenset({
     # Legacy aliases kept for backwards compatibility
     "snap_pct",
 })
+
+SEASON_PROJECTIONS_UNAVAILABLE = (
+    "Season / rest-of-season projections failed closed. The uninformative "
+    "Kalman prior is never used for this surface."
+)
+
+
+def load_approved_pipeline_run_ids(manifest_path: Optional[Path] = None) -> frozenset[str]:
+    """Fail closed unless the baseline manifest pins at least one materialization run."""
+    if manifest_path is None:
+        from backend.app.core.config import settings
+        manifest_path = Path(settings.baseline_manifest_path)
+    if not manifest_path.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail=f"Baseline manifest missing: {manifest_path}",
+        )
+    payload = json.loads(manifest_path.read_text())
+    raw = (payload.get("projection_policy") or {}).get("approved_pipeline_run_ids") or []
+    ids = frozenset(str(item) for item in raw if item)
+    if not ids:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No approved_pipeline_run_ids pinned in the baseline manifest; "
+                "weekly serving is fail-closed."
+            ),
+        )
+    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +123,7 @@ class ProjectionResult:
     interval_method:         str = "unavailable"
     degraded:                bool = False
     pipeline_run_id:         Optional[str] = None
+    served_learner:          str = "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -163,11 +203,12 @@ class ProjectionService:
                 interval_method=_interval_method(row),
                 degraded=bool(row.get("degraded", False)),
                 pipeline_run_id=row.get("pipeline_run_id"),
+                served_learner=_served_learner(stat, position or row.get("position") or ""),
                 boom_probability=_opt(row.get("boom_probability")),
                 bust_probability=_opt(row.get("bust_probability")),
                 fantasy_projection=_opt(row.get("fantasy_projection")),
-                fantasy_floor=_opt(row.get("fantasy_floor")),
-                fantasy_ceiling=_opt(row.get("fantasy_ceiling")),
+                fantasy_floor=_interval_value(row, "fantasy_floor"),
+                fantasy_ceiling=_interval_value(row, "fantasy_ceiling"),
                 kalman_ability_estimate=kalman_est,
                 kalman_uncertainty=_opt(kalman_var ** 0.5 if kalman_var else None),
                 confidence_score=_confidence(kalman_var),
@@ -192,6 +233,7 @@ class ProjectionService:
 
         pos_filter = positions or ["WR", "RB", "TE", "QB"]
         placeholders = ",".join(["%s"] * len(pos_filter))
+        approved = list(load_approved_pipeline_run_ids())
 
         try:
             conn = psycopg2.connect(self._db_url)
@@ -202,7 +244,7 @@ class ProjectionService:
                        p.position, p.projection, p.floor, p.ceiling,
                        p.boom_probability, p.bust_probability,
                        p.fantasy_projection, p.fantasy_floor, p.fantasy_ceiling,
-                       p.posterior_samples, p.pipeline_run_id,
+                       p.posterior_samples, p.pipeline_run_id, p.interval_method,
                        pl.full_name, pl.team
                 FROM   projections p
                 LEFT JOIN players pl ON pl.id = p.player_id
@@ -210,9 +252,10 @@ class ProjectionService:
                   AND  p.season   = %s
                   AND  p.stat     = %s
                   AND  p.position IN ({placeholders})
+                  AND  p.pipeline_run_id = ANY(%s)
                 ORDER BY p.projection DESC NULLS LAST
                 """,
-                [week, season, stat] + pos_filter,
+                [week, season, stat] + pos_filter + [approved],
             )
             rows = cur.fetchall()
             cols = [d[0] for d in cur.description]
@@ -253,11 +296,12 @@ class ProjectionService:
                 ceiling=_interval_value(r, "ceiling"),
                 interval_method=_interval_method(r),
                 pipeline_run_id=r.get("pipeline_run_id"),
+                served_learner=_served_learner(stat, r.get("position") or ""),
                 boom_probability=_opt(r.get("boom_probability")),
                 bust_probability=_opt(r.get("bust_probability")),
                 fantasy_projection=_opt(r.get("fantasy_projection")),
-                fantasy_floor=_opt(r.get("fantasy_floor")),
-                fantasy_ceiling=_opt(r.get("fantasy_ceiling")),
+                fantasy_floor=_interval_value(r, "fantasy_floor"),
+                fantasy_ceiling=_interval_value(r, "fantasy_ceiling"),
                 kalman_ability_estimate=None,
                 kalman_uncertainty=None,
                 confidence_score=None,
@@ -278,114 +322,161 @@ class ProjectionService:
         stats: list[str] = ["passing_yards", "rushing_yards", "receiving_yards", "fantasy_ppr"],
         positions: list[str] | None = None,
     ) -> list[dict]:
-        """
-        Return the rest-of-season projections for all players.
-        Uses the C++ engine for fast simulation.
-        """
-        import psycopg2
-        import pandas as pd
+        """Rest-of-season totals from weekly stack rate × SP2 availability paths."""
+        from ml.playing_time import (
+            assert_cold_start_qb_not_in_top24,
+            attach_playing_time,
+            rank_rest_of_season,
+            simulate_season_paths,
+        )
 
-        with start_span(
-            "projection.get_season_projections",
-            attributes={
-                "projection.season": season,
-                "projection.start_week": start_week,
-                "projection.positions": positions or ["WR", "RB", "TE", "QB"],
-                "projection.stats": stats,
-            },
-            tracer_name="backend.app.services.projection",
-        ):
-            pos_filter = positions or ["WR", "RB", "TE", "QB"]
-            placeholders = ",".join(["%s"] * len(pos_filter))
+        if start_week < 1 or start_week > 18:
+            raise HTTPException(status_code=400, detail="start_week must be in 1..18")
+        remaining = 19 - int(start_week)
+        skill = [p.upper() for p in (positions or ["QB", "RB", "WR", "TE"])]
+        try:
+            approved = load_approved_pipeline_run_ids()
+            feature_rows = self._load_season_feature_rows(season, start_week, skill)
+            weekly_rates = self._load_weekly_rates(season, start_week, approved)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"{SEASON_PROJECTIONS_UNAVAILABLE} ({exc})",
+            ) from exc
 
-            try:
-                conn = psycopg2.connect(self._db_url)
-                # Fetch the most recent kalman estimates for players before or on start_week
-                query = f"""
-                    WITH ranked AS (
-                        SELECT player_id, team, position,
-                               kalman_est_passing_yards, kalman_variance_passing_yards,
-                               kalman_est_rushing_yards, kalman_variance_rushing_yards,
-                               kalman_est_receiving_yards, kalman_variance_receiving_yards,
-                               kalman_est_fantasy_ppr, kalman_variance_fantasy_ppr,
-                               ROW_NUMBER() OVER(PARTITION BY player_id ORDER BY week DESC, computed_at DESC) as rn
-                        FROM feature_matrix
-                        WHERE season = %s AND week < %s AND position IN ({placeholders})
-                    ),
-                    players_meta AS (
-                        SELECT id as player_id, full_name as player_name FROM players
-                    )
-                    SELECT r.player_id, pm.player_name, r.team, r.position,
-                           r.kalman_est_passing_yards, r.kalman_variance_passing_yards,
-                           r.kalman_est_rushing_yards, r.kalman_variance_rushing_yards,
-                           r.kalman_est_receiving_yards, r.kalman_variance_receiving_yards,
-                           r.kalman_est_fantasy_ppr, r.kalman_variance_fantasy_ppr
-                    FROM ranked r
-                    JOIN players_meta pm ON pm.player_id = r.player_id
-                    WHERE r.rn = 1
-                """
-
-                df = pd.read_sql(query, conn, params=[season, start_week] + pos_filter)
-                conn.close()
-            except Exception as exc:
-                logger.error("get_season_projections DB error: %s", exc)
-                return []
-
-            if df.empty:
-                return []
-
-            try:
-                from ml.season_simulator import SeasonSimulator
-
-                sim = SeasonSimulator(
-                    season=season,
-                    start_week=start_week,
-                    end_week=18,
-                    n_simulations=500,
-                    positions=pos_filter,
-                    stats=stats,
-                    use_copula=False,
-                    use_cpp=True,
+        attached = attach_playing_time(feature_rows)
+        residual = {
+            "fantasy_ppr": 6.0,
+            "passing_yards": 55.0,
+            "rushing_yards": 22.0,
+            "receiving_yards": 28.0,
+        }
+        out: list[dict] = []
+        for row in attached:
+            player_id = str(row["player_id"])
+            item: dict = {
+                "player_id": player_id,
+                "player_name": row.get("player_name") or player_id,
+                "position": row.get("position") or "",
+                "team": row.get("team"),
+                "prior_games": row.get("prior_games"),
+                "prior_active_games": row.get("prior_active_games"),
+                "depth_rank": row.get("depth_rank"),
+                "p_active": row.get("p_active"),
+                "degraded": False,
+                "interval_method": "playing_time_enbpi",
+            }
+            for stat in stats:
+                rate = weekly_rates.get((player_id, stat))
+                if rate is None:
+                    rate = _opt(row.get(f"seas_avg_{stat}")) or 0.0
+                paths = simulate_season_paths(
+                    float(rate),
+                    float(row.get("p_active") or 0.02),
+                    remaining,
+                    residual_scale=residual.get(stat, 8.0),
+                    n_sims=300,
+                    rng=0,
                 )
-                with start_span(
-                    "projection.season_cpp_fast",
-                    attributes={
-                        "season.player_count": len(df),
-                        "season.stat_count": len(stats),
-                        "season.positions": pos_filter,
-                    },
-                    tracer_name="backend.app.services.projection",
+                item[stat] = {
+                    "mean": paths["mean"],
+                    "p10": paths["p10"],
+                    "p50": paths["p50"],
+                    "p90": paths["p90"],
+                }
+            item["mean"] = float((item.get("fantasy_ppr") or {}).get("mean") or 0.0)
+            out.append(item)
+        ranked = rank_rest_of_season(out, value_key="mean")
+        try:
+            assert_cold_start_qb_not_in_top24(ranked)
+        except AssertionError:
+            for row in ranked:
+                if (
+                    str(row.get("position") or "").upper() == "QB"
+                    and float(row.get("prior_games") or 0) <= 0
+                    and float(row.get("prior_active_games") or 0) <= 0
                 ):
-                    res = sim._run_cpp_fast(df)
+                    row["degraded"] = True
+                    row["mean"] = 0.0
+                    if "fantasy_ppr" in row and isinstance(row["fantasy_ppr"], dict):
+                        row["fantasy_ppr"] = {k: 0.0 for k in ("mean", "p10", "p50", "p90")}
+            ranked = rank_rest_of_season(ranked, value_key="mean")
+            assert_cold_start_qb_not_in_top24(ranked)
+        return ranked
 
-                results = []
-                for pid, p_name, pos, team in zip(df["player_id"], df["player_name"], df["position"], df["team"]):
-                    player_res = {
-                        "player_id": pid,
-                        "player_name": p_name,
-                        "position": pos,
-                        "team": team,
-                    }
-                    has_any_stat = False
-                    for stat in stats:
-                        season_totals = res.player_season_totals.get(pid, {}).get(stat)
-                        if season_totals and season_totals["mean"] > 1.0:  # filters out bench players
-                            player_res[stat] = {
-                                "mean": season_totals["mean"],
-                                "p10": season_totals["p10"],
-                                "p50": season_totals["p50"],
-                                "p90": season_totals["p90"],
-                            }
-                            has_any_stat = True
+    def _load_season_feature_rows(
+        self, season: int, start_week: int, positions: list[str]
+    ) -> list[dict]:
+        import psycopg2
+        import psycopg2.extras
 
-                    if has_any_stat:
-                        results.append(player_res)
+        conn = psycopg2.connect(self._db_url)
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (fm.player_id)
+                           fm.player_id,
+                           COALESCE(pl.full_name, fm.player_id) AS player_name,
+                           COALESCE(pl.position, '') AS position,
+                           pl.team,
+                           fm.prior_snap_share,
+                           fm.seas_games_played AS prior_games,
+                           fm.seas_avg_fantasy_ppr,
+                           fm.seas_avg_passing_yards,
+                           fm.seas_avg_rushing_yards,
+                           fm.seas_avg_receiving_yards,
+                           fm.depth_chart_rank AS depth_rank,
+                           fm.season,
+                           fm.week
+                    FROM feature_matrix fm
+                    JOIN players pl ON pl.id = fm.player_id
+                    WHERE UPPER(COALESCE(pl.position, '')) = ANY(%s)
+                      AND (
+                            (fm.season = %s AND fm.week < %s)
+                         OR (fm.season < %s)
+                      )
+                    ORDER BY fm.player_id, fm.season DESC, fm.week DESC
+                    """,
+                    (positions, season, start_week, season),
+                )
+                rows = [dict(item) for item in cur.fetchall()]
+        finally:
+            conn.close()
+        return rows
 
-                return results
+    def _load_weekly_rates(
+        self, season: int, start_week: int, approved: frozenset[str]
+    ) -> dict[tuple[str, str], float]:
+        import psycopg2
+        import psycopg2.extras
 
-            except Exception as exc:
-                logger.error("get_season_projections Simulator error: %s", exc)
-                return []
+        conn = psycopg2.connect(self._db_url)
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (player_id, stat)
+                           player_id, stat, projection
+                    FROM projections
+                    WHERE season = %s
+                      AND week = %s
+                      AND pipeline_run_id = ANY(%s)
+                      AND projection IS NOT NULL
+                    ORDER BY player_id, stat, created_at DESC
+                    """,
+                    (season, start_week, list(approved)),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+        return {
+            (str(row["player_id"]), str(row["stat"])): float(row["projection"])
+            for row in rows
+            if row.get("projection") is not None
+        }
 
     # ------------------------------------------------------------------
     # Scenario / what-if re-projection (for /scenario)
@@ -588,9 +679,10 @@ class ProjectionService:
     def _load_projection_row(
         self, player_id: str, week: int, season: int, stat: str
     ) -> Optional[dict]:
-        """Load the most recent projection row for (player_id, week, season, stat)."""
+        """Load the most recent approved projection row for (player_id, week, season, stat)."""
         import psycopg2
 
+        approved = list(load_approved_pipeline_run_ids())
         try:
             conn = psycopg2.connect(self._db_url)
             cur = conn.cursor()
@@ -599,13 +691,15 @@ class ProjectionService:
                 SELECT projection, floor, ceiling,
                        boom_probability, bust_probability,
                        fantasy_projection, fantasy_floor, fantasy_ceiling,
-                       posterior_samples, pipeline_run_id, position, created_at
+                       posterior_samples, pipeline_run_id, position, created_at,
+                       interval_method
                 FROM   projections
                 WHERE  player_id = %s AND week = %s AND season = %s AND stat = %s
+                  AND  pipeline_run_id = ANY(%s)
                 ORDER BY created_at DESC
                 LIMIT  1
                 """,
-                [player_id, week, season, stat],
+                [player_id, week, season, stat, approved],
             )
             row = cur.fetchone()
             cols = [d[0] for d in cur.description]
@@ -747,12 +841,13 @@ def _opt(v) -> Optional[float]:
 
 
 def _interval_method(row: dict) -> str:
-    """Only label intervals as percentiles when backed by real posterior draws."""
+    """Honor a stored conformal method; otherwise require real posterior draws."""
+    stored = row.get("interval_method")
+    if isinstance(stored, str) and stored.strip() and stored.strip() != "unavailable":
+        return stored.strip()
     samples = row.get("posterior_samples")
     if isinstance(samples, str):
-        # psycopg2 normally decodes JSONB, but a JSON string is still usable.
         try:
-            import json
             samples = json.loads(samples)
         except (TypeError, ValueError):
             samples = None
@@ -760,8 +855,18 @@ def _interval_method(row: dict) -> str:
 
 
 def _interval_value(row: dict, field: str) -> Optional[float]:
-    """Never expose legacy residual bands as p10/p90 values."""
-    return _opt(row.get(field)) if _interval_method(row) == "posterior_samples" else None
+    """Expose floor/ceiling only when a recognized interval method backs them."""
+    method = _interval_method(row)
+    if method not in _CONFORMAL_METHODS:
+        return None
+    value = _opt(row.get(field))
+    if value is None:
+        return None
+    if field in {"floor", "fantasy_floor"}:
+        position = str(row.get("position") or "").upper()
+        if position and position != "QB":
+            value = max(0.0, value)
+    return value
 
 
 def _confidence(kalman_variance: Optional[float]) -> Optional[float]:

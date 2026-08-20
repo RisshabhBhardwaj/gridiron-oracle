@@ -25,9 +25,9 @@ export interface StatProjection {
 }
 
 export interface Percentiles {
-  p10: number
+  p10: number | null
   p50: number
-  p90: number
+  p90: number | null
 }
 
 export interface SHAPFactor {
@@ -45,6 +45,10 @@ export interface PredictResponse {
   stat: string
   projection: StatProjection
   percentiles: Percentiles
+  interval_method: string
+  served_learner: string
+  degraded: boolean
+  pipeline_run_id: string | null
   confidence_score: number | null
   kalman_ability_estimate: number | null
   kalman_uncertainty: number | null
@@ -63,8 +67,12 @@ export interface WeekPlayerProjection {
   team: string | null
   stat: string
   projection: number
-  floor: number
-  ceiling: number
+  floor: number | null
+  ceiling: number | null
+  interval_method: string
+  served_learner: string
+  degraded: boolean
+  pipeline_run_id: string | null
   p5: number | null
   p25: number | null
   p75: number | null
@@ -103,6 +111,9 @@ export interface SeasonPlayerProjection {
   rushing_yards: SeasonStatProjection | null
   receiving_yards: SeasonStatProjection | null
   fantasy_ppr: SeasonStatProjection | null
+  degraded: boolean
+  interval_method: string
+  p_active: number | null
 }
 
 export interface SeasonProjectionsResponse {

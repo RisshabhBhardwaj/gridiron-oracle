@@ -1,11 +1,20 @@
 interface PercentileFanProps {
-  p10: number
+  p10: number | null
   p50: number
-  p90: number
+  p90: number | null
   label?: string
 }
 
 export function PercentileFan({ p10, p50, p90, label }: PercentileFanProps) {
+  if (p10 == null || p90 == null) {
+    return (
+      <div className="flex flex-col gap-2">
+        {label && <span className="section-label">{label}</span>}
+        <p className="text-sm text-oracle-muted">No interval — conformal bounds unavailable for this row.</p>
+        <p className="font-display text-3xl text-oracle-white">{p50.toFixed(1)}</p>
+      </div>
+    )
+  }
   const range      = p90 - p10
   const totalWidth = range > 0 ? range : 1
   const medianPct  = range > 0 ? ((p50 - p10) / range) * 100 : 50

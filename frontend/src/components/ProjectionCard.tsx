@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 interface ProjectionCardProps {
   label: string
-  value: number
+  value: number | null
   unit?: string
   colorClass?: string
   subtext?: string
@@ -55,9 +55,10 @@ function useCountUp(target: number, duration = 600): number {
 }
 
 export function ProjectionCard({ label, value, unit, colorClass = 'text-oracle-blue', subtext }: ProjectionCardProps) {
-  const animated = useCountUp(value)
+  const animated = useCountUp(value ?? 0)
   const glow = GLOW_COLORS[colorClass as ColorKey] ?? 'rgba(0,194,255,0.3)'
   const hex  = HEX_COLORS[colorClass as ColorKey]  ?? '#00C2FF'
+  const display = value == null ? '—' : animated.toFixed(animated >= 10 ? 1 : 1)
 
   return (
     <div
@@ -80,7 +81,7 @@ export function ProjectionCard({ label, value, unit, colorClass = 'text-oracle-b
           className="font-display text-4xl leading-none transition-all"
           style={{ color: hex, textShadow: `0 0 20px ${glow}` }}
         >
-          {animated.toFixed(animated >= 10 ? 1 : 1)}
+          {value == null ? '—' : display}
         </span>
         {unit && (
           <span className="text-xs font-medium" style={{ color: `${hex}80` }}>

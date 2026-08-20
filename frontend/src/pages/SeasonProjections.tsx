@@ -38,8 +38,8 @@ function PlayerCard({ row, onClick, statKey, style }: PlayerCardProps) {
   
   const statData = row[statKey]
   const projection = statData?.mean ?? 0
-  const floor = statData?.p10 ?? 0
-  const ceiling = statData?.p90 ?? 0
+  const floor = statData?.p10 ?? null
+  const ceiling = statData?.p90 ?? null
 
   if (!statData) return null
 
@@ -101,9 +101,9 @@ function PlayerCard({ row, onClick, statKey, style }: PlayerCardProps) {
           />
         </div>
         <div className="flex justify-between text-[10px] font-mono">
-          <span style={{ color: '#FF3B5C' }}>{floor.toFixed(0)}</span>
+          <span style={{ color: '#FF3B5C' }}>{floor == null ? '—' : floor.toFixed(0)}</span>
           <span className="text-oracle-muted">range (p10/p90)</span>
-          <span style={{ color: '#00FFA3' }}>{ceiling.toFixed(0)}</span>
+          <span style={{ color: '#00FFA3' }}>{ceiling == null ? '—' : ceiling.toFixed(0)}</span>
         </div>
       </div>
     </div>

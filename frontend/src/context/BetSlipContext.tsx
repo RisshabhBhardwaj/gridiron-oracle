@@ -15,8 +15,8 @@ export interface BetSlipLeg {
   week: number
   season: number
   our_projection: number   // our model's median (p50)
-  floor: number            // p10
-  ceiling: number          // p90
+  floor: number | null     // p10 when an interval method exists
+  ceiling: number | null   // p90 when an interval method exists
   book_line: number | null // sportsbook line (null if no odds loaded)
   boom_probability: number | null
   bust_probability: number | null
