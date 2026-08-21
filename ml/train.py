@@ -1279,7 +1279,14 @@ class PipelineRunner:
                     _float_or_none(row.get("fantasy_projection")),
                     _float_or_none(row.get("fantasy_floor")),
                     _float_or_none(row.get("fantasy_ceiling")),
-                    self._run_id or row.get("pipeline_run_id") or self._pipeline_run_id,
+                    # self._run_id is the MLflow tracking run id -- a different
+                    # identifier than the pipeline_run_id every caller (forecast_runs,
+                    # projection_policy.approved_pipeline_run_ids, this row's own
+                    # "pipeline_run_id" column) actually keys off. It used to be
+                    # tried first, so every written row silently carried the MLflow
+                    # id instead, and nothing that later "approved" the reported
+                    # pipeline_run_id ever matched a row here.
+                    row.get("pipeline_run_id") or self._pipeline_run_id or self._run_id,
                     samples_json,
                     int(max_train_season),
                 ))
