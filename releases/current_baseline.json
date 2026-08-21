@@ -104,14 +104,14 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-08-21T22:19:33.307415+00:00",
+  "created_at": "2026-08-21T22:44:34.963817+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
     "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
   },
   "git_branch": "main",
-  "git_commit": "80ce0cedefb14b33aca590772efd2856e1fa4b58",
+  "git_commit": "554ca2e4032230bde64699abff75661e6d0e9c2f",
   "git_dirty": false,
   "integrity": {
     "artifact_mode_ready": false,
@@ -124,11 +124,11 @@
         "status": "ok"
       },
       "baseline_manifest": {
-        "detail": "Baseline manifest was frozen from a dirty worktree",
+        "detail": "Baseline manifest commit is an ancestor of HEAD, but HEAD changes non-evidence paths since that commit: ['REAUDIT_2026-08-11.md', 'backend/app/api/predict.py', 'backend/app/services/projection.py']",
         "observed": {
-          "created_at": "2026-08-21T22:14:17.405570+00:00",
-          "git_commit": "291d103e4250a62588902cc23eab1e3ba85fd7d0",
-          "head": "80ce0cedefb14b33aca590772efd2856e1fa4b58",
+          "created_at": "2026-08-21T22:19:33.307415+00:00",
+          "git_commit": "80ce0cedefb14b33aca590772efd2856e1fa4b58",
+          "head": "554ca2e4032230bde64699abff75661e6d0e9c2f",
           "model_version": "latest",
           "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
           "worktree_dirty": false
@@ -142,7 +142,7 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 0.83,
+          "age_hours": 1.25,
           "computed_at": "2026-08-21T21:29:40.956683+00:00",
           "season": 2026,
           "week": 1
@@ -171,7 +171,7 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-08-21T22:19:33.307375+00:00",
+    "generated_at": "2026-08-21T22:44:34.963770+00:00",
     "model_version": "latest",
     "overall_status": "blocked",
     "product_mode": "artifact_backed"
@@ -181,7 +181,7 @@
   "product_mode": "artifact_backed",
   "projection_policy": {
     "approved_pipeline_run_ids": [
-      "stack_materialize_20260821T221854Z",
+      "stack_materialize_20260821T224356Z",
       "pipeline_35e6987b682d4a24a6f0aeb0922055ef"
     ],
     "require_interval_columns": true,
