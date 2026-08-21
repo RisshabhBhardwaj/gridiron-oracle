@@ -5,15 +5,27 @@
 
 const BASE_URL = '/api'
 
+/** Structured `detail` payload shape used by "expected empty state" responses,
+ * e.g. /predict's 404 when no approved forecast exists for a player/week/season. */
+export interface StructuredErrorDetail {
+  forecast_available?: boolean
+  message?: string
+  [key: string]: unknown
+}
+
 export class ApiError extends Error {
   status: number
   detail: string
+  /** Present when the backend returned a JSON object (not a string) for `detail`.
+   * Callers that only read `.detail`/`.message` are unaffected. */
+  structuredDetail?: StructuredErrorDetail
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, structuredDetail?: StructuredErrorDetail) {
     super(detail)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
+    this.structuredDetail = structuredDetail
   }
 }
 
@@ -38,15 +50,21 @@ async function request<T>(
 
   if (!response.ok) {
     let detail = `HTTP ${response.status}`
+    let structuredDetail: StructuredErrorDetail | undefined
     try {
-      const errorJson = (await response.json()) as { detail?: string }
+      const errorJson = (await response.json()) as { detail?: string | StructuredErrorDetail }
       if (typeof errorJson.detail === 'string') {
         detail = errorJson.detail
+      } else if (errorJson.detail && typeof errorJson.detail === 'object') {
+        structuredDetail = errorJson.detail
+        if (typeof structuredDetail.message === 'string') {
+          detail = structuredDetail.message
+        }
       }
     } catch {
       // ignore parse error — use fallback message
     }
-    throw new ApiError(response.status, detail)
+    throw new ApiError(response.status, detail, structuredDetail)
   }
 
   return response.json() as Promise<T>

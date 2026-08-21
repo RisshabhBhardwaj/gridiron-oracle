@@ -11,10 +11,12 @@ import { useOdds, findPlayerLine } from '@/hooks/useOdds'
 import { calcEdge, useBetSlip } from '@/context/BetSlipContext'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
+import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { useSeasonProjections } from '@/hooks/useSeasonProjections'
 import { STATS, STAT_LABELS } from '@/lib/constants'
 import { useSearch } from '@/context/SearchContext'
+import { ApiError } from '@/lib/api-client'
 
 const POS_COLORS: Record<string, string> = {
   WR: '#00C2FF', RB: '#00FFA3', TE: '#A855F7', QB: '#FFB800',
@@ -196,9 +198,13 @@ export function PlayerDetail() {
         </div>
       )}
 
-      {/* Error */}
+      {/* Error — distinguish the honest "no forecast yet" 404 from a real failure */}
       {predictError && predictErr && (
-        <ErrorBanner error={predictErr} onRetry={() => void predictRefetch()} />
+        predictErr instanceof ApiError && predictErr.status === 404 && predictErr.structuredDetail?.forecast_available === false ? (
+          <NoForecastBanner message={predictErr.structuredDetail.message as string | undefined} />
+        ) : (
+          <ErrorBanner error={predictErr} onRetry={() => void predictRefetch()} />
+        )
       )}
 
       {/* Content */}
