@@ -1,0 +1,17 @@
+{
+  "coefficient_dir": "releases/candidates/causal_20260821_fixed",
+  "corr_serving_vs_oof": 0.982790425255133,
+  "intercept": 0.0,
+  "interpretation": "The served final Ridge fit is trained on all causal base OOF rows, while y_pred is walk-forward meta-OOF. Non-zero divergence is expected and is release evidence, not a pass-by-copy.",
+  "learner_order": [
+    "lgbm",
+    "catboost"
+  ],
+  "mae_serving_vs_oof": 0.616966448952595,
+  "max_abs_serving_vs_oof": 6.2721746168274635,
+  "mean_serving_minus_oof": 0.06638270748985266,
+  "n_compared": 9717,
+  "oof": "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+  "position": "WR",
+  "stat": "fantasy_ppr"
+}

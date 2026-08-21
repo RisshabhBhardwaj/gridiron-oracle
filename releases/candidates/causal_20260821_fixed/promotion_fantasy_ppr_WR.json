@@ -1,0 +1,14 @@
+{
+  "candidate": "ridge_stack",
+  "candidate_mae": 4.972219144898942,
+  "incumbent_mae": 4.957019336079981,
+  "position": "WR",
+  "promotable": false,
+  "reason": "held-out improvement -0.31% does not exceed 0.00%",
+  "selected_learner": "catboost",
+  "selected_mae": 4.957019336079981,
+  "selection_mode": "validated_best_base",
+  "serving_approved": true,
+  "serving_reason": "ridge stack was not promoted; retained the causally validated best base learner",
+  "target": "fantasy_ppr"
+}

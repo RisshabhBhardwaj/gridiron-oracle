@@ -1,0 +1,14 @@
+{
+  "candidate": "ridge_stack",
+  "candidate_mae": 12.404004504168709,
+  "incumbent_mae": 12.466403900613331,
+  "position": "QB",
+  "promotable": true,
+  "reason": "held-out improvement 0.50% exceeds 0.00%",
+  "selected_learner": null,
+  "selected_mae": 12.404004504168709,
+  "selection_mode": "ridge_stack",
+  "serving_approved": true,
+  "serving_reason": "ridge stack strictly improved the held-out incumbent",
+  "target": "rushing_yards"
+}

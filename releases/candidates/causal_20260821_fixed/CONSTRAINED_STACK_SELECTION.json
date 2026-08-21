@@ -1,0 +1,531 @@
+{
+  "created_at": "2026-08-21T21:16:04.592655+00:00",
+  "decisions": {
+    "carries:RB": {
+      "before": [
+        {
+          "baseline_mae": 4.334843824890869,
+          "candidate_mae": 4.313352800309154,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 4.071586320364146,
+          "candidate_mae": 3.988782820949888,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 3.973463944238689,
+          "candidate_mae": 3.8802244611440293,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 3.867401323155789,
+          "candidate_mae": 3.846374648474166,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 3.9576681325014635,
+          "candidate_mae": 3.8905600426056925,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "fantasy_ppr:QB": {
+      "before": [
+        {
+          "baseline_mae": 6.403328074028056,
+          "candidate_mae": 6.35328144882894,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 5.756281101636195,
+          "candidate_mae": 5.817626070394455,
+          "ok": false,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 6.006075634791066,
+          "candidate_mae": 6.02096726557938,
+          "ok": false,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 6.384360041749214,
+          "candidate_mae": 6.274423532811474,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 6.583516490412808,
+          "candidate_mae": 6.619813369711676,
+          "ok": false,
+          "season": 2025
+        }
+      ],
+      "selection": "lgbm_identity"
+    },
+    "fantasy_ppr:RB": {
+      "before": [
+        {
+          "baseline_mae": 5.68345374261025,
+          "candidate_mae": 5.6395556933903155,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 5.290842994611905,
+          "candidate_mae": 5.205077483279273,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 5.045155151052256,
+          "candidate_mae": 4.936187402094809,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 4.914056345949287,
+          "candidate_mae": 4.8806064532138835,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 5.488839877524077,
+          "candidate_mae": 5.4369150912709845,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "fantasy_ppr:TE": {
+      "before": [
+        {
+          "baseline_mae": 4.029208979281678,
+          "candidate_mae": 3.8936002300881714,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 3.719128873399917,
+          "candidate_mae": 3.6809918313094516,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 3.6223483461045416,
+          "candidate_mae": 3.6509722473491455,
+          "ok": false,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 3.7824040420436327,
+          "candidate_mae": 3.7173531590468594,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 3.7904545538260686,
+          "candidate_mae": 3.751060534226875,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "fantasy_ppr:WR": {
+      "before": [
+        {
+          "baseline_mae": 5.188749875670465,
+          "candidate_mae": 5.185343652918733,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 5.086802771837356,
+          "candidate_mae": 5.044969515219991,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 4.841601593636548,
+          "candidate_mae": 4.846897993494278,
+          "ok": false,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 4.982431033063143,
+          "candidate_mae": 4.9518208905547825,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 4.815173226699921,
+          "candidate_mae": 4.763145450158547,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "pass_attempts:QB": {
+      "before": [
+        {
+          "baseline_mae": 7.450109225019374,
+          "candidate_mae": 7.371289778992391,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 7.5299081342661625,
+          "candidate_mae": 7.381951024264787,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 7.327973209504082,
+          "candidate_mae": 7.426323375085136,
+          "ok": false,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 7.659207449889433,
+          "candidate_mae": 7.723287251733685,
+          "ok": false,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 7.436014037195573,
+          "candidate_mae": 7.458748203608803,
+          "ok": false,
+          "season": 2025
+        }
+      ],
+      "selection": "lgbm_identity"
+    },
+    "passing_yards:QB": {
+      "before": [
+        {
+          "baseline_mae": 62.7213814660607,
+          "candidate_mae": 62.695429286508364,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 60.29589420322347,
+          "candidate_mae": 59.36910943612,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 63.90992199838201,
+          "candidate_mae": 63.08340276992313,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 64.19610836971934,
+          "candidate_mae": 63.724915760806354,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 63.00383373497572,
+          "candidate_mae": 63.34750710054474,
+          "ok": false,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "receiving_yards:RB": {
+      "before": [
+        {
+          "baseline_mae": 12.876043240061355,
+          "candidate_mae": 12.756455590400154,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 10.85744203137757,
+          "candidate_mae": 10.689646887521715,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 11.345918263310262,
+          "candidate_mae": 11.256108037517206,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 10.066600724798425,
+          "candidate_mae": 10.010814245852922,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 11.156553197405175,
+          "candidate_mae": 11.091162727262,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "receiving_yards:TE": {
+      "before": [
+        {
+          "baseline_mae": 17.27599609945779,
+          "candidate_mae": 17.40227658572117,
+          "ok": false,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 15.943417794422512,
+          "candidate_mae": 15.775996819076184,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 15.67382437849692,
+          "candidate_mae": 15.426573073019853,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 16.165802610086928,
+          "candidate_mae": 15.992580595936273,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 15.783532194977898,
+          "candidate_mae": 15.595426833251553,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "receiving_yards:WR": {
+      "before": [
+        {
+          "baseline_mae": 24.198180462250534,
+          "candidate_mae": 24.19218905300321,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 24.194210147503675,
+          "candidate_mae": 23.625761799718514,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 23.70507524542294,
+          "candidate_mae": 23.147680582573877,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 23.42089137671343,
+          "candidate_mae": 22.936733531763764,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 22.58497452905592,
+          "candidate_mae": 22.439068961006924,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "rushing_yards:QB": {
+      "before": [
+        {
+          "baseline_mae": 12.09437281994888,
+          "candidate_mae": 11.552930813275433,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 12.9462703610493,
+          "candidate_mae": 12.820574666251767,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 12.359695952966709,
+          "candidate_mae": 12.30312326662642,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 13.167758059852478,
+          "candidate_mae": 13.332246111375976,
+          "ok": false,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 12.23106608591907,
+          "candidate_mae": 12.011147663313958,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "rushing_yards:RB": {
+      "before": [
+        {
+          "baseline_mae": 24.075412058413665,
+          "candidate_mae": 23.855934179040393,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 24.012175888757476,
+          "candidate_mae": 23.62868949685391,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 22.612577399323428,
+          "candidate_mae": 22.039536537057806,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 22.554150190748803,
+          "candidate_mae": 22.61957400251192,
+          "ok": false,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 24.434209390515132,
+          "candidate_mae": 23.946021305965818,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "targets:RB": {
+      "before": [
+        {
+          "baseline_mae": 1.3949967520696382,
+          "candidate_mae": 1.420634119087671,
+          "ok": false,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 1.3033563823396412,
+          "candidate_mae": 1.3010375159183878,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 1.3407085400503638,
+          "candidate_mae": 1.3112488201634656,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 1.099104449447835,
+          "candidate_mae": 1.082260762795373,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 1.213692745457952,
+          "candidate_mae": 1.1955377646203666,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "lgbm_identity"
+    },
+    "targets:TE": {
+      "before": [
+        {
+          "baseline_mae": 1.5918648849684534,
+          "candidate_mae": 1.5322595591153922,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 1.5108096248869036,
+          "candidate_mae": 1.5062456085717977,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 1.5613490465510347,
+          "candidate_mae": 1.5181231028322701,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 1.660292074365643,
+          "candidate_mae": 1.6368650191188197,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 1.494485804792915,
+          "candidate_mae": 1.476531913810275,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    },
+    "targets:WR": {
+      "before": [
+        {
+          "baseline_mae": 2.144925929487561,
+          "candidate_mae": 2.143075273141824,
+          "ok": true,
+          "season": 2021
+        },
+        {
+          "baseline_mae": 2.0768245710880113,
+          "candidate_mae": 2.0674558343779657,
+          "ok": true,
+          "season": 2022
+        },
+        {
+          "baseline_mae": 1.9449563876586078,
+          "candidate_mae": 1.9355954421502966,
+          "ok": true,
+          "season": 2023
+        },
+        {
+          "baseline_mae": 2.0118061533144416,
+          "candidate_mae": 2.0018681194714185,
+          "ok": true,
+          "season": 2024
+        },
+        {
+          "baseline_mae": 1.9170608437729513,
+          "candidate_mae": 1.9032952552326208,
+          "ok": true,
+          "season": 2025
+        }
+      ],
+      "selection": "ridge_stack"
+    }
+  },
+  "policy": "mean_mae_with_variance_penalty_vs_walkforward_lgbm"
+}

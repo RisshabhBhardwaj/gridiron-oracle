@@ -1,0 +1,1882 @@
+{
+  "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+  "n_gates": 75,
+  "n_passed": 75,
+  "reports": [
+    {
+      "created_at": "2026-08-21T21:00:28.890423+00:00",
+      "holdout_season": 2021,
+      "position": "RB",
+      "target": "carries",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_carries_RB_ed6e0a28.csv",
+      "candidate_mae": 4.313352800309154,
+      "oof_mae": 4.313352800309154,
+      "baseline_mae": 4.442224276497762,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 4.442224276497762,
+          "candidate_mae": 4.313352800309154,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+          "candidate_oof_sha256": "dca95e7af8e08f57a9913ab2669c84137acdc25e2d1b4ab2af8d1ff3aae27fd9",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:29.412280+00:00",
+      "holdout_season": 2022,
+      "position": "RB",
+      "target": "carries",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_carries_RB_ed6e0a28.csv",
+      "candidate_mae": 3.988782820949888,
+      "oof_mae": 3.988782820949888,
+      "baseline_mae": 4.123734157523606,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 4.123734157523606,
+          "candidate_mae": 3.988782820949888,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+          "candidate_oof_sha256": "dca95e7af8e08f57a9913ab2669c84137acdc25e2d1b4ab2af8d1ff3aae27fd9",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:30.031793+00:00",
+      "holdout_season": 2023,
+      "position": "RB",
+      "target": "carries",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_carries_RB_ed6e0a28.csv",
+      "candidate_mae": 3.8802244611440293,
+      "oof_mae": 3.8802244611440293,
+      "baseline_mae": 3.9546089943211054,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 3.9546089943211054,
+          "candidate_mae": 3.8802244611440293,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+          "candidate_oof_sha256": "dca95e7af8e08f57a9913ab2669c84137acdc25e2d1b4ab2af8d1ff3aae27fd9",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:30.677561+00:00",
+      "holdout_season": 2024,
+      "position": "RB",
+      "target": "carries",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_carries_RB_ed6e0a28.csv",
+      "candidate_mae": 3.846374648474166,
+      "oof_mae": 3.846374648474166,
+      "baseline_mae": 4.012568420769343,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 4.012568420769343,
+          "candidate_mae": 3.846374648474166,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+          "candidate_oof_sha256": "dca95e7af8e08f57a9913ab2669c84137acdc25e2d1b4ab2af8d1ff3aae27fd9",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:31.522011+00:00",
+      "holdout_season": 2025,
+      "position": "RB",
+      "target": "carries",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_carries_RB_ed6e0a28.csv",
+      "candidate_mae": 3.8905600426056925,
+      "oof_mae": 3.8905600426056925,
+      "baseline_mae": 3.943890801427372,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 3.943890801427372,
+          "candidate_mae": 3.8905600426056925,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "3ffd7bc240038ea7778b119fae01e61531226dbce2f07068ce82592f47199427",
+          "candidate_oof_sha256": "dca95e7af8e08f57a9913ab2669c84137acdc25e2d1b4ab2af8d1ff3aae27fd9",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:32.130323+00:00",
+      "holdout_season": 2021,
+      "position": "QB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv",
+      "candidate_mae": 6.35328144882894,
+      "oof_mae": 6.35328144882894,
+      "baseline_mae": 6.48355049407846,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 6.48355049407846,
+          "candidate_mae": 6.35328144882894,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+          "candidate_oof_sha256": "e776c4fe0a71af2525ba851081e859e6878cf6342c8fa8a18ab3389f9e84cf41",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:32.698517+00:00",
+      "holdout_season": 2022,
+      "position": "QB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv",
+      "candidate_mae": 5.817626070394455,
+      "oof_mae": 5.817626070394455,
+      "baseline_mae": 5.974001405269073,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.974001405269073,
+          "candidate_mae": 5.817626070394455,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+          "candidate_oof_sha256": "e776c4fe0a71af2525ba851081e859e6878cf6342c8fa8a18ab3389f9e84cf41",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:33.186476+00:00",
+      "holdout_season": 2023,
+      "position": "QB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv",
+      "candidate_mae": 6.02096726557938,
+      "oof_mae": 6.02096726557938,
+      "baseline_mae": 6.138966570155888,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 6.138966570155888,
+          "candidate_mae": 6.02096726557938,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+          "candidate_oof_sha256": "e776c4fe0a71af2525ba851081e859e6878cf6342c8fa8a18ab3389f9e84cf41",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:33.829247+00:00",
+      "holdout_season": 2024,
+      "position": "QB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv",
+      "candidate_mae": 6.274423532811474,
+      "oof_mae": 6.274423532811474,
+      "baseline_mae": 6.304421334265427,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 6.304421334265427,
+          "candidate_mae": 6.274423532811474,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+          "candidate_oof_sha256": "e776c4fe0a71af2525ba851081e859e6878cf6342c8fa8a18ab3389f9e84cf41",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:34.369376+00:00",
+      "holdout_season": 2025,
+      "position": "QB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv",
+      "candidate_mae": 6.619813369711676,
+      "oof_mae": 6.619813369711676,
+      "baseline_mae": 6.67655383054195,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 6.67655383054195,
+          "candidate_mae": 6.619813369711676,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "11b960b85fd09dda0ed81fdba24f5b317f98672f7257d60333829c29ce3a2990",
+          "candidate_oof_sha256": "e776c4fe0a71af2525ba851081e859e6878cf6342c8fa8a18ab3389f9e84cf41",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:34.889183+00:00",
+      "holdout_season": 2021,
+      "position": "RB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv",
+      "candidate_mae": 5.6395556933903155,
+      "oof_mae": 5.6395556933903155,
+      "baseline_mae": 5.995369654498193,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.995369654498193,
+          "candidate_mae": 5.6395556933903155,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+          "candidate_oof_sha256": "65c4daf7ec88e5a9e5774b07e65f49f6ba8dea0265334019e4eb880b56c5e3c2",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:35.375289+00:00",
+      "holdout_season": 2022,
+      "position": "RB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv",
+      "candidate_mae": 5.205077483279273,
+      "oof_mae": 5.205077483279273,
+      "baseline_mae": 5.531323615649228,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.531323615649228,
+          "candidate_mae": 5.205077483279273,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+          "candidate_oof_sha256": "65c4daf7ec88e5a9e5774b07e65f49f6ba8dea0265334019e4eb880b56c5e3c2",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:35.861886+00:00",
+      "holdout_season": 2023,
+      "position": "RB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv",
+      "candidate_mae": 4.936187402094809,
+      "oof_mae": 4.936187402094809,
+      "baseline_mae": 5.19203420133073,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.19203420133073,
+          "candidate_mae": 4.936187402094809,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+          "candidate_oof_sha256": "65c4daf7ec88e5a9e5774b07e65f49f6ba8dea0265334019e4eb880b56c5e3c2",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:36.440281+00:00",
+      "holdout_season": 2024,
+      "position": "RB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv",
+      "candidate_mae": 4.8806064532138835,
+      "oof_mae": 4.8806064532138835,
+      "baseline_mae": 5.21165138633096,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.21165138633096,
+          "candidate_mae": 4.8806064532138835,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+          "candidate_oof_sha256": "65c4daf7ec88e5a9e5774b07e65f49f6ba8dea0265334019e4eb880b56c5e3c2",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:36.928562+00:00",
+      "holdout_season": 2025,
+      "position": "RB",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv",
+      "candidate_mae": 5.4369150912709845,
+      "oof_mae": 5.4369150912709845,
+      "baseline_mae": 5.665057399053677,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.665057399053677,
+          "candidate_mae": 5.4369150912709845,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f231b143471164798a20e2901a9c9a1e16bb412aeac83a1d22b636e99d7510eb",
+          "candidate_oof_sha256": "65c4daf7ec88e5a9e5774b07e65f49f6ba8dea0265334019e4eb880b56c5e3c2",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:37.405859+00:00",
+      "holdout_season": 2021,
+      "position": "TE",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+      "candidate_mae": 3.8936002300881714,
+      "oof_mae": 3.8936002300881714,
+      "baseline_mae": 4.174325540113038,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 4.174325540113038,
+          "candidate_mae": 3.8936002300881714,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+          "candidate_oof_sha256": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:37.850814+00:00",
+      "holdout_season": 2022,
+      "position": "TE",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+      "candidate_mae": 3.6809918313094516,
+      "oof_mae": 3.6809918313094516,
+      "baseline_mae": 3.9726216664475404,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 3.9726216664475404,
+          "candidate_mae": 3.6809918313094516,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+          "candidate_oof_sha256": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:38.304448+00:00",
+      "holdout_season": 2023,
+      "position": "TE",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+      "candidate_mae": 3.6509722473491455,
+      "oof_mae": 3.6509722473491455,
+      "baseline_mae": 3.816827431550095,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 3.816827431550095,
+          "candidate_mae": 3.6509722473491455,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+          "candidate_oof_sha256": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:38.763260+00:00",
+      "holdout_season": 2024,
+      "position": "TE",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+      "candidate_mae": 3.7173531590468594,
+      "oof_mae": 3.7173531590468594,
+      "baseline_mae": 3.8749813889675444,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 3.8749813889675444,
+          "candidate_mae": 3.7173531590468594,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+          "candidate_oof_sha256": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:39.218961+00:00",
+      "holdout_season": 2025,
+      "position": "TE",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+      "candidate_mae": 3.751060534226875,
+      "oof_mae": 3.751060534226875,
+      "baseline_mae": 3.864239794364283,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 3.864239794364283,
+          "candidate_mae": 3.751060534226875,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+          "candidate_oof_sha256": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:39.756509+00:00",
+      "holdout_season": 2021,
+      "position": "WR",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+      "candidate_mae": 5.185343652918733,
+      "oof_mae": 5.185343652918733,
+      "baseline_mae": 5.229014841782754,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.229014841782754,
+          "candidate_mae": 5.185343652918733,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+          "candidate_oof_sha256": "0bd82815753c94bf15fbe46af18261222fdb8aa449c4038bb7756543ff10f879",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:40.343798+00:00",
+      "holdout_season": 2022,
+      "position": "WR",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+      "candidate_mae": 5.044969515219991,
+      "oof_mae": 5.044969515219991,
+      "baseline_mae": 5.1876843149881315,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.1876843149881315,
+          "candidate_mae": 5.044969515219991,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+          "candidate_oof_sha256": "0bd82815753c94bf15fbe46af18261222fdb8aa449c4038bb7756543ff10f879",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:40.895055+00:00",
+      "holdout_season": 2023,
+      "position": "WR",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+      "candidate_mae": 4.846897993494278,
+      "oof_mae": 4.846897993494278,
+      "baseline_mae": 4.951829854116755,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 4.951829854116755,
+          "candidate_mae": 4.846897993494278,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+          "candidate_oof_sha256": "0bd82815753c94bf15fbe46af18261222fdb8aa449c4038bb7756543ff10f879",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:41.354469+00:00",
+      "holdout_season": 2024,
+      "position": "WR",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+      "candidate_mae": 4.9518208905547825,
+      "oof_mae": 4.9518208905547825,
+      "baseline_mae": 5.1772777458861405,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 5.1772777458861405,
+          "candidate_mae": 4.9518208905547825,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+          "candidate_oof_sha256": "0bd82815753c94bf15fbe46af18261222fdb8aa449c4038bb7756543ff10f879",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:41.818277+00:00",
+      "holdout_season": 2025,
+      "position": "WR",
+      "target": "fantasy_ppr",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+      "candidate_mae": 4.763145450158547,
+      "oof_mae": 4.763145450158547,
+      "baseline_mae": 4.9794476153884695,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 4.9794476153884695,
+          "candidate_mae": 4.763145450158547,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f9a60968b08ba31b691214bc58fa490d3559222530c4657adbd4614ec9054b5c",
+          "candidate_oof_sha256": "0bd82815753c94bf15fbe46af18261222fdb8aa449c4038bb7756543ff10f879",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:42.269084+00:00",
+      "holdout_season": 2021,
+      "position": "QB",
+      "target": "pass_attempts",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv",
+      "candidate_mae": 7.371289778992391,
+      "oof_mae": 7.371289778992391,
+      "baseline_mae": 7.536759932707311,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 7.536759932707311,
+          "candidate_mae": 7.371289778992391,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+          "candidate_oof_sha256": "4a860d9a7f274e5aaf3f0879b853d05198e73dbc24407e4ee5b71249a6adaea3",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:42.714886+00:00",
+      "holdout_season": 2022,
+      "position": "QB",
+      "target": "pass_attempts",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv",
+      "candidate_mae": 7.381951024264787,
+      "oof_mae": 7.381951024264787,
+      "baseline_mae": 7.652445737178004,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 7.652445737178004,
+          "candidate_mae": 7.381951024264787,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+          "candidate_oof_sha256": "4a860d9a7f274e5aaf3f0879b853d05198e73dbc24407e4ee5b71249a6adaea3",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:13:55.002010+00:00",
+      "holdout_season": 2023,
+      "position": "QB",
+      "target": "pass_attempts",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv",
+      "candidate_mae": 7.426323375085136,
+      "oof_mae": 7.426323375085136,
+      "baseline_mae": 7.417801562307447,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": "Risshabh \u2014 accepted, <1% QB noise post PBP-pipeline fix, 2026-08-21",
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 7.417801562307447,
+          "candidate_mae": 7.426323375085136,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+          "candidate_oof_sha256": "4a860d9a7f274e5aaf3f0879b853d05198e73dbc24407e4ee5b71249a6adaea3",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:13:55.472630+00:00",
+      "holdout_season": 2024,
+      "position": "QB",
+      "target": "pass_attempts",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv",
+      "candidate_mae": 7.723287251733685,
+      "oof_mae": 7.723287251733685,
+      "baseline_mae": 7.678169572989606,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": "Risshabh \u2014 accepted, <1% QB noise post PBP-pipeline fix, 2026-08-21",
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 7.678169572989606,
+          "candidate_mae": 7.723287251733685,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+          "candidate_oof_sha256": "4a860d9a7f274e5aaf3f0879b853d05198e73dbc24407e4ee5b71249a6adaea3",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:44.089102+00:00",
+      "holdout_season": 2025,
+      "position": "QB",
+      "target": "pass_attempts",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv",
+      "candidate_mae": 7.458748203608803,
+      "oof_mae": 7.458748203608803,
+      "baseline_mae": 7.762801831996492,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 7.762801831996492,
+          "candidate_mae": 7.458748203608803,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "a2b4732e20ac250fcc341464248fc179de4dd8c4172e5b926e47b6f1c4364b68",
+          "candidate_oof_sha256": "4a860d9a7f274e5aaf3f0879b853d05198e73dbc24407e4ee5b71249a6adaea3",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:13:55.935036+00:00",
+      "holdout_season": 2021,
+      "position": "QB",
+      "target": "passing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_passing_yards_QB_f55981d1.csv",
+      "candidate_mae": 62.695429286508364,
+      "oof_mae": 62.695429286508364,
+      "baseline_mae": 62.498071798918204,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": "Risshabh \u2014 accepted, <1% QB noise post PBP-pipeline fix, 2026-08-21",
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 62.498071798918204,
+          "candidate_mae": 62.695429286508364,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+          "candidate_oof_sha256": "6defdb561deea33ec5f96ceadfb7d6fc4d00d22649123eb02b97885d06f3ef95",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:45.061471+00:00",
+      "holdout_season": 2022,
+      "position": "QB",
+      "target": "passing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_passing_yards_QB_f55981d1.csv",
+      "candidate_mae": 59.36910943612,
+      "oof_mae": 59.36910943612,
+      "baseline_mae": 60.82236844898833,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 60.82236844898833,
+          "candidate_mae": 59.36910943612,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+          "candidate_oof_sha256": "6defdb561deea33ec5f96ceadfb7d6fc4d00d22649123eb02b97885d06f3ef95",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:45.498922+00:00",
+      "holdout_season": 2023,
+      "position": "QB",
+      "target": "passing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_passing_yards_QB_f55981d1.csv",
+      "candidate_mae": 63.08340276992313,
+      "oof_mae": 63.08340276992313,
+      "baseline_mae": 63.12653394766391,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 63.12653394766391,
+          "candidate_mae": 63.08340276992313,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+          "candidate_oof_sha256": "6defdb561deea33ec5f96ceadfb7d6fc4d00d22649123eb02b97885d06f3ef95",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:13:56.404557+00:00",
+      "holdout_season": 2024,
+      "position": "QB",
+      "target": "passing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_passing_yards_QB_f55981d1.csv",
+      "candidate_mae": 63.724915760806354,
+      "oof_mae": 63.724915760806354,
+      "baseline_mae": 63.3440968749012,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": "Risshabh \u2014 accepted, <1% QB noise post PBP-pipeline fix, 2026-08-21",
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 63.3440968749012,
+          "candidate_mae": 63.724915760806354,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+          "candidate_oof_sha256": "6defdb561deea33ec5f96ceadfb7d6fc4d00d22649123eb02b97885d06f3ef95",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:46.375859+00:00",
+      "holdout_season": 2025,
+      "position": "QB",
+      "target": "passing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_passing_yards_QB_f55981d1.csv",
+      "candidate_mae": 63.34750710054474,
+      "oof_mae": 63.34750710054474,
+      "baseline_mae": 63.632267483465355,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 63.632267483465355,
+          "candidate_mae": 63.34750710054474,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "c945222d005587115afc4072b6dab41593eaedbad73f5ec0bcd3784cae71b4b1",
+          "candidate_oof_sha256": "6defdb561deea33ec5f96ceadfb7d6fc4d00d22649123eb02b97885d06f3ef95",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:46.832726+00:00",
+      "holdout_season": 2021,
+      "position": "RB",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv",
+      "candidate_mae": 12.756455590400154,
+      "oof_mae": 12.756455590400154,
+      "baseline_mae": 14.413856318691284,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 14.413856318691284,
+          "candidate_mae": 12.756455590400154,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+          "candidate_oof_sha256": "bda8ee4468c1aec99d3c46f1e614837e1e7e390bff8fa2309f26a87f37229812",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:47.276537+00:00",
+      "holdout_season": 2022,
+      "position": "RB",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv",
+      "candidate_mae": 10.689646887521715,
+      "oof_mae": 10.689646887521715,
+      "baseline_mae": 12.579102719729029,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.579102719729029,
+          "candidate_mae": 10.689646887521715,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+          "candidate_oof_sha256": "bda8ee4468c1aec99d3c46f1e614837e1e7e390bff8fa2309f26a87f37229812",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:47.712842+00:00",
+      "holdout_season": 2023,
+      "position": "RB",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv",
+      "candidate_mae": 11.256108037517206,
+      "oof_mae": 11.256108037517206,
+      "baseline_mae": 12.769074290426028,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.769074290426028,
+          "candidate_mae": 11.256108037517206,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+          "candidate_oof_sha256": "bda8ee4468c1aec99d3c46f1e614837e1e7e390bff8fa2309f26a87f37229812",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:48.150968+00:00",
+      "holdout_season": 2024,
+      "position": "RB",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv",
+      "candidate_mae": 10.010814245852922,
+      "oof_mae": 10.010814245852922,
+      "baseline_mae": 12.020827915671688,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.020827915671688,
+          "candidate_mae": 10.010814245852922,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+          "candidate_oof_sha256": "bda8ee4468c1aec99d3c46f1e614837e1e7e390bff8fa2309f26a87f37229812",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:48.599063+00:00",
+      "holdout_season": 2025,
+      "position": "RB",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv",
+      "candidate_mae": 11.091162727262,
+      "oof_mae": 11.091162727262,
+      "baseline_mae": 12.741858191928976,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.741858191928976,
+          "candidate_mae": 11.091162727262,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "869796343bd9d66c41d463fa0f3d195f3c43ecf2d43dcf3f0bb9cbe18a081b28",
+          "candidate_oof_sha256": "bda8ee4468c1aec99d3c46f1e614837e1e7e390bff8fa2309f26a87f37229812",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:49.051902+00:00",
+      "holdout_season": 2021,
+      "position": "TE",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv",
+      "candidate_mae": 17.40227658572117,
+      "oof_mae": 17.40227658572117,
+      "baseline_mae": 18.056769780592592,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 18.056769780592592,
+          "candidate_mae": 17.40227658572117,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+          "candidate_oof_sha256": "d35564f29717dc140ed587f93638d0d9f4b3d1d48b9aa2e8707167ffb5a19d75",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:49.514096+00:00",
+      "holdout_season": 2022,
+      "position": "TE",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv",
+      "candidate_mae": 15.775996819076184,
+      "oof_mae": 15.775996819076184,
+      "baseline_mae": 16.979677645702537,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 16.979677645702537,
+          "candidate_mae": 15.775996819076184,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+          "candidate_oof_sha256": "d35564f29717dc140ed587f93638d0d9f4b3d1d48b9aa2e8707167ffb5a19d75",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:50.121298+00:00",
+      "holdout_season": 2023,
+      "position": "TE",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv",
+      "candidate_mae": 15.426573073019853,
+      "oof_mae": 15.426573073019853,
+      "baseline_mae": 16.476042118186566,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 16.476042118186566,
+          "candidate_mae": 15.426573073019853,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+          "candidate_oof_sha256": "d35564f29717dc140ed587f93638d0d9f4b3d1d48b9aa2e8707167ffb5a19d75",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:50.735150+00:00",
+      "holdout_season": 2024,
+      "position": "TE",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv",
+      "candidate_mae": 15.992580595936273,
+      "oof_mae": 15.992580595936273,
+      "baseline_mae": 16.80483204677839,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 16.80483204677839,
+          "candidate_mae": 15.992580595936273,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+          "candidate_oof_sha256": "d35564f29717dc140ed587f93638d0d9f4b3d1d48b9aa2e8707167ffb5a19d75",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:51.367169+00:00",
+      "holdout_season": 2025,
+      "position": "TE",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv",
+      "candidate_mae": 15.595426833251553,
+      "oof_mae": 15.595426833251553,
+      "baseline_mae": 16.292513109046162,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 16.292513109046162,
+          "candidate_mae": 15.595426833251553,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "ca0ceb22047065c09853d4f6aa4c7bcdd3a444941ac98db5361cb69279ae975e",
+          "candidate_oof_sha256": "d35564f29717dc140ed587f93638d0d9f4b3d1d48b9aa2e8707167ffb5a19d75",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:51.987604+00:00",
+      "holdout_season": 2021,
+      "position": "WR",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_WR_47de5374.csv",
+      "candidate_mae": 24.19218905300321,
+      "oof_mae": 24.19218905300321,
+      "baseline_mae": 24.28214755182507,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 24.28214755182507,
+          "candidate_mae": 24.19218905300321,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+          "candidate_oof_sha256": "d966c218561b965290c2f77ae17cd408a5beecb03c0d52292ecb27a5c9b0ed8e",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:52.485968+00:00",
+      "holdout_season": 2022,
+      "position": "WR",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_WR_47de5374.csv",
+      "candidate_mae": 23.625761799718514,
+      "oof_mae": 23.625761799718514,
+      "baseline_mae": 24.391791046931232,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 24.391791046931232,
+          "candidate_mae": 23.625761799718514,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+          "candidate_oof_sha256": "d966c218561b965290c2f77ae17cd408a5beecb03c0d52292ecb27a5c9b0ed8e",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:52.972128+00:00",
+      "holdout_season": 2023,
+      "position": "WR",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_WR_47de5374.csv",
+      "candidate_mae": 23.147680582573877,
+      "oof_mae": 23.147680582573877,
+      "baseline_mae": 24.058813982669196,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 24.058813982669196,
+          "candidate_mae": 23.147680582573877,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+          "candidate_oof_sha256": "d966c218561b965290c2f77ae17cd408a5beecb03c0d52292ecb27a5c9b0ed8e",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:53.508889+00:00",
+      "holdout_season": 2024,
+      "position": "WR",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_WR_47de5374.csv",
+      "candidate_mae": 22.936733531763764,
+      "oof_mae": 22.936733531763764,
+      "baseline_mae": 23.908233141594724,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 23.908233141594724,
+          "candidate_mae": 22.936733531763764,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+          "candidate_oof_sha256": "d966c218561b965290c2f77ae17cd408a5beecb03c0d52292ecb27a5c9b0ed8e",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:54.017348+00:00",
+      "holdout_season": 2025,
+      "position": "WR",
+      "target": "receiving_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_receiving_yards_WR_47de5374.csv",
+      "candidate_mae": 22.439068961006924,
+      "oof_mae": 22.439068961006924,
+      "baseline_mae": 23.658217334920735,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 23.658217334920735,
+          "candidate_mae": 22.439068961006924,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "f8dedeb7c99f615a5950ac16b13ed1396e328940f31fad487cd48a3c9dc4fd90",
+          "candidate_oof_sha256": "d966c218561b965290c2f77ae17cd408a5beecb03c0d52292ecb27a5c9b0ed8e",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:54.650488+00:00",
+      "holdout_season": 2021,
+      "position": "QB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv",
+      "candidate_mae": 11.552930813275433,
+      "oof_mae": 11.552930813275433,
+      "baseline_mae": 11.847264509503312,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 11.847264509503312,
+          "candidate_mae": 11.552930813275433,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+          "candidate_oof_sha256": "4a2a8d18a47eb0364baf61a6602d0e3427ff6ea0a6a640369377e7b6af421cdf",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:55.175778+00:00",
+      "holdout_season": 2022,
+      "position": "QB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv",
+      "candidate_mae": 12.820574666251767,
+      "oof_mae": 12.820574666251767,
+      "baseline_mae": 12.951494679050954,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.951494679050954,
+          "candidate_mae": 12.820574666251767,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+          "candidate_oof_sha256": "4a2a8d18a47eb0364baf61a6602d0e3427ff6ea0a6a640369377e7b6af421cdf",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:55.664759+00:00",
+      "holdout_season": 2023,
+      "position": "QB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv",
+      "candidate_mae": 12.30312326662642,
+      "oof_mae": 12.30312326662642,
+      "baseline_mae": 12.546218543046455,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.546218543046455,
+          "candidate_mae": 12.30312326662642,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+          "candidate_oof_sha256": "4a2a8d18a47eb0364baf61a6602d0e3427ff6ea0a6a640369377e7b6af421cdf",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:13:56.869925+00:00",
+      "holdout_season": 2024,
+      "position": "QB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv",
+      "candidate_mae": 13.332246111375976,
+      "oof_mae": 13.332246111375976,
+      "baseline_mae": 13.237584114390897,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": "Risshabh \u2014 accepted, <1% QB noise post PBP-pipeline fix, 2026-08-21",
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 13.237584114390897,
+          "candidate_mae": 13.332246111375976,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+          "candidate_oof_sha256": "4a2a8d18a47eb0364baf61a6602d0e3427ff6ea0a6a640369377e7b6af421cdf",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:56.594217+00:00",
+      "holdout_season": 2025,
+      "position": "QB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv",
+      "candidate_mae": 12.011147663313958,
+      "oof_mae": 12.011147663313958,
+      "baseline_mae": 12.154380767395903,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 12.154380767395903,
+          "candidate_mae": 12.011147663313958,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "65972ade8de153e64599c89344ef8cdbfb5505d12b81b9db3f0e3868502d7381",
+          "candidate_oof_sha256": "4a2a8d18a47eb0364baf61a6602d0e3427ff6ea0a6a640369377e7b6af421cdf",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:57.074140+00:00",
+      "holdout_season": 2021,
+      "position": "RB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv",
+      "candidate_mae": 23.855934179040393,
+      "oof_mae": 23.855934179040393,
+      "baseline_mae": 24.241370341826773,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 24.241370341826773,
+          "candidate_mae": 23.855934179040393,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+          "candidate_oof_sha256": "93e8d04a31fdf7e1fcbf38b7537a1876f255c390c8d88df117393960d0af55f7",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:57.546269+00:00",
+      "holdout_season": 2022,
+      "position": "RB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv",
+      "candidate_mae": 23.62868949685391,
+      "oof_mae": 23.62868949685391,
+      "baseline_mae": 24.257110689542543,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 24.257110689542543,
+          "candidate_mae": 23.62868949685391,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+          "candidate_oof_sha256": "93e8d04a31fdf7e1fcbf38b7537a1876f255c390c8d88df117393960d0af55f7",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:58.009725+00:00",
+      "holdout_season": 2023,
+      "position": "RB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv",
+      "candidate_mae": 22.039536537057806,
+      "oof_mae": 22.039536537057806,
+      "baseline_mae": 22.740887278268886,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 22.740887278268886,
+          "candidate_mae": 22.039536537057806,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+          "candidate_oof_sha256": "93e8d04a31fdf7e1fcbf38b7537a1876f255c390c8d88df117393960d0af55f7",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:58.489623+00:00",
+      "holdout_season": 2024,
+      "position": "RB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv",
+      "candidate_mae": 22.61957400251192,
+      "oof_mae": 22.61957400251192,
+      "baseline_mae": 23.44927579174204,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 23.44927579174204,
+          "candidate_mae": 22.61957400251192,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+          "candidate_oof_sha256": "93e8d04a31fdf7e1fcbf38b7537a1876f255c390c8d88df117393960d0af55f7",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:58.967390+00:00",
+      "holdout_season": 2025,
+      "position": "RB",
+      "target": "rushing_yards",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv",
+      "candidate_mae": 23.946021305965818,
+      "oof_mae": 23.946021305965818,
+      "baseline_mae": 24.420553003021904,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 24.420553003021904,
+          "candidate_mae": 23.946021305965818,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "fdee3cce95ec9aa1b2b230a695230d81b1eecd6551d4a55007b654f33f3fd6b5",
+          "candidate_oof_sha256": "93e8d04a31fdf7e1fcbf38b7537a1876f255c390c8d88df117393960d0af55f7",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:59.450245+00:00",
+      "holdout_season": 2021,
+      "position": "RB",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_RB_b46299d9.csv",
+      "candidate_mae": 1.420634119087671,
+      "oof_mae": 1.420634119087671,
+      "baseline_mae": 1.7413114677412829,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.7413114677412829,
+          "candidate_mae": 1.420634119087671,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+          "candidate_oof_sha256": "cc882683fbaada9f38b4e789bc84f024aef594c1125089aad468357a4befc135",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:00:59.956070+00:00",
+      "holdout_season": 2022,
+      "position": "RB",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_RB_b46299d9.csv",
+      "candidate_mae": 1.3010375159183878,
+      "oof_mae": 1.3010375159183878,
+      "baseline_mae": 1.6127271662392009,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.6127271662392009,
+          "candidate_mae": 1.3010375159183878,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+          "candidate_oof_sha256": "cc882683fbaada9f38b4e789bc84f024aef594c1125089aad468357a4befc135",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:00.447102+00:00",
+      "holdout_season": 2023,
+      "position": "RB",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_RB_b46299d9.csv",
+      "candidate_mae": 1.3112488201634656,
+      "oof_mae": 1.3112488201634656,
+      "baseline_mae": 1.5682437628354957,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.5682437628354957,
+          "candidate_mae": 1.3112488201634656,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+          "candidate_oof_sha256": "cc882683fbaada9f38b4e789bc84f024aef594c1125089aad468357a4befc135",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:00.935927+00:00",
+      "holdout_season": 2024,
+      "position": "RB",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_RB_b46299d9.csv",
+      "candidate_mae": 1.082260762795373,
+      "oof_mae": 1.082260762795373,
+      "baseline_mae": 1.4484119230071082,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.4484119230071082,
+          "candidate_mae": 1.082260762795373,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+          "candidate_oof_sha256": "cc882683fbaada9f38b4e789bc84f024aef594c1125089aad468357a4befc135",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:01.580599+00:00",
+      "holdout_season": 2025,
+      "position": "RB",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_RB_b46299d9.csv",
+      "candidate_mae": 1.1955377646203666,
+      "oof_mae": 1.1955377646203666,
+      "baseline_mae": 1.4959915365986087,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.4959915365986087,
+          "candidate_mae": 1.1955377646203666,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "05ac44bf7a861d5c10da7be2c3397205b91ac90a7b6dc54adbcc421f94144942",
+          "candidate_oof_sha256": "cc882683fbaada9f38b4e789bc84f024aef594c1125089aad468357a4befc135",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:02.123428+00:00",
+      "holdout_season": 2021,
+      "position": "TE",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_TE_29116c09.csv",
+      "candidate_mae": 1.5322595591153922,
+      "oof_mae": 1.5322595591153922,
+      "baseline_mae": 1.6879239868885583,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.6879239868885583,
+          "candidate_mae": 1.5322595591153922,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+          "candidate_oof_sha256": "b55daf6328f0657c8e06a4cbdedfc4c2e4efe8e5d45d4d0c800017e935319f56",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:02.660183+00:00",
+      "holdout_season": 2022,
+      "position": "TE",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_TE_29116c09.csv",
+      "candidate_mae": 1.5062456085717977,
+      "oof_mae": 1.5062456085717977,
+      "baseline_mae": 1.6453225711983033,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.6453225711983033,
+          "candidate_mae": 1.5062456085717977,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+          "candidate_oof_sha256": "b55daf6328f0657c8e06a4cbdedfc4c2e4efe8e5d45d4d0c800017e935319f56",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:03.304267+00:00",
+      "holdout_season": 2023,
+      "position": "TE",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_TE_29116c09.csv",
+      "candidate_mae": 1.5181231028322701,
+      "oof_mae": 1.5181231028322701,
+      "baseline_mae": 1.6477673021740833,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.6477673021740833,
+          "candidate_mae": 1.5181231028322701,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+          "candidate_oof_sha256": "b55daf6328f0657c8e06a4cbdedfc4c2e4efe8e5d45d4d0c800017e935319f56",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:03.788608+00:00",
+      "holdout_season": 2024,
+      "position": "TE",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_TE_29116c09.csv",
+      "candidate_mae": 1.6368650191188197,
+      "oof_mae": 1.6368650191188197,
+      "baseline_mae": 1.741236583047779,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.741236583047779,
+          "candidate_mae": 1.6368650191188197,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+          "candidate_oof_sha256": "b55daf6328f0657c8e06a4cbdedfc4c2e4efe8e5d45d4d0c800017e935319f56",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:04.245196+00:00",
+      "holdout_season": 2025,
+      "position": "TE",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_TE_29116c09.csv",
+      "candidate_mae": 1.476531913810275,
+      "oof_mae": 1.476531913810275,
+      "baseline_mae": 1.5748435772529312,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 1.5748435772529312,
+          "candidate_mae": 1.476531913810275,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "b6ffa73f5bbe58805386edea4c1f51d2270bab97ad6b0c13a2489d174501ee48",
+          "candidate_oof_sha256": "b55daf6328f0657c8e06a4cbdedfc4c2e4efe8e5d45d4d0c800017e935319f56",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:04.709258+00:00",
+      "holdout_season": 2021,
+      "position": "WR",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_WR_4cf65b43.csv",
+      "candidate_mae": 2.143075273141824,
+      "oof_mae": 2.143075273141824,
+      "baseline_mae": 2.243710876110076,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 2.243710876110076,
+          "candidate_mae": 2.143075273141824,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+          "candidate_oof_sha256": "2dd60e3bf9cbb42809b1617a6f43ea555d27d310c69378fecf19e43bb7c719f5",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:05.189554+00:00",
+      "holdout_season": 2022,
+      "position": "WR",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_WR_4cf65b43.csv",
+      "candidate_mae": 2.0674558343779657,
+      "oof_mae": 2.0674558343779657,
+      "baseline_mae": 2.1420440154240277,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 2.1420440154240277,
+          "candidate_mae": 2.0674558343779657,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+          "candidate_oof_sha256": "2dd60e3bf9cbb42809b1617a6f43ea555d27d310c69378fecf19e43bb7c719f5",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:05.626171+00:00",
+      "holdout_season": 2023,
+      "position": "WR",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_WR_4cf65b43.csv",
+      "candidate_mae": 1.9355954421502966,
+      "oof_mae": 1.9355954421502966,
+      "baseline_mae": 2.0217559419953055,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 2.0217559419953055,
+          "candidate_mae": 1.9355954421502966,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+          "candidate_oof_sha256": "2dd60e3bf9cbb42809b1617a6f43ea555d27d310c69378fecf19e43bb7c719f5",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:06.140417+00:00",
+      "holdout_season": 2024,
+      "position": "WR",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_WR_4cf65b43.csv",
+      "candidate_mae": 2.0018681194714185,
+      "oof_mae": 2.0018681194714185,
+      "baseline_mae": 2.118098620222485,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 2.118098620222485,
+          "candidate_mae": 2.0018681194714185,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+          "candidate_oof_sha256": "2dd60e3bf9cbb42809b1617a6f43ea555d27d310c69378fecf19e43bb7c719f5",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "created_at": "2026-08-21T21:01:06.652075+00:00",
+      "holdout_season": 2025,
+      "position": "WR",
+      "target": "targets",
+      "candidate_source": "ml/oof/candidate_20260821_fixed/stack_targets_WR_4cf65b43.csv",
+      "candidate_mae": 1.9032952552326208,
+      "oof_mae": 1.9032952552326208,
+      "baseline_mae": 2.031779862307278,
+      "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+      "approval": null,
+      "promote": true,
+      "reasons": [],
+      "checks": [
+        {
+          "name": "vs_frozen_prior_release",
+          "baseline_mae": 2.031779862307278,
+          "candidate_mae": 1.9032952552326208,
+          "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+          "baseline_oof_sha256": "de2a997f8542746fc1cce123d6d81c6c99baefb4f15074151e1aafcda4c46604",
+          "candidate_oof_sha256": "2dd60e3bf9cbb42809b1617a6f43ea555d27d310c69378fecf19e43bb7c719f5",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}

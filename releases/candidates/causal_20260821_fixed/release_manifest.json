@@ -103,18 +103,9 @@
       "releases/candidates/causal_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv"
     ]
   },
-  "candidate": false,
-  "created_at": "2026-08-21T21:18:45.828790+00:00",
+  "candidate": true,
+  "created_at": "2026-08-21T21:16:51.125846+00:00",
   "git_commit": "8f3b49d0183fa8d3297e5fd000f38eaa289825c8",
-  "git_dirty": false,
-  "model_version": "causal_20260819_zero_regression",
-  "product_mode": "artifact_backed",
-  "projection_policy": {
-    "approved_pipeline_run_ids": [],
-    "require_interval_columns": true,
-    "require_posterior_samples": false
-  },
-  "promotion_evidence": "releases/candidates/causal_20260821_fixed/promotion_gates_zero_regression.json",
-  "release_status": "promoted_zero_regression",
+  "release_status": "candidate_pending_zero_regression_gate",
   "source_rebuild": "ml/oof/rebuild_20260809T231500"
 }
