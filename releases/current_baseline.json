@@ -104,14 +104,14 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-08-21T21:29:07.127829+00:00",
+  "created_at": "2026-08-21T21:31:41.475627+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
     "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
   },
   "git_branch": "main",
-  "git_commit": "90aaddfdf7fe0e9c6282a8e5a97e140bda92b4ae",
+  "git_commit": "b3ba9229b764fc363d1004908713b948d9f9b2c6",
   "git_dirty": false,
   "integrity": {
     "artifact_mode_ready": false,
@@ -124,11 +124,11 @@
         "status": "ok"
       },
       "baseline_manifest": {
-        "detail": "Baseline manifest was frozen from a dirty worktree",
+        "detail": "Baseline manifest commit is an ancestor of HEAD, but HEAD changes non-evidence paths since that commit: ['releases/baselines/20260821T212907Z_latest.json']",
         "observed": {
-          "created_at": "2026-08-21T21:28:23.976223+00:00",
-          "git_commit": "1d811d211252cc3c5658781d8c5803e8af9a83fb",
-          "head": "90aaddfdf7fe0e9c6282a8e5a97e140bda92b4ae",
+          "created_at": "2026-08-21T21:29:07.127829+00:00",
+          "git_commit": "90aaddfdf7fe0e9c6282a8e5a97e140bda92b4ae",
+          "head": "b3ba9229b764fc363d1004908713b948d9f9b2c6",
           "model_version": "latest",
           "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
           "worktree_dirty": false
@@ -142,12 +142,12 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 28.6,
-          "computed_at": "2026-08-20T16:52:56.059873+00:00",
+          "age_hours": 0.03,
+          "computed_at": "2026-08-21T21:29:40.956683+00:00",
           "season": 2026,
           "week": 1
         },
-        "status": "warn"
+        "status": "ok"
       },
       "mlflow": {
         "detail": "MLflow endpoint reachable",
@@ -171,7 +171,7 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-08-21T21:29:07.127789+00:00",
+    "generated_at": "2026-08-21T21:31:41.475583+00:00",
     "model_version": "latest",
     "overall_status": "blocked",
     "product_mode": "artifact_backed"
@@ -182,7 +182,7 @@
   "projection_policy": {
     "approved_pipeline_run_ids": [
       "stack_materialize_20260821T211851Z",
-      "pipeline_3063c132d07f404eba8db71ac32e04ec"
+      "pipeline_32400bb768c64f2fa7826d955f14f87e"
     ],
     "require_interval_columns": true,
     "require_posterior_samples": false
