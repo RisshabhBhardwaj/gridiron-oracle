@@ -262,9 +262,11 @@ def build_feature_row(
         prior_snap_share=prior_snap_share,
         # Bucket 9 — Defensive Tendency + Scheme Interactions
         **scheme,
-        # Bucket 10 — Elo Ratings (populated lazily if elo system is fitted)
-        # NOTE: elo fields default to None here; FeatureEngineer.run() calls
-        # _enrich_elo_features() after batch build to populate these in bulk.
+        # Bucket 10 — Elo Ratings. Always None here; populated out-of-band by
+        # pipeline/enrich_elo_embeddings.py, a bulk UPDATE run after this
+        # step (see orchestrator.py's post-loop enrichment call). This
+        # method's own upsert COALESCEs these columns so it never wipes
+        # what enrichment already wrote on a later re-run.
         team_off_elo=None,
         team_def_elo=None,
         opp_off_elo=None,
@@ -682,8 +684,20 @@ class FeatureEngineer:
             return 0
 
         col_list = ", ".join(_FM_COLS)
+        # FeatureRow always constructs these six Elo columns as None — Elo
+        # enrichment happens out-of-band (pipeline/enrich_elo_embeddings.py,
+        # a bulk UPDATE run after feature_engineer, not through this method).
+        # A blind EXCLUDED overwrite here means any later re-run of
+        # feature_engineer.run() for an already-enriched season silently
+        # wipes team_off_elo/etc. back to NULL. COALESCE preserves whatever
+        # enrichment already wrote.
+        _ELO_COLS = frozenset({
+            "team_off_elo", "team_def_elo", "opp_off_elo", "opp_def_elo",
+            "elo_matchup_diff", "elo_implied_win_prob",
+        })
         update_set = ", ".join(
-            f"{c} = EXCLUDED.{c}"
+            f"{c} = COALESCE(EXCLUDED.{c}, feature_matrix.{c})" if c in _ELO_COLS
+            else f"{c} = EXCLUDED.{c}"
             for c in _FM_COLS
             if c not in ("player_id", "game_id")
         )

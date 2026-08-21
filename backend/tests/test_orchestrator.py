@@ -144,3 +144,29 @@ class TestOrchestratorDryRun:
         assert 1 <= summary.total_feature_rows
         # Upper bound: sample players × max ~20 games each
         assert summary.total_feature_rows <= DRY_RUN_SAMPLE * 20
+
+
+class TestGlobalEnrichmentWiring:
+    """
+    Elo/embedding enrichment and the PBP pipeline write feature_matrix
+    columns across all seasons in one pass, not per-season — previously
+    only run_full_etl.sh called them, so an orchestrator-only live run
+    silently skipped Elo columns and Bucket 11 (PBP) features entirely.
+    """
+
+    def test_dry_run_does_not_call_global_enrichment(self) -> None:
+        from unittest.mock import patch
+        from pipeline.orchestrator import Orchestrator
+
+        with patch("pipeline.orchestrator._run_global_enrichment") as mock_enrich:
+            Orchestrator().run(seasons=[2025], dry_run=True)
+        mock_enrich.assert_not_called()
+
+    def test_live_run_calls_global_enrichment_after_the_season_loop(self) -> None:
+        from unittest.mock import patch
+        from pipeline.orchestrator import Orchestrator, SeasonResult
+
+        with patch("pipeline.orchestrator._live_season", return_value=SeasonResult(season=2025, dry_run=False)), \
+             patch("pipeline.orchestrator._run_global_enrichment") as mock_enrich:
+            Orchestrator(db_url="postgresql://unused").run(seasons=[2025], dry_run=False)
+        mock_enrich.assert_called_once_with("postgresql://unused")

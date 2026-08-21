@@ -504,6 +504,9 @@ class Orchestrator:
                 sr = _live_season(season, self._db_url)
             season_results.append(sr)
 
+        if not dry_run:
+            _run_global_enrichment(self._db_url)
+
         end = datetime.utcnow()
         summary = OrchestratorSummary(
             seasons=seasons,
@@ -517,6 +520,35 @@ class Orchestrator:
         )
         _print_orchestrator_summary(summary)
         return summary
+
+
+def _run_global_enrichment(db_url: str) -> None:
+    """
+    Elo/embedding enrichment and the PBP pipeline write directly into
+    feature_matrix across all seasons in one pass (not per-season, no
+    season argument) — previously only pipeline/run_full_etl.sh called
+    them, so any orchestrator-only live run silently skipped Elo columns
+    and Bucket 11 (PBP) features. Best-effort, matching run_full_etl.sh:
+    a failure here is logged and does not fail the ingest/normalize/
+    feature_engineer work already committed for the requested seasons.
+    """
+    os.environ.setdefault("DATABASE_URL", db_url)
+
+    logger.info("Post-ETL: Elo/embedding enrichment…")
+    try:
+        from pipeline.enrich_elo_embeddings import main as run_elo_enrichment
+        run_elo_enrichment()
+    except Exception as exc:
+        logger.warning("Elo/embedding enrichment failed (continuing): %s", exc)
+        _write_dead_letter(db_url, "orchestrator/enrich_elo_embeddings", str(exc), 0)
+
+    logger.info("Post-ETL: PBP pipeline…")
+    try:
+        from pipeline.pbp_pipeline import main as run_pbp_pipeline
+        run_pbp_pipeline()
+    except Exception as exc:
+        logger.warning("PBP pipeline failed (continuing): %s", exc)
+        _write_dead_letter(db_url, "orchestrator/pbp_pipeline", str(exc), 0)
 
 
 # ── Print helper ──────────────────────────────────────────────────────────────

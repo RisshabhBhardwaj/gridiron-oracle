@@ -172,7 +172,10 @@ CREATE TABLE IF NOT EXISTS games (
     home_rest        INTEGER,
     away_rest        INTEGER,
     home_qb_name     TEXT,
-    away_qb_name     TEXT
+    away_qb_name     TEXT,
+    home_coach       TEXT,
+    away_coach       TEXT,
+    kickoff_at       TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS game_logs (
@@ -345,6 +348,8 @@ def schedule_row_to_game(row: ScheduleRow) -> dict[str, Any]:
         "away_rest":      row.away_rest,
         "home_qb_name":   row.home_qb_name,
         "away_qb_name":   row.away_qb_name,
+        "home_coach":     row.home_coach,
+        "away_coach":     row.away_coach,
     }
 
 
@@ -604,6 +609,7 @@ class Normalizer:
             "stadium", "roof", "surface", "temp", "wind",
             "spread_line", "total_line", "away_moneyline", "home_moneyline",
             "home_rest", "away_rest", "home_qb_name", "away_qb_name",
+            "home_coach", "away_coach",
             "kickoff_at",
         ]
         # kickoff_at was declared in the schema (migration 0005) but nothing
@@ -626,6 +632,7 @@ class Normalizer:
                     stadium, roof, surface, temp, wind,
                     spread_line, total_line, away_moneyline, home_moneyline,
                     home_rest, away_rest, home_qb_name, away_qb_name,
+                    home_coach, away_coach,
                     kickoff_at
                 ) VALUES %s
                 ON CONFLICT (id) DO UPDATE SET
@@ -641,6 +648,8 @@ class Normalizer:
                     away_qb_name   = EXCLUDED.away_qb_name,
                     away_moneyline = EXCLUDED.away_moneyline,
                     home_moneyline = EXCLUDED.home_moneyline,
+                    home_coach     = COALESCE(EXCLUDED.home_coach, games.home_coach),
+                    away_coach     = COALESCE(EXCLUDED.away_coach, games.away_coach),
                     kickoff_at     = COALESCE(EXCLUDED.kickoff_at, games.kickoff_at)
                 """,
                 rows,

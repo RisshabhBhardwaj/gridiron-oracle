@@ -856,6 +856,23 @@ def main() -> None:
                 )
             except Exception as e:
                 logger.warning("Season %d PBP failed: %s — skipping.", season, e)
+                # A log line alone is invisible outside this process's stdout.
+                # This exact pattern (broad except, warn, continue) is what
+                # silently lost several seasons to the drop_rate KeyError
+                # before it was root-caused — record it so a future failure
+                # here is queryable, not just a line in a log nobody read.
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO dead_letter (source, error_message, raw_payload, ingested_at)
+                            VALUES (%s, %s, %s, NOW())
+                            """,
+                            ("pbp_pipeline/_aggregate_pbp", str(e), psycopg2.extras.Json({"season": season})),
+                        )
+                    conn.commit()
+                except Exception:
+                    logger.debug("dead_letter write failed for season=%d PBP failure", season)
 
         # Update feature_matrix with all PBP-derived Bucket 11 columns
         if all_features:

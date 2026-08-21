@@ -245,6 +245,8 @@ class ScheduleRow(BaseModel):
     away_qb_name: Optional[str] = None
     home_rest: Optional[int] = None
     away_rest: Optional[int] = None
+    home_coach: Optional[str] = None
+    away_coach: Optional[str] = None
 
 
 class SnapCountRow(BaseModel):

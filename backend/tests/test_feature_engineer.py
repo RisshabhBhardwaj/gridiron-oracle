@@ -554,3 +554,35 @@ class TestPrintFeatureRow:
             assert not hasattr(fr, attr), (
                 f"FeatureRow should not have deleted field: {attr}"
             )
+
+
+def test_upsert_feature_rows_does_not_wipe_elo_columns_on_rerun():
+    """
+    FeatureRow always constructs the six Elo columns as None — enrichment
+    happens out-of-band via enrich_elo_embeddings.py. A blind EXCLUDED
+    overwrite in the upsert would silently null out already-enriched Elo
+    values every time feature_engineer.run() is re-run for a season.
+    """
+    from unittest.mock import MagicMock, patch
+    from pipeline.feature_engineer import FeatureEngineer
+
+    fe = FeatureEngineer.__new__(FeatureEngineer)
+    mock_cursor = MagicMock()
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    fe._conn = mock_conn
+
+    fr = FeatureRow(player_id="x", game_id="y", season=2025, week=1)
+    with patch("pipeline.feature_engineer.execute_values") as mock_execute_values:
+        fe._upsert_feature_rows([fr])
+
+    sql = mock_execute_values.call_args[0][1]
+    for col in (
+        "team_off_elo", "team_def_elo", "opp_off_elo",
+        "opp_def_elo", "elo_matchup_diff", "elo_implied_win_prob",
+    ):
+        assert f"{col} = COALESCE(EXCLUDED.{col}, feature_matrix.{col})" in sql, (
+            f"{col} must be COALESCEd against the existing row, not blindly overwritten: {sql}"
+        )
+    # A non-Elo column should still be a plain overwrite.
+    assert "season = EXCLUDED.season" in sql
