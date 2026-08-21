@@ -244,3 +244,63 @@ class TestNormalizeRosters:
         deduped = list(by_id.values())
         assert len(deduped) == 1
         assert deduped[0]["team"] == "TB"  # last wins
+
+
+class TestResolveDepthChartWeek:
+    """
+    The 2025+ ESPN depth-chart feed has no week column, only a snapshot
+    timestamp. _resolve_depth_chart_week derives which week a snapshot
+    describes from the team's game schedule, replacing a hardcoded week=1
+    that broadcast one preseason snapshot across all 18 weeks.
+    """
+
+    def _normalizer(self):
+        from pipeline.normalize import Normalizer
+        return Normalizer.__new__(Normalizer)
+
+    def test_snapshot_maps_to_the_next_game_at_or_after_it(self) -> None:
+        from datetime import datetime, timezone
+
+        norm = self._normalizer()
+        schedule = {
+            (2025, "NYG"): [
+                (1, datetime(2025, 9, 7, tzinfo=timezone.utc)),
+                (2, datetime(2025, 9, 14, tzinfo=timezone.utc)),
+                (3, datetime(2025, 9, 21, tzinfo=timezone.utc)),
+            ]
+        }
+        # Snapshot taken between week 1 and week 2 kickoff describes week 2.
+        week = norm._resolve_depth_chart_week(
+            schedule, 2025, "NYG", datetime(2025, 9, 10, tzinfo=timezone.utc)
+        )
+        assert week == 2
+
+    def test_snapshot_after_the_last_game_maps_to_the_final_week(self) -> None:
+        from datetime import datetime, timezone
+
+        norm = self._normalizer()
+        schedule = {
+            (2025, "NYG"): [
+                (1, datetime(2025, 9, 7, tzinfo=timezone.utc)),
+                (2, datetime(2025, 9, 14, tzinfo=timezone.utc)),
+            ]
+        }
+        week = norm._resolve_depth_chart_week(
+            schedule, 2025, "NYG", datetime(2025, 12, 1, tzinfo=timezone.utc)
+        )
+        assert week == 2
+
+    def test_string_published_at_is_parsed(self) -> None:
+        from datetime import datetime, timezone
+
+        norm = self._normalizer()
+        schedule = {(2025, "NYG"): [(1, datetime(2025, 9, 7, tzinfo=timezone.utc))]}
+        week = norm._resolve_depth_chart_week(schedule, 2025, "NYG", "2025-09-01T00:00:00Z")
+        assert week == 1
+
+    def test_no_schedule_for_team_returns_none(self) -> None:
+        from datetime import datetime, timezone
+
+        norm = self._normalizer()
+        week = norm._resolve_depth_chart_week({}, 2025, "NYG", datetime(2025, 9, 1, tzinfo=timezone.utc))
+        assert week is None

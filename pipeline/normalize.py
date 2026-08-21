@@ -85,6 +85,7 @@ import psycopg2.extras
 from psycopg2.extras import execute_values
 from pydantic import ValidationError
 
+from scraper.adapters.weather_adapter import _kickoff_at
 from scraper.adapters.nflreadpy_adapter import (
     SOURCE_PLAYER_STATS,
     SOURCE_ROSTERS,
@@ -603,7 +604,15 @@ class Normalizer:
             "stadium", "roof", "surface", "temp", "wind",
             "spread_line", "total_line", "away_moneyline", "home_moneyline",
             "home_rest", "away_rest", "home_qb_name", "away_qb_name",
+            "kickoff_at",
         ]
+        # kickoff_at was declared in the schema (migration 0005) but nothing
+        # ever wrote it, so every downstream pre-kickoff proof check
+        # (depth-chart publication guard included) compared against NULL and
+        # could never actually fire. gameday/gametime/home_team are 100%
+        # filled; compute it here instead of leaving it dead.
+        for g in game_dicts:
+            g["kickoff_at"] = _kickoff_at(g.get("gameday"), g.get("gametime"), g.get("home_team"))
         rows = [tuple(g.get(c) for c in cols) for g in game_dicts]
 
         assert self._conn
@@ -616,7 +625,8 @@ class Normalizer:
                     home_score, away_score, gameday, gametime, weekday,
                     stadium, roof, surface, temp, wind,
                     spread_line, total_line, away_moneyline, home_moneyline,
-                    home_rest, away_rest, home_qb_name, away_qb_name
+                    home_rest, away_rest, home_qb_name, away_qb_name,
+                    kickoff_at
                 ) VALUES %s
                 ON CONFLICT (id) DO UPDATE SET
                     home_score     = EXCLUDED.home_score,
@@ -630,7 +640,8 @@ class Normalizer:
                     home_qb_name   = EXCLUDED.home_qb_name,
                     away_qb_name   = EXCLUDED.away_qb_name,
                     away_moneyline = EXCLUDED.away_moneyline,
-                    home_moneyline = EXCLUDED.home_moneyline
+                    home_moneyline = EXCLUDED.home_moneyline,
+                    kickoff_at     = COALESCE(EXCLUDED.kickoff_at, games.kickoff_at)
                 """,
                 rows,
             )
@@ -1167,12 +1178,70 @@ class Normalizer:
         if staging_ids:
             self._mark_processed(staging_ids)
 
+    def _resolve_depth_chart_week(
+        self, team_schedule: dict[tuple[int, str], list[tuple[int, datetime]]],
+        season: int, team: str, published_at,
+    ) -> Optional[int]:
+        """
+        Which week does a timestamped-but-week-less snapshot describe?
+
+        The 2025+ ESPN feed has no week column, only a snapshot timestamp
+        (mapped to published_at). A snapshot describes the *next* game for
+        that team at or after it was taken — or, if it postdates the
+        team's last game, the final week (a season-ending snapshot).
+        """
+        games = team_schedule.get((season, team))
+        if not games or published_at is None:
+            return None
+        if isinstance(published_at, str):
+            try:
+                published_at = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        for wk, kickoff in games:
+            if kickoff >= published_at:
+                return wk
+        return games[-1][0]
+
+    def _load_team_schedule(
+        self, seasons: set[int]
+    ) -> dict[tuple[int, str], list[tuple[int, datetime]]]:
+        """(season, team) -> [(week, kickoff_at), ...] sorted ascending, kickoff_at not null."""
+        team_schedule: dict[tuple[int, str], list[tuple[int, datetime]]] = {}
+        if not seasons:
+            return team_schedule
+        assert self._conn
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT season, home_team, away_team, week, kickoff_at
+                FROM games
+                WHERE season = ANY(%s) AND kickoff_at IS NOT NULL
+                """,
+                (list(seasons),),
+            )
+            for season_row, home, away, week_row, kickoff in cur.fetchall():
+                for team_row in (home, away):
+                    team_schedule.setdefault((season_row, team_row), []).append((week_row, kickoff))
+        for key in team_schedule:
+            team_schedule[key].sort(key=lambda x: x[1])
+        return team_schedule
+
     def _process_depth_charts(
         self, staging_rows: list[dict], summary: NormalizeSummary
     ) -> None:
         """Upsert depth_charts from staging. depth_rank = 1 (WR1), 2 (WR2), etc."""
         if not staging_rows:
             return
+
+        seasons_needing_week = {
+            (sr.get("raw_data", sr)).get("season")
+            for sr in staging_rows
+            if (sr.get("raw_data", sr)).get("week") is None
+            and (sr.get("raw_data", sr)).get("season") is not None
+        }
+        team_schedule = self._load_team_schedule(seasons_needing_week)
+
         rows: list[tuple] = []
         for sr in staging_rows:
             raw = sr.get("raw_data", sr)
@@ -1182,6 +1251,11 @@ class Normalizer:
             season = raw.get("season")
             week = raw.get("week")
             team = raw.get("club_code") or raw.get("team", "")
+            published_at_raw = (
+                raw.get("published_at") or raw.get("timestamp") or raw.get("last_updated")
+            )
+            if week is None and season is not None and team:
+                week = self._resolve_depth_chart_week(team_schedule, season, team, published_at_raw)
             if season is None or week is None or not team:
                 continue
             depth_team = raw.get("depth_team") or raw.get("pos_rank")
@@ -1190,9 +1264,7 @@ class Normalizer:
             except (TypeError, ValueError):
                 rank = 1.0
             position = raw.get("position") or raw.get("pos_abb")
-            published_at = (
-                raw.get("published_at") or raw.get("timestamp") or raw.get("last_updated")
-            )
+            published_at = published_at_raw
             ingest_at = raw.get("ingest_at")
             rows.append((
                 gsis_id, season, week, team, position, rank, published_at,
@@ -1200,11 +1272,24 @@ class Normalizer:
                 ingest_at,
             ))
 
-        # Deduplicate: keep best (lowest) depth_rank per (player_id, season, week)
+        # Deduplicate per (player_id, season, week). The 2025+ ESPN feed
+        # publishes several snapshots per week that can resolve to the same
+        # week; keep the one with the latest published_at (most current
+        # status), not the best-ever rank seen that week. Legacy seasons
+        # have no published_at and already carry one row per key, so the
+        # rank fallback only ever breaks a tie there.
         seen: dict[tuple, tuple] = {}
         for r in rows:
             key = (r[0], r[1], r[2])
-            if key not in seen or r[5] < seen[key][5]:
+            existing = seen.get(key)
+            if existing is None:
+                seen[key] = r
+                continue
+            r_pub, existing_pub = r[6], existing[6]
+            if r_pub and existing_pub:
+                if r_pub > existing_pub:
+                    seen[key] = r
+            elif r[5] < existing[5]:
                 seen[key] = r
         rows = list(seen.values())
 
@@ -1317,10 +1402,13 @@ class Normalizer:
                     avg_completion_above_expectation
                 ) VALUES %s
                 ON CONFLICT (player_id, season, week) DO UPDATE SET
-                    avg_separation = EXCLUDED.avg_separation,
-                    avg_cushion = EXCLUDED.avg_cushion,
-                    max_speed = EXCLUDED.max_speed,
-                    avg_completion_above_expectation = EXCLUDED.avg_completion_above_expectation
+                    avg_separation = COALESCE(EXCLUDED.avg_separation, nextgen_stats.avg_separation),
+                    avg_cushion = COALESCE(EXCLUDED.avg_cushion, nextgen_stats.avg_cushion),
+                    max_speed = COALESCE(EXCLUDED.max_speed, nextgen_stats.max_speed),
+                    avg_completion_above_expectation = COALESCE(
+                        EXCLUDED.avg_completion_above_expectation,
+                        nextgen_stats.avg_completion_above_expectation
+                    )
                 """,
                 rows,
             )

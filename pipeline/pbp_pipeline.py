@@ -454,9 +454,25 @@ def _aggregate_pbp(pbp: pd.DataFrame, season: int) -> tuple[pd.DataFrame, pd.Dat
         team_pressure[["game_id", "team", "ol_pressure_rate", "ol_sack_rate"]],
         on=["game_id", "team"], how="left"
     )
+
+    # opp_* columns must come from the DEFENSE the player faced, not the
+    # player's own team. def_pressure is keyed by defteam (renamed "team"
+    # above), so joining it directly on features["team"] (the player's own
+    # team) attached a receiver's own defense's zone/man/blitz rates to
+    # them instead of their opponent's. Build the per-game team->opponent
+    # map from raw posteam/defteam pairs and join through it.
+    game_opponent = (
+        pbp[["game_id", "posteam", "defteam"]]
+        .dropna(subset=["game_id", "posteam", "defteam"])
+        .drop_duplicates()
+        .rename(columns={"posteam": "team", "defteam": "opponent_team"})
+    )
+    features = features.merge(game_opponent, on=["game_id", "team"], how="left")
     features = features.merge(
-        def_pressure[["game_id", "team", "opp_pressure_rate_pbp", "opp_sack_rate_pbp", "opp_zone_pct", "opp_man_pct", "opp_blitz_rate"]],
-        on=["game_id", "team"], how="left"
+        def_pressure[
+            ["game_id", "team", "opp_pressure_rate_pbp", "opp_sack_rate_pbp", "opp_zone_pct", "opp_man_pct", "opp_blitz_rate"]
+        ].rename(columns={"team": "opponent_team"}),
+        on=["game_id", "opponent_team"], how="left"
     )
 
     # Overall EPA per play (union of all player snaps)
@@ -625,6 +641,7 @@ def _write_pbp_features(conn, features_df: pd.DataFrame) -> int:
         "drop_rate",
         "ol_pressure_rate", "ol_sack_rate",
         "opp_pressure_rate_pbp", "opp_sack_rate_pbp",
+        "opp_zone_pct", "opp_man_pct", "opp_blitz_rate",
         "sacks_taken", "qb_hits_taken",
     ]
     for col in col_order:
@@ -642,6 +659,7 @@ def _write_pbp_features(conn, features_df: pd.DataFrame) -> int:
             drop_rate,
             ol_pressure_rate, ol_sack_rate,
             opp_pressure_rate_pbp, opp_sack_rate_pbp,
+            opp_zone_pct, opp_man_pct, opp_blitz_rate,
             sacks_taken, qb_hits_taken
         )
         VALUES %s
@@ -667,6 +685,9 @@ def _write_pbp_features(conn, features_df: pd.DataFrame) -> int:
             ol_sack_rate         = EXCLUDED.ol_sack_rate,
             opp_pressure_rate_pbp = EXCLUDED.opp_pressure_rate_pbp,
             opp_sack_rate_pbp    = EXCLUDED.opp_sack_rate_pbp,
+            opp_zone_pct         = EXCLUDED.opp_zone_pct,
+            opp_man_pct          = EXCLUDED.opp_man_pct,
+            opp_blitz_rate       = EXCLUDED.opp_blitz_rate,
             sacks_taken          = EXCLUDED.sacks_taken,
             qb_hits_taken        = EXCLUDED.qb_hits_taken
     """

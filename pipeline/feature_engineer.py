@@ -659,12 +659,16 @@ class FeatureEngineer:
                     psp.weight_lbs AS player_weight,
                     p.draft_round,
                     p.entry_year,
-                    p.birth_date
+                    p.birth_date,
+                    pf.opp_zone_pct, pf.opp_man_pct, pf.opp_blitz_rate,
+                    pf.opp_pressure_rate_pbp
                 FROM game_logs gl
                 JOIN games g ON gl.game_id = g.id
                 LEFT JOIN players p ON gl.player_id = p.id
                 LEFT JOIN player_season_profiles psp
                   ON psp.player_id = gl.player_id AND psp.effective_season = gl.season
+                LEFT JOIN pbp_features pf
+                  ON pf.player_id = gl.player_id AND pf.game_id = gl.game_id
                 WHERE gl.season = %s
                 ORDER BY gl.player_id, gl.week
                 """,

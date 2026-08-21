@@ -298,6 +298,7 @@ class DepthChartRow(BaseModel):
     published_at: Optional[datetime] = None
     timestamp: Optional[datetime] = None
     last_updated: Optional[datetime] = None
+    dt: Optional[datetime] = None   # 2025+ ESPN schema's actual snapshot timestamp
     # Local acquisition time, injected by ``fetch_depth_charts``.  This is
     # provenance, not a claim that the source published the chart then.
     ingest_at: Optional[datetime] = None
@@ -638,8 +639,15 @@ class NFLReadPyAdapter:
                 # 2025+ ESPN schema lacks season/week — inject from fetch context
                 if coerced.get("season") is None:
                     coerced["season"] = season
-                if coerced.get("week") is None:
-                    coerced["week"] = 1  # ESPN daily charts; use week 1 as placeholder
+                # The 2025+ ESPN feed's real snapshot timestamp is "dt" — map it
+                # to published_at so normalize.py can derive the actual week
+                # from the game schedule instead of guessing. Previously this
+                # branch hardcoded week=1 for every row regardless of when the
+                # snapshot was taken, which broadcast one preseason snapshot
+                # across all 18 weeks. week stays None here; _process_depth_charts
+                # resolves it from published_at + games.kickoff_at.
+                if coerced.get("published_at") is None:
+                    coerced["published_at"] = coerced.get("dt")
                 # Map 2025+ columns to legacy names for normalize compatibility
                 if coerced.get("club_code") is None and coerced.get("team"):
                     coerced["club_code"] = coerced["team"]
@@ -833,7 +841,16 @@ class NFLReadPyAdapter:
     def fetch_nextgen_stats(
         self, seasons: list[int], dry_run: bool = False
     ) -> tuple[int, int]:
-        """Load Next Gen Stats and write to staging (available from 2016 onwards)."""
+        """
+        Load Next Gen Stats and write to staging (available from 2016 onwards).
+
+        nfl.load_nextgen_stats defaults to stat_type='passing' — pulling only
+        that meant avg_separation/avg_cushion (receiving-only metrics) were
+        0% filled in every season regardless of ingest health. Passing rows
+        are QBs and receiving rows are pass-catchers, so the two stat_types
+        do not share player_id within a week; fetching both is a safe union,
+        not a merge.
+        """
         import nflreadpy as nfl
 
         valid_seasons = [s for s in seasons if s >= 2016]
@@ -842,18 +859,24 @@ class NFLReadPyAdapter:
 
         total_ok = total_fail = 0
         for season in valid_seasons:
-            logger.info("fetch_nextgen_stats: season=%d", season)
-            try:
-                df = self._load_with_retry(nfl.load_nextgen_stats, seasons=season)
-            except Exception as exc:
-                logger.error("load_nextgen_stats FAILED season=%d: %s", season, exc)
-                continue
-            ok, fail, preview = self._process_source(
-                SOURCE_NEXTGEN_STATS, df, season, WEEK_COL[SOURCE_NEXTGEN_STATS], dry_run
-            )
-            total_ok += ok
-            total_fail += fail
-            _print_preview(SOURCE_NEXTGEN_STATS, season, ok, fail, preview)
+            for stat_type in ("passing", "receiving"):
+                logger.info("fetch_nextgen_stats: season=%d stat_type=%s", season, stat_type)
+                try:
+                    df = self._load_with_retry(
+                        nfl.load_nextgen_stats, seasons=season, stat_type=stat_type
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "load_nextgen_stats FAILED season=%d stat_type=%s: %s",
+                        season, stat_type, exc,
+                    )
+                    continue
+                ok, fail, preview = self._process_source(
+                    SOURCE_NEXTGEN_STATS, df, season, WEEK_COL[SOURCE_NEXTGEN_STATS], dry_run
+                )
+                total_ok += ok
+                total_fail += fail
+                _print_preview(SOURCE_NEXTGEN_STATS, season, ok, fail, preview)
         return total_ok, total_fail
 
     def fetch_team_stats(
