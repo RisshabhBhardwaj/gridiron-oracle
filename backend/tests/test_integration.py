@@ -82,7 +82,13 @@ def db_conn():
 @pytest.fixture(scope="module")
 def best_wr_projection(db_conn):
     """
-    Fetch the top receiving_yards projection for week=1, season=2025.
+    Fetch the top receiving_yards projection for week=1, season=2026.
+
+    Season 2026 week 1 is the live forward-projection target this API
+    serves; backtest seasons (2021-2025) never have week=1 rows under an
+    approved pipeline run because within-season lag features require at
+    least one prior week in the same season — week 1 is causally
+    unreachable there, not a data gap.
 
     Returns a dict with: player_id, player_name, week, season,
     projection, floor, ceiling, boom_probability, bust_probability.
@@ -105,7 +111,7 @@ def best_wr_projection(db_conn):
             FROM   projections p
             LEFT JOIN players pl ON pl.id = p.player_id
             WHERE  p.stat       = 'receiving_yards'
-              AND  p.season     = 2025
+              AND  p.season     = 2026
               AND  p.week       = 1
               AND  p.projection IS NOT NULL
               AND  p.projection  > 0
@@ -117,11 +123,11 @@ def best_wr_projection(db_conn):
     except Exception as exc:
         # If the table doesn't exist (e.g. psycopg2.errors.UndefinedTable), skip properly
         pytest.skip(f"Database query failed, possibly missing tables: {exc}")
-        
+
     if row is None:
         pytest.skip(
-            "No projections for week=1 season=2025 — "
-            "run: python3.11 -m ml.train --seasons 2025 --all-weeks --fast"
+            "No projections for week=1 season=2026 — "
+            "run: python3.11 -m ml.train --seasons 2026 --week 1"
         )
     return {
         "player_id":       row[0],
@@ -171,7 +177,7 @@ class TestProjectionsWeek:
         )
         body = r.json()
         assert body["count"] > 0, (
-            "Expected ≥1 projection for week=1 season=2025 — "
+            "Expected ≥1 projection for week=1 season=2026 — "
             "check projections table is populated"
         )
         first = body["projections"][0]

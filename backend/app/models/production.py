@@ -479,6 +479,7 @@ class FeatureMatrix(SQLModel, table=True):
     yac_per_reception: Optional[float] = None
 
     computed_at: datetime = Field(default_factory=datetime.utcnow)
+    as_of: Optional[datetime] = None
 
 
 class Projection(SQLModel, table=True):
