@@ -1,0 +1,194 @@
+{
+  "artifact_digests": {
+    "releases/candidates/causal_20260821_fixed/CONSTRAINED_STACK_SELECTION.json": "15a69e72a01d6a31995e93007eaa1069ac16a91ef5ea4168f78d917154b09933",
+    "releases/candidates/causal_20260821_fixed/ridge_carries_RB_coefs.json": "b6898664105c1686c5c2bb490598e8b48a8bfcfc58488c06af2c02cde437e8f1",
+    "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_QB_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_RB_coefs.json": "8f3f23a2ada58ffa08d65c168944f4290032dbb6b400828e90b8d8fa81f5cc23",
+    "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_TE_coefs.json": "b0a096dc4347e6308db4cb614778f4b85e2881131a9c7f655a7d8affec65eaaa",
+    "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_WR_coefs.json": "b6898664105c1686c5c2bb490598e8b48a8bfcfc58488c06af2c02cde437e8f1",
+    "releases/candidates/causal_20260821_fixed/ridge_pass_attempts_QB_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260821_fixed/ridge_passing_yards_QB_coefs.json": "b6898664105c1686c5c2bb490598e8b48a8bfcfc58488c06af2c02cde437e8f1",
+    "releases/candidates/causal_20260821_fixed/ridge_receiving_yards_RB_coefs.json": "c8c4c5dbee53c26f27dd32fa71246473af2bfa6ea28e52c7c9ef8fd504452753",
+    "releases/candidates/causal_20260821_fixed/ridge_receiving_yards_TE_coefs.json": "2ff612f88430f246e702d715c3b74b9c55eff526490fb8d3d98f7a94a493e2ca",
+    "releases/candidates/causal_20260821_fixed/ridge_receiving_yards_WR_coefs.json": "efdec3918b7dcda6fd54337a73af0c3ed268aa4161a57bb7420eddc6c601e38b",
+    "releases/candidates/causal_20260821_fixed/ridge_rushing_yards_QB_coefs.json": "20fa5a127eca62f49e79e9c7452aae33700723620c1e1ee559979403f2de19d8",
+    "releases/candidates/causal_20260821_fixed/ridge_rushing_yards_RB_coefs.json": "3720f5d682a3e12d98c48fe92ad75f2714b155f3b44949a10a1916449a4fea7e",
+    "releases/candidates/causal_20260821_fixed/ridge_targets_RB_coefs.json": "f89fe19e09d95740417366b2eef833c13a797d6e1ae241bf169d44cbadb6f7e9",
+    "releases/candidates/causal_20260821_fixed/ridge_targets_TE_coefs.json": "fd4db744a985d12eb07c18e60c6824b90e8500a7a29b63f0525388a36cb209a8",
+    "releases/candidates/causal_20260821_fixed/ridge_targets_WR_coefs.json": "f01696848fc1775006b2604406fa7704cab0e0daf2d7b9163939a56190370db3",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_carries_RB.json": "6edbac9006a17f9756a8312447ba3981176d28f1dd43d55fbf39b5254e99ea34",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_QB.json": "1fb22b94bed480ccefd9bbd321b3b71f1dde824a235389b86436845e7e68ff90",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_RB.json": "6fa8520e9c8973bedca07cbc7339dbf5abd82f2815c01d10676795775c105963",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_TE.json": "798c5aec98b567dfe5ca5c599994a1b0bf226c61b0459a4561ef14d28b87fabb",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_WR.json": "4f883a356b5a5a356724deb5cd8b8c075b70e82fb7f124731b47eed44a03ce16",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_pass_attempts_QB.json": "ebbc08855a87ee0a608f8cac65465a5239b6f547e177066b472ef77dd5d6cf13",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_passing_yards_QB.json": "8db600c18d4be72c134786ecd49f82cb980780538f25355f9e285986e682b57a",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_RB.json": "fcc0935eed7aeff888cfbf2ce7be5cc4fe47ba6de8515794392dab9e9ab0debe",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_TE.json": "bfefc002202481e515996fa3aad64daf4a7d6665f5b3b34e63541a8e151359f7",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_WR.json": "1b4c56f4a5dc7fde0deff63b465a2deaea9784eee073ff5f8b72766758511c5e",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_rushing_yards_QB.json": "faf0b6069618d88950476cb8a14211b7da011027bef13543e1fa42c58a7a64ed",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_rushing_yards_RB.json": "293cce06887393c08dd086f5a28c6fdc7e8a612ae9176ea120710ba21b44e9a4",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_targets_RB.json": "9ddbcb61e06ed17162faffb5ba2c1f51f9c732572cc0fd8cda20ddf3d215c72b",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_targets_TE.json": "9e2ae0758c5d94b2264863e92a1db30779fc86f1a82b9846b767b745329b8c61",
+    "releases/candidates/causal_20260821_fixed/serving_divergence_targets_WR.json": "9310eb6b1eb87819d69cb6f61de67a55469513cb6c1c2936b3c4a17ca3933f76",
+    "releases/candidates/causal_20260821_fixed/stack_carries_RB_ed6e0a28.csv": "dca95e7af8e08f57a9913ab2669c84137acdc25e2d1b4ab2af8d1ff3aae27fd9",
+    "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv": "7f912a412ccc856d875dfab7969022dcf2c8c9ca355b16b62608404ac9990d4b",
+    "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv": "65c4daf7ec88e5a9e5774b07e65f49f6ba8dea0265334019e4eb880b56c5e3c2",
+    "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
+    "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv": "0bd82815753c94bf15fbe46af18261222fdb8aa449c4038bb7756543ff10f879",
+    "releases/candidates/causal_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv": "d7352213e465e12f0f2576a9ba320feef6d4cffa8d5a75750ea2050602170160",
+    "releases/candidates/causal_20260821_fixed/stack_passing_yards_QB_f55981d1.csv": "6defdb561deea33ec5f96ceadfb7d6fc4d00d22649123eb02b97885d06f3ef95",
+    "releases/candidates/causal_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv": "bda8ee4468c1aec99d3c46f1e614837e1e7e390bff8fa2309f26a87f37229812",
+    "releases/candidates/causal_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv": "d35564f29717dc140ed587f93638d0d9f4b3d1d48b9aa2e8707167ffb5a19d75",
+    "releases/candidates/causal_20260821_fixed/stack_receiving_yards_WR_47de5374.csv": "d966c218561b965290c2f77ae17cd408a5beecb03c0d52292ecb27a5c9b0ed8e",
+    "releases/candidates/causal_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv": "4a2a8d18a47eb0364baf61a6602d0e3427ff6ea0a6a640369377e7b6af421cdf",
+    "releases/candidates/causal_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv": "93e8d04a31fdf7e1fcbf38b7537a1876f255c390c8d88df117393960d0af55f7",
+    "releases/candidates/causal_20260821_fixed/stack_targets_RB_b46299d9.csv": "2d279e9e4208dba647d2d39c973a446e6b94ff8cd6bbc5c30cc73eca126ff573",
+    "releases/candidates/causal_20260821_fixed/stack_targets_TE_29116c09.csv": "b55daf6328f0657c8e06a4cbdedfc4c2e4efe8e5d45d4d0c800017e935319f56",
+    "releases/candidates/causal_20260821_fixed/stack_targets_WR_4cf65b43.csv": "2dd60e3bf9cbb42809b1617a6f43ea555d27d310c69378fecf19e43bb7c719f5"
+  },
+  "artifacts": {
+    "ridge_coefficients": [
+      "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_QB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_RB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_WR_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_TE_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_targets_WR_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_targets_TE_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_targets_RB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_carries_RB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_pass_attempts_QB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_passing_yards_QB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_receiving_yards_WR_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_receiving_yards_TE_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_receiving_yards_RB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_rushing_yards_QB_coefs.json",
+      "releases/candidates/causal_20260821_fixed/ridge_rushing_yards_RB_coefs.json"
+    ],
+    "selection_policy": [
+      "releases/candidates/causal_20260821_fixed/CONSTRAINED_STACK_SELECTION.json"
+    ],
+    "serving_parity": [
+      "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_QB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_RB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_WR.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_TE.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_targets_WR.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_targets_TE.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_targets_RB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_carries_RB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_pass_attempts_QB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_passing_yards_QB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_WR.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_TE.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_RB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_rushing_yards_QB.json",
+      "releases/candidates/causal_20260821_fixed/serving_divergence_rushing_yards_RB.json"
+    ],
+    "stacks": [
+      "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv",
+      "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv",
+      "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv",
+      "releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+      "releases/candidates/causal_20260821_fixed/stack_targets_WR_4cf65b43.csv",
+      "releases/candidates/causal_20260821_fixed/stack_targets_TE_29116c09.csv",
+      "releases/candidates/causal_20260821_fixed/stack_targets_RB_b46299d9.csv",
+      "releases/candidates/causal_20260821_fixed/stack_carries_RB_ed6e0a28.csv",
+      "releases/candidates/causal_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv",
+      "releases/candidates/causal_20260821_fixed/stack_passing_yards_QB_f55981d1.csv",
+      "releases/candidates/causal_20260821_fixed/stack_receiving_yards_WR_47de5374.csv",
+      "releases/candidates/causal_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv",
+      "releases/candidates/causal_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv",
+      "releases/candidates/causal_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv",
+      "releases/candidates/causal_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv"
+    ]
+  },
+  "baseline_manifest_path": "releases/current_baseline.json",
+  "created_at": "2026-08-21T21:23:56.147903+00:00",
+  "environment": {
+    "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
+    "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
+    "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
+  },
+  "git_branch": "main",
+  "git_commit": "54e94d280eb9e7cd0783b398b7e561c92d0a32ee",
+  "git_dirty": true,
+  "integrity": {
+    "artifact_mode_ready": false,
+    "checks": {
+      "backtest_assets": {
+        "detail": "Backtest assets available",
+        "observed": {
+          "latest_csv": "/Users/risshabh/Projects/Active/gridiron_oracle/ml/backtest_results/backtest_2019_2025.csv"
+        },
+        "status": "ok"
+      },
+      "baseline_manifest": {
+        "detail": "Baseline manifest commit is an ancestor of HEAD, but HEAD changes non-evidence paths since that commit: ['releases/candidates/causal_20260821_fixed/CONSTRAINED_STACK_SELECTION.json', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_carries_RB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_fantasy_ppr_QB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_fantasy_ppr_RB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_fantasy_ppr_TE.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_fantasy_ppr_WR.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_pass_attempts_QB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_passing_yards_QB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_receiving_yards_RB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_receiving_yards_TE.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_receiving_yards_WR.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_rushing_yards_QB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_rushing_yards_RB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_targets_RB.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_targets_TE.csv', 'releases/candidates/causal_20260821_fixed/bootstrap_lgbm_reference/lgbm_reference_targets_WR.csv', 'releases/candidates/causal_20260821_fixed/promotion_carries_RB.json', 'releases/candidates/causal_20260821_fixed/promotion_fantasy_ppr_QB.json', 'releases/candidates/causal_20260821_fixed/promotion_fantasy_ppr_RB.json', 'releases/candidates/causal_20260821_fixed/promotion_fantasy_ppr_TE.json', 'releases/candidates/causal_20260821_fixed/promotion_fantasy_ppr_WR.json', 'releases/candidates/causal_20260821_fixed/promotion_gates_zero_regression.json', 'releases/candidates/causal_20260821_fixed/promotion_pass_attempts_QB.json', 'releases/candidates/causal_20260821_fixed/promotion_passing_yards_QB.json', 'releases/candidates/causal_20260821_fixed/promotion_receiving_yards_RB.json', 'releases/candidates/causal_20260821_fixed/promotion_receiving_yards_TE.json', 'releases/candidates/causal_20260821_fixed/promotion_receiving_yards_WR.json', 'releases/candidates/causal_20260821_fixed/promotion_rushing_yards_QB.json', 'releases/candidates/causal_20260821_fixed/promotion_rushing_yards_RB.json', 'releases/candidates/causal_20260821_fixed/promotion_targets_RB.json', 'releases/candidates/causal_20260821_fixed/promotion_targets_TE.json', 'releases/candidates/causal_20260821_fixed/promotion_targets_WR.json', 'releases/candidates/causal_20260821_fixed/release_manifest.json', 'releases/candidates/causal_20260821_fixed/ridge_carries_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fantasy_ppr_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_pass_attempts_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_passing_yards_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receiving_yards_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receiving_yards_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receiving_yards_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_rushing_yards_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_rushing_yards_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_targets_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_targets_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_targets_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_carries_RB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_QB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_RB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_TE.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_fantasy_ppr_WR.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_pass_attempts_QB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_passing_yards_QB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_RB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_TE.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_receiving_yards_WR.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_rushing_yards_QB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_rushing_yards_RB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_targets_RB.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_targets_TE.json', 'releases/candidates/causal_20260821_fixed/serving_divergence_targets_WR.json', 'releases/candidates/causal_20260821_fixed/stack_carries_RB_ed6e0a28.csv', 'releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_QB_b1e97dc8.csv', 'releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_RB_d8767a57.csv', 'releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv', 'releases/candidates/causal_20260821_fixed/stack_fantasy_ppr_WR_5e139815.csv', 'releases/candidates/causal_20260821_fixed/stack_pass_attempts_QB_c6c2b101.csv', 'releases/candidates/causal_20260821_fixed/stack_passing_yards_QB_f55981d1.csv', 'releases/candidates/causal_20260821_fixed/stack_receiving_yards_RB_f7e8cd28.csv', 'releases/candidates/causal_20260821_fixed/stack_receiving_yards_TE_e58ac3f8.csv', 'releases/candidates/causal_20260821_fixed/stack_receiving_yards_WR_47de5374.csv', 'releases/candidates/causal_20260821_fixed/stack_rushing_yards_QB_dc7f07f1.csv', 'releases/candidates/causal_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv', 'releases/candidates/causal_20260821_fixed/stack_targets_RB_b46299d9.csv', 'releases/candidates/causal_20260821_fixed/stack_targets_TE_29116c09.csv', 'releases/candidates/causal_20260821_fixed/stack_targets_WR_4cf65b43.csv']",
+        "observed": {
+          "created_at": "2026-08-21T21:18:45.828790+00:00",
+          "git_commit": "8f3b49d0183fa8d3297e5fd000f38eaa289825c8",
+          "head": "54e94d280eb9e7cd0783b398b7e561c92d0a32ee",
+          "model_version": "causal_20260819_zero_regression",
+          "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
+          "worktree_dirty": false
+        },
+        "status": "error"
+      },
+      "database": {
+        "detail": "Database reachable",
+        "status": "ok"
+      },
+      "feature_matrix": {
+        "detail": "feature_matrix freshness checked",
+        "observed": {
+          "age_hours": 28.52,
+          "computed_at": "2026-08-20T16:52:56.059873+00:00",
+          "season": 2026,
+          "week": 1
+        },
+        "status": "warn"
+      },
+      "mlflow": {
+        "detail": "MLflow endpoint reachable",
+        "observed": {
+          "uri": "http://localhost:15091"
+        },
+        "status": "ok"
+      },
+      "tracing": {
+        "detail": "Trace propagation enabled; exporter disabled",
+        "observed": {
+          "active_exporters": [],
+          "otlp_endpoint": null,
+          "otlp_protocol": "http/protobuf",
+          "requested_exporters": [
+            "none"
+          ],
+          "service_name": "gridiron-oracle-api"
+        },
+        "status": "ok"
+      }
+    },
+    "fallback_allowed": false,
+    "generated_at": "2026-08-21T21:23:56.147824+00:00",
+    "model_version": "latest",
+    "overall_status": "blocked",
+    "product_mode": "artifact_backed"
+  },
+  "mlflow_tracking_uri": "http://localhost:15091",
+  "model_version": "latest",
+  "product_mode": "artifact_backed",
+  "projection_policy": {
+    "approved_pipeline_run_ids": [
+      "stack_materialize_20260821T211851Z",
+      "pipeline_3063c132d07f404eba8db71ac32e04ec"
+    ],
+    "require_interval_columns": true,
+    "require_posterior_samples": false
+  },
+  "verification": {
+    "local_verify_command": "make verify-local",
+    "readiness_verify_command": "python scripts/verify_release_readiness.py"
+  }
+}
