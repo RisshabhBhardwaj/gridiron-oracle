@@ -58,6 +58,22 @@ SEASON_PROJECTIONS_UNAVAILABLE = (
     "Kalman prior is never used for this surface."
 )
 
+# Ride-along honesty fix (Phase 1, Component F1): the live pipeline fallback
+# degrades to a bare kalman_est_{stat} passthrough whenever MLflow is unset
+# (ml/train.py), and reports degraded=True while still returning a number.
+# Serving that number as if it were a real forecast is worse than serving
+# nothing. Disabled by default; only flip on for local/dev debugging.
+_PIPELINE_FALLBACK_ENABLED = False
+
+
+class NoForecastAvailable(Exception):
+    """Player resolved but no approved projection row exists for this request.
+
+    Distinct from "player not found" (get_projection returns None for that).
+    The API layer maps this to a structured forecast_available=False
+    response rather than a degraded number.
+    """
+
 
 def load_approved_pipeline_run_ids(manifest_path: Optional[Path] = None) -> frozenset[str]:
     """Fail closed unless the baseline manifest pins at least one materialization run."""
@@ -81,6 +97,86 @@ def load_approved_pipeline_run_ids(manifest_path: Optional[Path] = None) -> froz
             ),
         )
     return ids
+
+
+# ---------------------------------------------------------------------------
+# Depth-chart freshness gate (Phase 1, Component E)
+# ---------------------------------------------------------------------------
+#
+# A stale or partially-refreshed depth-chart snapshot doesn't raise — it
+# silently under-counts rosters, which is a quieter and harder-to-spot
+# failure than serving a retired player. This gate exists to fail loud
+# instead, before any depth-chart-derived roster filter is trusted.
+
+# Known-rostered players whose absence from a season's depth-chart snapshot
+# signals staleness. Extend as roster reality shifts.
+_SPOT_CHECK_PLAYERS: dict[int, tuple[str, ...]] = {
+    2026: ("00-0036893",),  # Najee Harris
+}
+
+
+@dataclass
+class FreshnessResult:
+    ok: bool
+    reason: str
+    team_counts: dict[str, int]
+
+
+def check_depth_chart_freshness(conn, season: int) -> FreshnessResult:
+    """
+    Sanity-check the depth-chart snapshot for `season` before it is trusted
+    as a roster-truth source.
+
+    Range is [30, 100] ACT-linked players per team, not the in-season 53+8
+    (IR) number: preseason rosters run up to ~90 before final cuts, and this
+    gate must not itself fail loud against a legitimately large preseason
+    snapshot. The floor of 30 and requiring >=28/32 teams present are what
+    actually catch a broken or mid-refresh ingest.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT dc.team, count(DISTINCT dc.player_id)
+        FROM   depth_charts dc
+        JOIN   players p ON p.id = dc.player_id
+        WHERE  dc.season = %s AND p.status = 'ACT'
+        GROUP BY dc.team
+        """,
+        (season,),
+    )
+    team_counts = dict(cur.fetchall())
+
+    if len(team_counts) < 28:
+        return FreshnessResult(
+            ok=False,
+            reason=f"only {len(team_counts)}/32 teams have depth-chart rows for season {season}",
+            team_counts=team_counts,
+        )
+
+    bad_teams = {team: n for team, n in team_counts.items() if n < 30 or n > 100}
+    if bad_teams:
+        return FreshnessResult(
+            ok=False,
+            reason=f"team ACT counts outside [30, 100]: {bad_teams}",
+            team_counts=team_counts,
+        )
+
+    spot_check = _SPOT_CHECK_PLAYERS.get(season, ())
+    if spot_check:
+        cur.execute(
+            "SELECT DISTINCT player_id FROM depth_charts WHERE season = %s AND player_id = ANY(%s)",
+            (season, list(spot_check)),
+        )
+        present = {row[0] for row in cur.fetchall()}
+        missing = set(spot_check) - present
+        if missing:
+            return FreshnessResult(
+                ok=False,
+                reason=f"spot-check players missing from season {season} depth chart: {sorted(missing)}",
+                team_counts=team_counts,
+            )
+
+    return FreshnessResult(ok=True, reason="ok", team_counts=team_counts)
 
 
 # ---------------------------------------------------------------------------
@@ -178,14 +274,17 @@ class ProjectionService:
                 return None
 
             row = self._load_projection_row(player_id, week, season, stat)
-            if row is None:
+            if row is None and _PIPELINE_FALLBACK_ENABLED:
                 logger.info(
                     "No pre-computed projection for %s wk%d — running pipeline",
                     player_id, week,
                 )
                 row = self._run_pipeline(player_id, position or "WR", week, season, stat)
             if row is None:
-                return None
+                raise NoForecastAvailable(
+                    f"No approved projection for player_id={player_id} "
+                    f"week={week} season={season} stat={stat}"
+                )
 
             kalman_est, kalman_var = self._load_kalman(player_id, week, season, stat)
 
@@ -336,6 +435,7 @@ class ProjectionService:
         skill = [p.upper() for p in (positions or ["QB", "RB", "WR", "TE"])]
         try:
             approved = load_approved_pipeline_run_ids()
+            self._warn_if_depth_chart_stale(season)
             feature_rows = self._load_season_feature_rows(season, start_week, skill)
             weekly_rates = self._load_weekly_rates(season, start_week, approved)
         except HTTPException:
@@ -434,6 +534,7 @@ class ProjectionService:
                     FROM feature_matrix fm
                     JOIN players pl ON pl.id = fm.player_id
                     WHERE UPPER(COALESCE(pl.position, '')) = ANY(%s)
+                      AND COALESCE(pl.status, 'ACT') != 'RET'
                       AND (
                             (fm.season = %s AND fm.week < %s)
                          OR (fm.season < %s)
@@ -446,6 +547,25 @@ class ProjectionService:
         finally:
             conn.close()
         return rows
+
+    def _warn_if_depth_chart_stale(self, season: int) -> None:
+        """Log-only staleness check; never blocks the season board (Component E)."""
+        import psycopg2
+
+        try:
+            conn = psycopg2.connect(self._db_url)
+            try:
+                result = check_depth_chart_freshness(conn, season)
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.debug("depth-chart freshness check failed to run: %s", exc)
+            return
+        if not result.ok:
+            logger.warning(
+                "Depth chart freshness gate FAILED for season=%s: %s",
+                season, result.reason,
+            )
 
     def _load_weekly_rates(
         self, season: int, start_week: int, approved: frozenset[str]

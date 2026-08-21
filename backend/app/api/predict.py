@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from backend.app.core.config import settings
 from backend.app.core.rate_limit import limiter
 from backend.app.core.runtime_mode import ArtifactRequiredError
-from backend.app.services.projection import ProjectionService, VALID_STATS
+from backend.app.services.projection import NoForecastAvailable, ProjectionService, VALID_STATS
 
 router = APIRouter(prefix="", tags=["predict"])
 
@@ -201,7 +201,20 @@ def predict(
     data_freshness > 24h triggers a staleness warning in the frontend.
     """
     _validate_stat(stat)
-    result = svc.get_projection(player, week, season, stat)
+    try:
+        result = svc.get_projection(player, week, season, stat)
+    except NoForecastAvailable:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "forecast_available": False,
+                "message": (
+                    f"No approved projection for player='{player}' week={week} season={season}. "
+                    "The weekly forecast surface is not yet live for this player/week. "
+                    "See the draft board for season-long projections."
+                ),
+            },
+        )
     if result is None:
         raise HTTPException(
             status_code=404,

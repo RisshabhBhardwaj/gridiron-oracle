@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 
 def test_materializer_declares_the_complete_serving_matrix():
@@ -262,3 +264,106 @@ def test_readiness_rejects_a_dirty_runtime_worktree(tmp_path):
 
     assert result["status"] == "error"
     assert "worktree is dirty" in result["detail"]
+
+
+# ── Phase 1 — ride-along honesty fixes (Components E, F1, F5) ─────────────────
+
+_DB_URL = (
+    os.environ.get("DATABASE_URL", "postgresql://oracle:oracle@localhost:15439/oracle")
+    .replace("postgresql+asyncpg://", "postgresql://")
+)
+
+
+@pytest.fixture(scope="module")
+def db_conn():
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(_DB_URL)
+        try:
+            yield conn
+        finally:
+            conn.close()
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL not reachable ({exc})")
+
+
+def test_pipeline_fallback_disabled_by_default():
+    from backend.app.services.projection import _PIPELINE_FALLBACK_ENABLED
+
+    assert _PIPELINE_FALLBACK_ENABLED is False
+
+
+def test_bypass_closed_raises_no_forecast_available_not_a_degraded_number(db_conn):
+    """
+    F1: a player with no approved projection row must not silently fall
+    through to the live Kalman-passthrough pipeline. get_projection must
+    raise NoForecastAvailable, not return a degraded=True number.
+    """
+    from backend.app.services.projection import NoForecastAvailable, ProjectionService
+
+    cur = db_conn.cursor()
+    cur.execute("SELECT full_name FROM players WHERE full_name IS NOT NULL LIMIT 1")
+    row = cur.fetchone()
+    if row is None:
+        pytest.skip("no players in DB")
+    player_name = row[0]
+
+    svc = ProjectionService(db_url=_DB_URL)
+    with pytest.raises(NoForecastAvailable):
+        # Season far outside any approved run's coverage.
+        svc.get_projection(player_name, week=1, season=2099, stat="receiving_yards")
+
+
+def test_predict_no_forecast_available_response_shape():
+    """F5: the API must surface forecast_available=False, not a bare 404 string."""
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import app
+
+    with TestClient(app) as client:
+        cur_r = client.get(
+            "/predict",
+            params={"player": "Puka Nacua", "week": 1, "season": 2099, "stat": "receiving_yards"},
+        )
+    assert cur_r.status_code == 404
+    detail = cur_r.json()["detail"]
+    assert isinstance(detail, dict)
+    assert detail["forecast_available"] is False
+
+
+def test_check_depth_chart_freshness_passes_for_2026(db_conn):
+    from backend.app.services.projection import check_depth_chart_freshness
+
+    result = check_depth_chart_freshness(db_conn, 2026)
+    assert result.ok, result.reason
+    assert len(result.team_counts) == 32
+
+
+def test_check_depth_chart_freshness_fails_for_a_season_with_no_data(db_conn):
+    from backend.app.services.projection import check_depth_chart_freshness
+
+    result = check_depth_chart_freshness(db_conn, 1999)
+    assert not result.ok
+    assert "teams" in result.reason
+
+
+def test_season_board_excludes_retired_players(db_conn):
+    """
+    Phase 1 verification bullet: no retired player in the rest-of-season
+    board. _load_season_feature_rows excludes players.status = 'RET'.
+    """
+    from backend.app.services.projection import ProjectionService
+
+    svc = ProjectionService(db_url=_DB_URL)
+    rows = svc._load_season_feature_rows(2025, 10, ["QB", "RB", "WR", "TE"])
+    player_ids = [r["player_id"] for r in rows]
+    if not player_ids:
+        pytest.skip("no season feature rows for 2025 week<10")
+
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT count(*) FROM players WHERE id = ANY(%s) AND status = 'RET'",
+        (player_ids,),
+    )
+    assert cur.fetchone()[0] == 0
