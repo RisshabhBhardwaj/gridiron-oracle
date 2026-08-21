@@ -103,18 +103,92 @@
       "releases/candidates/causal_20260821_fixed/stack_rushing_yards_RB_68cea1d5.csv"
     ]
   },
-  "candidate": false,
-  "created_at": "2026-08-21T21:18:45.828790+00:00",
-  "git_commit": "8f3b49d0183fa8d3297e5fd000f38eaa289825c8",
-  "git_dirty": false,
-  "model_version": "causal_20260819_zero_regression",
+  "baseline_manifest_path": "releases/current_baseline.json",
+  "created_at": "2026-08-21T21:28:23.976223+00:00",
+  "environment": {
+    "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
+    "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
+    "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
+  },
+  "git_branch": "main",
+  "git_commit": "1d811d211252cc3c5658781d8c5803e8af9a83fb",
+  "git_dirty": true,
+  "integrity": {
+    "artifact_mode_ready": false,
+    "checks": {
+      "backtest_assets": {
+        "detail": "Backtest assets available",
+        "observed": {
+          "latest_csv": "/Users/risshabh/Projects/Active/gridiron_oracle/ml/backtest_results/backtest_2019_2025.csv"
+        },
+        "status": "ok"
+      },
+      "baseline_manifest": {
+        "detail": "Baseline manifest was frozen from a dirty worktree",
+        "observed": {
+          "created_at": "2026-08-21T21:23:56.147903+00:00",
+          "git_commit": "54e94d280eb9e7cd0783b398b7e561c92d0a32ee",
+          "head": "1d811d211252cc3c5658781d8c5803e8af9a83fb",
+          "model_version": "latest",
+          "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
+          "worktree_dirty": true
+        },
+        "status": "error"
+      },
+      "database": {
+        "detail": "Database reachable",
+        "status": "ok"
+      },
+      "feature_matrix": {
+        "detail": "feature_matrix freshness checked",
+        "observed": {
+          "age_hours": 28.59,
+          "computed_at": "2026-08-20T16:52:56.059873+00:00",
+          "season": 2026,
+          "week": 1
+        },
+        "status": "warn"
+      },
+      "mlflow": {
+        "detail": "MLflow endpoint reachable",
+        "observed": {
+          "uri": "http://localhost:15091"
+        },
+        "status": "ok"
+      },
+      "tracing": {
+        "detail": "Trace propagation enabled; exporter disabled",
+        "observed": {
+          "active_exporters": [],
+          "otlp_endpoint": null,
+          "otlp_protocol": "http/protobuf",
+          "requested_exporters": [
+            "none"
+          ],
+          "service_name": "gridiron-oracle-api"
+        },
+        "status": "ok"
+      }
+    },
+    "fallback_allowed": false,
+    "generated_at": "2026-08-21T21:28:23.976182+00:00",
+    "model_version": "latest",
+    "overall_status": "blocked",
+    "product_mode": "artifact_backed"
+  },
+  "mlflow_tracking_uri": "http://localhost:15091",
+  "model_version": "latest",
   "product_mode": "artifact_backed",
   "projection_policy": {
-    "approved_pipeline_run_ids": [],
+    "approved_pipeline_run_ids": [
+      "stack_materialize_20260821T211851Z",
+      "pipeline_3063c132d07f404eba8db71ac32e04ec"
+    ],
     "require_interval_columns": true,
     "require_posterior_samples": false
   },
-  "promotion_evidence": "releases/candidates/causal_20260821_fixed/promotion_gates_zero_regression.json",
-  "release_status": "promoted_zero_regression",
-  "source_rebuild": "ml/oof/rebuild_20260809T231500"
+  "verification": {
+    "local_verify_command": "make verify-local",
+    "readiness_verify_command": "python scripts/verify_release_readiness.py"
+  }
 }
