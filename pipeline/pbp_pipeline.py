@@ -814,6 +814,11 @@ def main() -> None:
                         subset=["player_id", "game_id"]
                     )
                     features_df = features_df.merge(ftn_dr, on=["player_id", "game_id"], how="left")
+                    if "drop_rate" not in features_df.columns:
+                        # PFR stopped supplying drops/drop_pct for recent seasons
+                        # (see _load_pfr_drop_rates), so _aggregate_pbp never adds
+                        # this column. FTN charting is the only source left.
+                        features_df["drop_rate"] = np.nan
                     features_df["drop_rate"] = features_df["drop_rate_ftn"].combine_first(
                         features_df["drop_rate"]
                     )
