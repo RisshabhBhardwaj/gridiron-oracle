@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from pipeline.pbp_pipeline import _aggregate_pbp
+from pipeline.pbp_pipeline import _aggregate_pbp, _build_pbp_plays
 
 
 def _dropback_rows(game_id: str, week: int, posteam: str, defteam: str, n: int, zone: bool) -> list[dict]:
@@ -98,3 +98,35 @@ def test_opp_zone_pct_uses_the_players_opponent_not_their_own_team():
         f"opp_zone_pct={opp_zone_pct} looks like it came from OFF's own defensive "
         "history (all zone) instead of DEF1's (all man) — the opponent merge key is wrong"
     )
+
+
+def test_build_pbp_plays_renames_qtr_to_the_pbp_plays_schema_column():
+    """
+    Raw nflreadpy PBP uses "qtr"; the pbp_plays table (migration
+    20260821_0016) declares the column "quarter". A silent mismatch here
+    means every play in a season fails the INSERT and — because Postgres
+    refuses further commands on an aborted transaction — cascades into
+    every later season in the same run looking like an unrelated failure.
+    """
+    pbp = pd.DataFrame([
+        {
+            "game_id": "2024_01_X_OFF", "play_id": 1, "week": 1,
+            "posteam": "OFF", "defteam": "X", "play_type": "pass",
+            "down": 1, "ydstogo": 10, "yardline_100": 75, "qtr": 2,
+            "game_seconds_remaining": 1800.0, "score_differential": 0,
+        },
+    ])
+    plays = _build_pbp_plays(pbp, season=2024)
+    assert "quarter" in plays.columns
+    assert "qtr" not in plays.columns
+    assert plays.iloc[0]["quarter"] == 2
+
+
+def test_build_pbp_plays_drops_admin_rows_without_a_possession_team():
+    pbp = pd.DataFrame([
+        {"game_id": "2024_01_X_OFF", "play_id": 1, "week": 1, "posteam": "OFF", "play_type": "pass"},
+        {"game_id": "2024_01_X_OFF", "play_id": 2, "week": 1, "posteam": None, "play_type": "timeout"},
+    ])
+    plays = _build_pbp_plays(pbp, season=2024)
+    assert len(plays) == 1
+    assert plays.iloc[0]["play_id"] == 1

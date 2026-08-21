@@ -627,6 +627,53 @@ def _write_ftn_player_game(conn, agg_df: pd.DataFrame) -> int:
     return len(rows)
 
 
+_PBP_PLAYS_COLS = [
+    "game_id", "play_id", "season", "week", "posteam", "defteam",
+    "play_type", "down", "ydstogo", "yardline_100", "quarter",
+    "game_seconds_remaining", "score_differential",
+    "offense_personnel", "defense_personnel",
+]
+
+
+def _build_pbp_plays(pbp: pd.DataFrame, season: int) -> pd.DataFrame:
+    """
+    Play-grain rows: down/distance/field position/score/clock survive past
+    _aggregate_pbp's collapse to player-game grain. Requires game_id,
+    play_id, and posteam (excludes admin rows — timeouts, end-of-quarter
+    markers — that carry no offensive team).
+    """
+    source = pbp.rename(columns={"qtr": "quarter"})
+    cols = [c for c in _PBP_PLAYS_COLS if c in source.columns]
+    plays = source[cols].copy()
+    plays["season"] = season
+    if "week" not in plays.columns:
+        plays["week"] = plays["game_id"].str.split("_").str[1].astype(int)
+    plays = plays.dropna(subset=["game_id", "play_id", "posteam"])
+    plays = plays.drop_duplicates(subset=["game_id", "play_id"])
+    return plays
+
+
+def _write_pbp_plays(conn, plays_df: pd.DataFrame) -> int:
+    if plays_df.empty:
+        return 0
+    cur = conn.cursor()
+    cols = [c for c in _PBP_PLAYS_COLS if c in plays_df.columns]
+    col_list = ", ".join(cols)
+    update_set = ", ".join(
+        f"{c} = EXCLUDED.{c}" for c in cols if c not in ("game_id", "play_id")
+    )
+    upsert_sql = f"""
+        INSERT INTO pbp_plays ({col_list})
+        VALUES %s
+        ON CONFLICT (game_id, play_id) DO UPDATE SET
+            {update_set}
+    """
+    rows = [tuple(_safe(r[c]) for c in cols) for r in plays_df.to_dict("records")]
+    psycopg2.extras.execute_values(cur, upsert_sql, rows, page_size=5000)
+    conn.commit()
+    return len(rows)
+
+
 # ── DB writes ──────────────────────────────────────────────────────────────────
 
 def _write_pbp_features(conn, features_df: pd.DataFrame) -> int:
@@ -801,7 +848,7 @@ def main() -> None:
 
     conn = _get_conn()
     try:
-        total_features, total_matchups, total_ftn = 0, 0, 0
+        total_features, total_matchups, total_ftn, total_plays = 0, 0, 0, 0
         all_features = []
 
         for season in SEASONS:
@@ -809,10 +856,19 @@ def main() -> None:
                 pbp = _load_pbp_season(season)
                 part = _load_participation_season(season)
                 if part is not None and not part.empty:
-                    part_cols = ["nflverse_game_id", "play_id", "defense_man_zone_type", "number_of_pass_rushers", "defenders_in_box"]
+                    part_cols = [
+                        "nflverse_game_id", "play_id", "defense_man_zone_type",
+                        "number_of_pass_rushers", "defenders_in_box",
+                        "offense_personnel", "defense_personnel",
+                    ]
                     part_cols = [c for c in part_cols if c in part.columns]
                     part_subset = part[part_cols].rename(columns={"nflverse_game_id": "game_id"}).drop_duplicates(subset=["game_id", "play_id"])
                     pbp = pbp.merge(part_subset, on=["game_id", "play_id"], how="left")
+
+                plays_df = _build_pbp_plays(pbp, season)
+                n_plays = _write_pbp_plays(conn, plays_df)
+                total_plays += n_plays
+                logger.info("Season %d: %d pbp_plays rows", season, n_plays)
 
                 ftn = _load_ftn_charting_season(season)
                 ftn_agg = pd.DataFrame()
@@ -856,6 +912,12 @@ def main() -> None:
                 )
             except Exception as e:
                 logger.warning("Season %d PBP failed: %s — skipping.", season, e)
+                # A failed statement leaves Postgres refusing every further
+                # command on this connection until rolled back — without
+                # this, one bad season silently aborts every season after
+                # it too (each catching the same "transaction is aborted"
+                # error, not its own).
+                conn.rollback()
                 # A log line alone is invisible outside this process's stdout.
                 # This exact pattern (broad except, warn, continue) is what
                 # silently lost several seasons to the drop_rate KeyError
@@ -884,8 +946,8 @@ def main() -> None:
 
     logger.info("=" * 60)
     logger.info(
-        "  PBP DONE — %d feature rows, %d matchup edges, %d ftn_player_game",
-        total_features, total_matchups, total_ftn
+        "  PBP DONE — %d feature rows, %d matchup edges, %d ftn_player_game, %d pbp_plays",
+        total_features, total_matchups, total_ftn, total_plays
     )
     logger.info("=" * 60)
 
