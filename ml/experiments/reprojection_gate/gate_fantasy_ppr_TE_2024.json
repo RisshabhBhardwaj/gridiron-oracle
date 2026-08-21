@@ -1,26 +1,24 @@
 {
-  "created_at": "2026-08-09T15:46:29.571984+00:00",
+  "created_at": "2026-08-21T21:00:38.763260+00:00",
   "holdout_season": 2024,
   "position": "TE",
   "target": "fantasy_ppr",
-  "candidate_source": "oof",
-  "candidate_mae": 3.900102648186149,
-  "ridge_floor_mae": 4.030495203370435,
-  "oof_mae": 3.900102648186149,
-  "baseline_mae": 3.900102648186149,
+  "candidate_source": "ml/oof/candidate_20260821_fixed/stack_fantasy_ppr_TE_7c1e5797.csv",
+  "candidate_mae": 3.7173531590468594,
+  "oof_mae": 3.7173531590468594,
+  "baseline_mae": 3.8749813889675444,
+  "baseline_manifest": "releases/baselines/20260819_bootstrap_causal_lgbm.json",
+  "approval": null,
   "promote": true,
   "reasons": [],
   "checks": [
     {
-      "name": "vs_frozen_baseline",
-      "baseline_mae": 3.900102648186149,
-      "candidate_mae": 3.900102648186149,
-      "ok": true
-    },
-    {
-      "name": "oof_vs_ridge_floor",
-      "ridge_mae": 4.030495203370435,
-      "oof_mae": 3.900102648186149,
+      "name": "vs_frozen_prior_release",
+      "baseline_mae": 3.8749813889675444,
+      "candidate_mae": 3.7173531590468594,
+      "baseline_release_id": "bootstrap_causal_lgbm_reference_20260819",
+      "baseline_oof_sha256": "12c11ed4602841bb9cc8f13e6740c685d811510fc95f4f54adfe8c559c88a5a5",
+      "candidate_oof_sha256": "8400e4d425d322b148a13514d99304e6e67f45e9dad89edf27f903b9e9e84804",
       "ok": true
     }
   ]
