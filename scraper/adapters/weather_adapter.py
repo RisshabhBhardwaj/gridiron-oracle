@@ -75,6 +75,9 @@ TEAM_TIMEZONES: dict[str, str] = {
     "NYJ": "America/New_York", "PHI": "America/New_York", "PIT": "America/New_York",
     "SEA": "America/Los_Angeles", "SF": "America/Los_Angeles", "TB": "America/New_York",
     "TEN": "America/Chicago", "WAS": "America/New_York",
+    # Historical/alternate abbreviations nflverse's schedules feed still uses
+    # for some seasons (Rams as "LA" rather than "LAR"; Raiders' Oakland era).
+    "LA": "America/Los_Angeles", "OAK": "America/Los_Angeles",
 }
 
 
