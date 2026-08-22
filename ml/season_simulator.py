@@ -100,8 +100,10 @@ _NFC = frozenset({
     "ARI", "LAR", "SF", "SEA",
 })
 _PLAYOFF_BERTHS = 7
-# Fantasy→NFL score scale used when scoring simulated games from player PPR.
-_FANTASY_TO_NFL_SCALE = 4.0
+# Ridge alpha for the Phase 4 team-game points model used to resolve game
+# outcomes — matches ml.team_game_model.train()'s and
+# scripts/materialize_team_game_predictions.py's default.
+_TEAM_GAME_MODEL_ALPHA = 10.0
 
 
 # ── Data Structures ───────────────────────────────────────────────────────────
@@ -224,6 +226,7 @@ class SeasonSimulator:
         use_copula: bool = True,
         use_cpp: bool = False,
         store_raw: bool = False,
+        database_url: Optional[str] = None,
     ) -> None:
         self.season         = season
         self.start_week     = start_week
@@ -234,7 +237,14 @@ class SeasonSimulator:
         self.use_copula     = use_copula
         self.use_cpp        = use_cpp
         self.store_raw      = store_raw
-        self._sim_elo       = None  # deep-copied Elo for simulation isolation
+        self._database_url  = database_url
+        self._sim_elo       = None  # TeamEloSystem carried forward across simulated weeks
+        # Phase 4 team-game points model (Ridge), fit lazily on first use —
+        # see _ensure_points_model. Game resolution (wins, Elo updates) uses
+        # this model's predictions, not a fantasy-points proxy.
+        self._points_model        = None
+        self._points_fill         = None
+        self._points_residual_std = None
 
     # ── Main Entry Point ─────────────────────────────────────────────────────
 
@@ -254,9 +264,16 @@ class SeasonSimulator:
                                  All rostered players eligible for projection.
             prior_game_rows:     {player_id: [dict of game rows]} — Kalman history
                                  as of start_week-1. From normalize.py / DB load.
-            schedule_df:         Optional DataFrame [week, home_team, away_team]
-                                 for team matchup context. If None, matchup context
-                                 is omitted (projections still work).
+            schedule_df:         Optional DataFrame [week, home_team, away_team].
+                                 Non-empty rows for a week gate real game resolution
+                                 for that week: team wins and Elo updates are then
+                                 computed from the Phase 4 points model against the
+                                 real schedule pulled from the `games` table for
+                                 (self.season, week) — schedule_df itself only
+                                 signals which weeks to resolve, its home_team/
+                                 away_team values are not used for scoring. If None,
+                                 team wins/Elo/playoff_probs are omitted; player
+                                 projections still work.
             injury_projections:  Optional {week: {player_id: injury_status}}.
                                  Projected injuries per week (e.g. from ESPN IR list
                                  or user-defined scenario).
@@ -339,14 +356,13 @@ class SeasonSimulator:
                     "p90":       float(np.percentile(sims, 90)),
                 })
 
-            # Update simulated Elo + accumulate per-path team wins
+            # Resolve real game outcomes (Phase 4 points model) + update Elo
+            # and accumulate per-path team wins from those outcomes.
             if not week_schedule.empty:
-                # Build team map for this week
-                team_map = dict(zip(initial_kalman_df["player_id"].astype(str), initial_kalman_df["team"]))
-                self._update_elo_from_week(week_schedule, week_paths, week, team_map)
-                self._accumulate_week_wins(
-                    week_schedule, week_paths, team_map, team_win_accum, self.n_simulations
-                )
+                resolved = self._resolve_week_games(week)
+                if not resolved.empty:
+                    self._accumulate_week_wins(resolved, team_win_accum, self.n_simulations, rng)
+                    self._update_elo_from_week(resolved, week)
 
             # Update Kalman priors with simulated week medians (for next week's prior).
             # Using median instead of mean reduces sensitivity to outlier simulations.
@@ -711,62 +727,124 @@ class SeasonSimulator:
             logger.debug("_apply_injury_to_kalman: error (%s); returning unchanged.", exc)
             return kalman_df
 
-    # ── Team wins / playoffs ─────────────────────────────────────────────────
+    # ── Real game resolution (Phase 4 team-game model) ──────────────────────
 
-    @staticmethod
-    def _team_fantasy_points(
-        week_paths: dict[tuple[str, str], np.ndarray],
-        team_map: dict[str, str],
-        team: str,
-        n_simulations: int,
-    ) -> np.ndarray:
-        """Sum simulated fantasy_ppr for a team across simulation paths."""
-        pts = np.zeros(n_simulations, dtype=float)
-        for pid, tm in team_map.items():
-            if tm != team:
-                continue
-            arr = week_paths.get((pid, "fantasy_ppr"))
-            if arr is None:
-                continue
-            pts = pts + np.asarray(arr, dtype=float)
-        return pts / _FANTASY_TO_NFL_SCALE
+    def _db_url(self) -> str:
+        if self._database_url:
+            return self._database_url
+        from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+        return DEFAULT_HOST_DATABASE_URL
+
+    def _ensure_points_model(self) -> None:
+        """
+        Lazily fit the Phase 4 points Ridge model on every season strictly
+        before self.season — same training window and alpha as
+        ml.team_game_model.train() and scripts/materialize_team_game_predictions.py.
+        Fails loudly: a game-resolution engine that silently falls back to a
+        proxy on a training-data gap defeats the reason this exists.
+        """
+        if self._points_model is not None:
+            return
+        from sklearn.linear_model import Ridge
+
+        from ml.team_game_model import FEATURE_COLS, _prepare_x, compute_oof_residual_std
+        from pipeline.team_game_features import build_team_game_frame
+
+        train_df = build_team_game_frame(self._db_url(), list(range(2019, self.season)))
+        points_df = train_df[train_df["points"].notna()] if not train_df.empty else train_df
+        if points_df.empty:
+            raise RuntimeError(
+                f"SeasonSimulator: no team-game training rows with a points target for "
+                f"seasons < {self.season}; cannot resolve real game outcomes."
+            )
+        fill_values = points_df[FEATURE_COLS].median(numeric_only=True)
+        X = _prepare_x(points_df, fill_values)
+        y = points_df["points"].astype(float).values
+        self._points_model = Ridge(alpha=_TEAM_GAME_MODEL_ALPHA).fit(X, y)
+        self._points_fill = fill_values
+        self._points_residual_std = compute_oof_residual_std(
+            points_df, _TEAM_GAME_MODEL_ALPHA, target_col="points"
+        )
+
+    def _ensure_sim_elo(self) -> None:
+        """
+        Elo carried forward across simulated weeks, seeded from every REAL
+        completed game through the start of this simulation (load_elo_from_db
+        only fits rows with a non-null home_score, so future/unplayed games
+        are naturally excluded). Must be loaded with a db_url — the module
+        singleton get_elo_system() with no db_url returns an unfit, flat-1500
+        system, which would silently zero out team-quality signal.
+        """
+        if self._sim_elo is not None:
+            return
+        from ml.team_elo import load_elo_from_db
+        self._sim_elo = load_elo_from_db(self._db_url(), seasons=list(range(2019, self.season + 1)))
+
+    def _resolve_week_games(self, week: int) -> pd.DataFrame:
+        """
+        Predict each team's expected points for `week` via the real Phase 4
+        points model, using this simulation's own carried-forward Elo (not
+        the DB's real Elo, which has no rows for weeks that haven't been
+        played) for the team_off_elo/team_def_elo/opp_off_elo/opp_def_elo
+        features. Returns one row per (game_id, team) with a points_mean
+        column, or an empty frame if nothing is scheduled that week.
+        """
+        from ml.team_game_model import _prepare_x
+        from pipeline.team_game_features import build_team_game_forward_frame
+
+        self._ensure_points_model()
+        self._ensure_sim_elo()
+        frame = build_team_game_forward_frame(self._db_url(), self.season, week)
+        if frame.empty:
+            return frame
+        frame = frame.copy()
+        teams = pd.concat([frame["team"], frame["opponent"]]).unique()
+        off_elo = {}
+        def_elo = {}
+        for t in teams:
+            off_elo[t], def_elo[t] = self._sim_elo.get_current_ratings(t)
+        frame["team_off_elo"] = frame["team"].map(off_elo)
+        frame["team_def_elo"] = frame["team"].map(def_elo)
+        frame["opp_off_elo"] = frame["opponent"].map(off_elo)
+        frame["opp_def_elo"] = frame["opponent"].map(def_elo)
+        X = _prepare_x(frame, self._points_fill)
+        frame["points_mean"] = self._points_model.predict(X)
+        return frame
+
+    # ── Team wins / playoffs ─────────────────────────────────────────────────
 
     def _accumulate_week_wins(
         self,
-        week_schedule: pd.DataFrame,
-        week_paths: dict[tuple[str, str], np.ndarray],
-        team_map: dict[str, str],
+        resolved: pd.DataFrame,
         team_win_accum: dict[str, np.ndarray],
         n_simulations: int,
+        rng: np.random.Generator,
     ) -> None:
         """
-        Increment per-path win counts from simulated week outcomes.
-
-        Uses fantasy_ppr team totals (scaled) as the game score proxy so each
-        Monte Carlo path has an independent win record. Ties award 0.5 wins.
+        Draw n_simulations independent score paths per game from the Phase 4
+        points model's own prediction ± its out-of-fold residual std (the
+        model's honest uncertainty, from _ensure_points_model), and increment
+        each path's win count. Ties award 0.5 wins each.
         """
-        for _, game_row in week_schedule.iterrows():
-            home_team = str(game_row.get("home_team", "") or "")
-            away_team = str(game_row.get("away_team", "") or "")
-            if not home_team or not away_team:
+        for game_id, game_rows in resolved.groupby("game_id"):
+            home_row = game_rows[game_rows["is_home"] == 1]
+            away_row = game_rows[game_rows["is_home"] == 0]
+            if home_row.empty or away_row.empty:
                 continue
-            if home_team not in team_win_accum or away_team not in team_win_accum:
-                # Ensure keys exist even if schedule had unexpected teams
-                team_win_accum.setdefault(home_team, np.zeros(n_simulations))
-                team_win_accum.setdefault(away_team, np.zeros(n_simulations))
+            home_team = str(home_row.iloc[0]["team"])
+            away_team = str(away_row.iloc[0]["team"])
+            team_win_accum.setdefault(home_team, np.zeros(n_simulations))
+            team_win_accum.setdefault(away_team, np.zeros(n_simulations))
 
-            home_pts = self._team_fantasy_points(
-                week_paths, team_map, home_team, n_simulations
+            home_paths = rng.normal(
+                float(home_row.iloc[0]["points_mean"]), self._points_residual_std, n_simulations
             )
-            away_pts = self._team_fantasy_points(
-                week_paths, team_map, away_team, n_simulations
+            away_paths = rng.normal(
+                float(away_row.iloc[0]["points_mean"]), self._points_residual_std, n_simulations
             )
-            # If neither side has fantasy_ppr samples, skip (avoid all-tie inflation)
-            if float(home_pts.sum()) == 0.0 and float(away_pts.sum()) == 0.0:
-                continue
 
-            home_win = home_pts > away_pts
-            away_win = away_pts > home_pts
+            home_win = home_paths > away_paths
+            away_win = away_paths > home_paths
             tie = ~(home_win | away_win)
             team_win_accum[home_team] += home_win.astype(float) + 0.5 * tie.astype(float)
             team_win_accum[away_team] += away_win.astype(float) + 0.5 * tie.astype(float)
@@ -802,61 +880,33 @@ class SeasonSimulator:
 
     # ── Elo Update ───────────────────────────────────────────────────────────
 
-    def _update_elo_from_week(
-        self,
-        week_schedule: pd.DataFrame,
-        week_paths: dict[tuple[str, str], np.ndarray],
-        week: int,
-        team_map: dict[str, str],
-    ) -> None:
+    def _update_elo_from_week(self, resolved: pd.DataFrame, week: int) -> None:
         """
-        Update Team Elo ratings from simulated game scores.
-        Uses median fantasy_ppr totals mapped by team as a proxy for team quality movement.
+        Update this simulation's carried-forward Elo (_ensure_sim_elo) from
+        the SAME Phase 4 points-model predictions used to resolve wins in
+        _accumulate_week_wins, so Elo movement and win outcomes agree with
+        each other rather than being derived from two different notions of
+        "how good is this team."
         """
-        try:
-            from ml.team_elo import get_elo_system, GameResult
-            if self._sim_elo is None:
-                import copy
-                self._sim_elo = copy.deepcopy(get_elo_system())
-            elo = self._sim_elo
-        except Exception:
-            return
+        from ml.team_elo import GameResult
 
-        for _, game_row in week_schedule.iterrows():
-            try:
-                home_team = str(game_row.get("home_team", ""))
-                away_team = str(game_row.get("away_team", ""))
-                if not home_team or not away_team:
-                    continue
-
-                # Use median simulated fantasy_ppr as proxy for team points
-                # Scale rough fantasy points (~80-120) down to NFL points (~15-30) by dividing by 4
-                home_pts = sum(
-                    np.median(week_paths.get((pid, "fantasy_ppr"), np.zeros(1)))
-                    for pid, tm in team_map.items() if tm == home_team
-                ) / 4.0
-
-                away_pts = sum(
-                    np.median(week_paths.get((pid, "fantasy_ppr"), np.zeros(1)))
-                    for pid, tm in team_map.items() if tm == away_team
-                ) / 4.0
-
-                # Fallback if both 0
-                if home_pts == 0 and away_pts == 0:
-                    home_pts, away_pts = 21, 21
-
-                result = GameResult(
-                    season=self.season,
-                    week=week,
-                    home_team=home_team,
-                    away_team=away_team,
-                    home_score=int(home_pts),
-                    away_score=int(away_pts),
-                )
-                elo.update_week([result])
-
-            except Exception:
+        results = []
+        for game_id, game_rows in resolved.groupby("game_id"):
+            home_row = game_rows[game_rows["is_home"] == 1]
+            away_row = game_rows[game_rows["is_home"] == 0]
+            if home_row.empty or away_row.empty:
                 continue
+            results.append(GameResult(
+                season=self.season,
+                week=week,
+                home_team=str(home_row.iloc[0]["team"]),
+                away_team=str(away_row.iloc[0]["team"]),
+                home_score=int(round(float(home_row.iloc[0]["points_mean"]))),
+                away_score=int(round(float(away_row.iloc[0]["points_mean"]))),
+                game_id=str(game_id),
+            ))
+        if results:
+            self._sim_elo.update_week(results)
 
 
 # ── Convenience Functions ─────────────────────────────────────────────────────
@@ -871,6 +921,7 @@ def run_rest_of_season(
     n_simulations: int = 500,
     stats: Optional[list[str]] = None,
     rng_seed: Optional[int] = None,
+    database_url: Optional[str] = None,
 ) -> SeasonSimulation:
     """
     Convenience function: simulate the rest of the season starting from current_week + 1.
@@ -880,11 +931,15 @@ def run_rest_of_season(
         current_week:       The last completed week. Simulation starts from current_week + 1.
         players_df:         Active roster DataFrame.
         prior_game_rows:    Kalman history through current_week.
-        schedule_df:        Optional team schedule [week, home_team, away_team].
+        schedule_df:        Optional team schedule [week, home_team, away_team]. Non-empty
+                             rows for a week gate real Phase 4 game resolution for that
+                             week (see SeasonSimulator.run's docstring).
         injury_projections: Optional {week: {player_id: status}} for projected IR.
         n_simulations:      Monte Carlo season paths.
         stats:              Stats to simulate. Default: 4 core stats.
         rng_seed:           Optional seed for reproducibility.
+        database_url:       DB URL for the Phase 4 points model + Elo; defaults to
+                             pipeline.db_defaults.DEFAULT_HOST_DATABASE_URL.
 
     Returns:
         SeasonSimulation with rest-of-season totals and distributions.
@@ -906,6 +961,7 @@ def run_rest_of_season(
         stats=stats or _DEFAULT_STATS,
         use_copula=True,
         use_cpp=False,
+        database_url=database_url,
     )
     return sim.run(
         players_df=players_df,
@@ -914,3 +970,28 @@ def run_rest_of_season(
         injury_projections=injury_projections,
         rng_seed=rng_seed,
     )
+
+
+def load_real_schedule(
+    database_url: str, season: int, weeks: list[int]
+) -> pd.DataFrame:
+    """
+    Build a [week, home_team, away_team] schedule_df for run()'s gating
+    parameter, straight from the `games` table via the same
+    build_team_game_forward_frame reader SeasonSimulator itself uses for
+    per-week game resolution — one schedule source of truth, so the teams
+    named here always match the teams _resolve_week_games predicts for
+    (no separate query that could drift to a different abbreviation
+    convention, e.g. "LA" vs "LAR").
+    """
+    from pipeline.team_game_features import build_team_game_forward_frame
+
+    rows = []
+    for week in weeks:
+        frame = build_team_game_forward_frame(database_url, season, week)
+        if frame.empty:
+            continue
+        home = frame[frame["is_home"] == 1][["game_id", "team", "opponent"]]
+        for _, r in home.iterrows():
+            rows.append({"week": week, "home_team": r["team"], "away_team": r["opponent"]})
+    return pd.DataFrame(rows, columns=["week", "home_team", "away_team"])
