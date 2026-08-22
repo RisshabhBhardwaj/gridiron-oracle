@@ -218,6 +218,130 @@ class TestLiveDbIntegration:
                 assert la_row.iloc[0]["team_off_elo"] != 1500.0 or la_row.iloc[0]["team_def_elo"] != 1500.0
 
 
+class TestByeWeekZeroing:
+    """
+    Phase 7 fix: before this, _simulate_week drew a normal player-week from
+    the Kalman prior unconditionally, with no gate for whether the player's
+    team actually had a game that week. A uniform extra 1/18 week of volume
+    landed on every player's season total — a 5.3% overstatement invisible
+    to the "summed weekly equals season" identity, since it inflates both
+    sides equally.
+    """
+
+    def test_bye_week_player_contributes_zero_that_week(self) -> None:
+        try:
+            from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+            import psycopg2
+            conn = psycopg2.connect(DEFAULT_HOST_DATABASE_URL)
+            conn.close()
+        except Exception as exc:
+            pytest.skip(f"database unavailable: {exc}")
+
+        from scripts.materialize_season_simulation import (
+            _load_prior_game_rows,
+            _load_roster,
+            _load_schedule_gate,
+        )
+
+        db_url = DEFAULT_HOST_DATABASE_URL
+        season, start_week, end_week = 2026, 5, 7
+        roster_rows = _load_roster(db_url, season, start_week, ["QB"])
+        min_players = [r for r in roster_rows if r.get("team") == "MIN"]
+        if not min_players:
+            pytest.skip("no MIN QB on the 2026 depth chart in this database")
+
+        import pandas as pd
+
+        players_df = pd.DataFrame([
+            {"player_id": str(r["player_id"]), "position": r.get("position") or "", "team": r.get("team")}
+            for r in min_players
+        ])
+        prior_game_rows = _load_prior_game_rows(
+            db_url, season, start_week, list(players_df["player_id"])
+        )
+        schedule_df = _load_schedule_gate(db_url, season, start_week, end_week)
+        if schedule_df.empty:
+            pytest.skip("no 2026 schedule rows for weeks 5-7 in this database")
+
+        sim = SeasonSimulator(
+            season=season, start_week=start_week, end_week=end_week,
+            n_simulations=30, stats=["fantasy_ppr"], database_url=db_url,
+        )
+        result = sim.run(
+            players_df=players_df, prior_game_rows=prior_game_rows,
+            schedule_df=schedule_df, rng_seed=0,
+        )
+
+        min_qb = str(players_df.iloc[0]["player_id"])
+        week6_rows = [
+            w for w in result.week_by_week
+            if w["player_id"] == min_qb and w["stat"] == "fantasy_ppr" and w["week"] == 6
+        ]
+        assert week6_rows, "expected a week-6 row for the MIN QB (MIN is on bye week 6, 2026)"
+        assert week6_rows[0]["mean"] == 0.0
+        assert week6_rows[0]["p90"] == 0.0
+
+    def test_no_player_exceeds_the_schedule_length_minus_one_bye(self) -> None:
+        """
+        Every 2026 team has exactly one bye between weeks 5 and 14 — so
+        across the full 18-week schedule, no player should show non-zero
+        output in more than 17 weeks. Guards the general case beyond the
+        single MIN/week-6 example above.
+        """
+        try:
+            from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+            import psycopg2
+            conn = psycopg2.connect(DEFAULT_HOST_DATABASE_URL)
+            conn.close()
+        except Exception as exc:
+            pytest.skip(f"database unavailable: {exc}")
+
+        from scripts.materialize_season_simulation import (
+            _load_prior_game_rows,
+            _load_roster,
+            _load_schedule_gate,
+        )
+
+        db_url = DEFAULT_HOST_DATABASE_URL
+        season, start_week, end_week = 2026, 1, 18
+        roster_rows = _load_roster(db_url, season, start_week, ["QB"])[:6]
+        if not roster_rows:
+            pytest.skip("no QBs on the 2026 depth chart in this database")
+
+        import pandas as pd
+
+        players_df = pd.DataFrame([
+            {"player_id": str(r["player_id"]), "position": r.get("position") or "", "team": r.get("team")}
+            for r in roster_rows
+        ])
+        prior_game_rows = _load_prior_game_rows(
+            db_url, season, start_week, list(players_df["player_id"])
+        )
+        schedule_df = _load_schedule_gate(db_url, season, start_week, end_week)
+        if schedule_df.empty:
+            pytest.skip("no 2026 full-season schedule rows in this database")
+
+        sim = SeasonSimulator(
+            season=season, start_week=start_week, end_week=end_week,
+            n_simulations=20, stats=["fantasy_ppr"], database_url=db_url,
+        )
+        result = sim.run(
+            players_df=players_df, prior_game_rows=prior_game_rows,
+            schedule_df=schedule_df, rng_seed=0,
+        )
+
+        from collections import defaultdict
+
+        nonzero_weeks: dict[str, int] = defaultdict(int)
+        for w in result.week_by_week:
+            if w["stat"] == "fantasy_ppr" and w["mean"] != 0.0:
+                nonzero_weeks[w["player_id"]] += 1
+
+        assert nonzero_weeks, "expected at least one player with non-zero output"
+        for pid, n in nonzero_weeks.items():
+            assert n <= 17, f"{pid} has non-zero output in {n} of 18 weeks; expected <=17 (one bye)"
+
+
 class TestApplyTeamScriptCoupling:
     def test_positive_coupling_produces_positive_correlation(self) -> None:
         rng = np.random.default_rng(7)

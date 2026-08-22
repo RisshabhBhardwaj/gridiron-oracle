@@ -385,10 +385,20 @@ class SeasonSimulator:
             # receiving line, because both come from the same per-path draw.
             resolved = pd.DataFrame()
             team_score_paths: dict[str, np.ndarray] = {}
+            # Teams actually scheduled this week, per the real games table —
+            # None when no schedule was supplied (can't determine byes, so
+            # don't gate at all, matching every caller that never passed
+            # schedule_df). When resolved IS available, any team absent from
+            # it is on a bye: without this, a uniform 1/18 (5.6%) extra week
+            # of volume is added to every player's season total, invisible
+            # to the "summed weekly equals season" identity since it
+            # inflates both sides equally.
+            playing_teams: Optional[set[str]] = None
             if not week_schedule.empty:
                 resolved = self._resolve_week_games(week)
                 if not resolved.empty:
                     team_score_paths = self._draw_team_score_paths(resolved, self.n_simulations, rng)
+                    playing_teams = set(resolved["team"].astype(str))
 
             # Draw weekly samples: shape (n_simulations, n_players, n_stats)
             week_paths = self._simulate_week(
@@ -399,6 +409,7 @@ class SeasonSimulator:
                 rng=rng,
                 team_score_paths=team_score_paths,
                 player_active_prob=player_active_prob,
+                playing_teams=playing_teams,
             )
             # week_paths: dict[(player_id, stat)] → np.ndarray(n_simulations,)
 
@@ -559,6 +570,7 @@ class SeasonSimulator:
         rng: np.random.Generator,
         team_score_paths: Optional[dict[str, np.ndarray]] = None,
         player_active_prob: Optional[dict[str, float]] = None,
+        playing_teams: Optional[set[str]] = None,
     ) -> dict[tuple[str, str], np.ndarray]:
         """
         Simulate one week's stats for all players across n_simulations paths.
@@ -580,6 +592,12 @@ class SeasonSimulator:
             paths where they didn't play. Drawn fresh here since this method
             runs once per week, so a path where a player sits out week 6 can
             still have them active in week 7.
+          - playing_teams (if given): teams with NO game this week (a bye)
+            are zeroed deterministically on every path — this is a schedule
+            fact, not a probability, unlike player_active_prob. None means
+            "no schedule was supplied, can't determine byes" and no player is
+            gated on this basis, which is the case for every caller that
+            doesn't pass schedule_df to run().
 
         Returns:
             {(player_id, stat): np.ndarray(n_simulations,)} — per-sim weekly totals.
@@ -588,8 +606,16 @@ class SeasonSimulator:
         team_score_paths = team_score_paths or {}
         player_active_prob = player_active_prob or {}
 
+        team_by_pid = dict(zip(
+            kalman_df["player_id"].astype(str),
+            kalman_df["team"] if "team" in kalman_df.columns else [None] * len(kalman_df),
+        ))
+
         active_masks: dict[str, np.ndarray] = {}
         for pid in kalman_df["player_id"].astype(str).unique():
+            if playing_teams is not None and str(team_by_pid.get(pid)) not in playing_teams:
+                active_masks[pid] = np.zeros(n_simulations)
+                continue
             p = player_active_prob.get(pid)
             if p is None:
                 continue
