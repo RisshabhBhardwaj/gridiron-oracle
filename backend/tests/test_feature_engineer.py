@@ -586,3 +586,36 @@ def test_upsert_feature_rows_does_not_wipe_elo_columns_on_rerun():
         )
     # A non-Elo column should still be a plain overwrite.
     assert "season = EXCLUDED.season" in sql
+
+
+def test_fill_prior_pbp_ngs_features_only_reads_strictly_prior_rows():
+    """
+    prior_epa_per_play/prior_adot/prior_drop_rate/prior_avg_separation/
+    prior_avg_cushion are the legal lagged counterparts of contemporaneous
+    fields FORBIDDEN_MODEL_FIELDS permanently excludes. If the correlated
+    subquery ever dropped its week/season filter, the target game's own PBP
+    or NGS row would leak into a supposedly pre-kickoff feature.
+    """
+    from unittest.mock import MagicMock
+    from pipeline.feature_engineer import FeatureEngineer
+
+    fe = FeatureEngineer.__new__(FeatureEngineer)
+    mock_cursor = MagicMock()
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    fe._conn = mock_conn
+
+    fe._fill_prior_pbp_ngs_features(2025)
+
+    sql = mock_cursor.execute.call_args[0][0]
+    for cols in (
+        ("epa_per_play", "adot", "drop_rate"),
+        ("avg_separation", "avg_cushion"),
+    ):
+        for col in cols:
+            assert f"prior_{col} = (" in sql
+    assert "FROM pbp_features pf" in sql
+    assert "FROM nextgen_stats ns" in sql
+    assert sql.count("pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week)") == 3
+    assert sql.count("ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week)") == 2
+    mock_conn.commit.assert_called_once()

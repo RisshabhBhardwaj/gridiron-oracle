@@ -218,10 +218,24 @@ FEATURE_GROUP_PROGRESSION: list[str] = [
     "career_games",
     "exp_bucket",
 ]
+# Phase 3 — legal lagged (strictly-prior-games) counterparts of the
+# permanently-forbidden contemporaneous PBP/NGS fields (epa_per_play, adot,
+# drop_rate, avg_separation, avg_cushion), plus routes_run_per_game which
+# was already computed this way but never wired to any group. See
+# feature_engineer._fill_prior_pbp_ngs_features / _fill_prior_routes_run.
+FEATURE_GROUP_TRAILING_PBP_NGS: list[str] = [
+    "prior_epa_per_play",
+    "prior_adot",
+    "prior_drop_rate",
+    "prior_avg_separation",
+    "prior_avg_cushion",
+    "routes_run_per_game",
+]
 FEATURE_GROUPS: dict[str, list[str]] = {
     "opp_adj_usage": FEATURE_GROUP_OPP_ADJ_USAGE,
     "pace_script": FEATURE_GROUP_PACE_SCRIPT,
     "progression": FEATURE_GROUP_PROGRESSION,
+    "trailing_pbp_ngs": FEATURE_GROUP_TRAILING_PBP_NGS,
 }
 
 # Naming convention: TARGET_COL_MAP maps a MODEL STAT NAME (what we train

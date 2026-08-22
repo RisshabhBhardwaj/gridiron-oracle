@@ -808,6 +808,8 @@ class FeatureEngineer:
                     values[name] = None
             feature_rows.append(FeatureRow(**values))
         written = self._upsert_feature_rows(feature_rows)
+        self._fill_prior_routes_run(season)
+        self._fill_prior_pbp_ngs_features(season)
         self._fill_lagged_depth_chart_rank(season)
         return written
 
@@ -837,6 +839,66 @@ class FeatureEngineer:
             self._conn.commit()
         except Exception as exc:
             logger.warning("prior routes_run fill skipped for season=%s: %s", season, exc)
+            self._conn.rollback()
+
+    def _fill_prior_pbp_ngs_features(self, season: int) -> None:
+        """Fill trailing PBP/NGS quality signals from strictly prior games.
+
+        epa_per_play, adot, drop_rate, avg_separation, and avg_cushion are
+        contemporaneous (computed from the target game's own plays) and stay
+        permanently forbidden as model inputs. These prior_* columns are the
+        legal, lagged replacements — season-to-date averages that never touch
+        the target game.
+        """
+        if not self._conn:
+            return
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE feature_matrix fm
+                    SET prior_epa_per_play = (
+                            SELECT AVG(pf.epa_per_play)
+                            FROM pbp_features pf
+                            WHERE pf.player_id = fm.player_id
+                              AND pf.epa_per_play IS NOT NULL
+                              AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week))
+                        ),
+                        prior_adot = (
+                            SELECT AVG(pf.adot)
+                            FROM pbp_features pf
+                            WHERE pf.player_id = fm.player_id
+                              AND pf.adot IS NOT NULL
+                              AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week))
+                        ),
+                        prior_drop_rate = (
+                            SELECT AVG(pf.drop_rate)
+                            FROM pbp_features pf
+                            WHERE pf.player_id = fm.player_id
+                              AND pf.drop_rate IS NOT NULL
+                              AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week))
+                        ),
+                        prior_avg_separation = (
+                            SELECT AVG(ns.avg_separation)
+                            FROM nextgen_stats ns
+                            WHERE ns.player_id = fm.player_id
+                              AND ns.avg_separation IS NOT NULL
+                              AND (ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week))
+                        ),
+                        prior_avg_cushion = (
+                            SELECT AVG(ns.avg_cushion)
+                            FROM nextgen_stats ns
+                            WHERE ns.player_id = fm.player_id
+                              AND ns.avg_cushion IS NOT NULL
+                              AND (ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week))
+                        )
+                    WHERE fm.season = %s
+                    """,
+                    (season,),
+                )
+            self._conn.commit()
+        except Exception as exc:
+            logger.warning("prior PBP/NGS fill skipped for season=%s: %s", season, exc)
             self._conn.rollback()
 
     def _fill_lagged_depth_chart_rank(self, season: int) -> None:
@@ -937,6 +999,7 @@ class FeatureEngineer:
                 total += self._upsert_feature_rows(feature_batch)
 
             self._fill_prior_routes_run(season)
+            self._fill_prior_pbp_ngs_features(season)
             self._fill_lagged_depth_chart_rank(season)
             # Target-week depth, NGS, PBP, weather, and embedding joins are
             # disabled until they have a causal source contract.
