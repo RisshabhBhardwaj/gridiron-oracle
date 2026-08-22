@@ -13,7 +13,7 @@ from backend.app.services.projection import ProjectionService
 def _svc(monkeypatch) -> ProjectionService:
     svc = ProjectionService("postgresql://unused")
     monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({"run1"}))
-    monkeypatch.setattr(svc, "_warn_if_depth_chart_stale", lambda season: None)
+    monkeypatch.setattr(svc, "_require_depth_chart_fresh", lambda season: None)
     return svc
 
 

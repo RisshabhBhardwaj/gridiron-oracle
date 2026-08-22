@@ -442,7 +442,7 @@ class ProjectionService:
         skill = [p.upper() for p in (positions or ["QB", "RB", "WR", "TE"])]
         try:
             approved = load_approved_pipeline_run_ids()
-            self._warn_if_depth_chart_stale(season)
+            self._require_depth_chart_fresh(season)
             simulated = self._load_season_simulation_rows(season, start_week, skill, stats, approved)
             if simulated:
                 return self._rank_with_cold_start_guard(simulated)
@@ -606,6 +606,34 @@ class ProjectionService:
     def _load_season_feature_rows(
         self, season: int, start_week: int, positions: list[str]
     ) -> list[dict]:
+        """
+        Roster membership, team, and depth_rank come from depth_charts — the
+        same source the weekly serving path already trusts — not from the
+        stale `players` table or a feature_matrix row that may be years old.
+        `players.status != 'RET'` alone let 7,684 of 7,809 players through
+        regardless of whether they're on any real roster (Tom Brady:
+        status='ACT', last real season 2022, served 21st on the season
+        board at 302.5 PPR before this fix). depth_charts is the roster
+        gate; feature_matrix is only consulted afterward, per surviving
+        player, for the Kalman/rate priors (prior_snap_share,
+        seas_games_played, seas_avg_*) that describe how they've performed.
+
+        As-of rule mirrors feature_engineer._fill_lagged_depth_chart_rank's
+        lagged join, except inclusive of the target week itself: a week-1
+        preseason snapshot is legitimate roster truth for SERVING week 1
+        (there is no same-week leak risk here — that concern is specific to
+        TRAINING rows, where a same-week join could leak the outcome back
+        into a historical feature). So the depth-chart row used is the most
+        recent one at or before (season, start_week) — falling back to the
+        prior season's chart only when `season` has no depth_charts rows
+        published AT ALL yet, decided once for the whole query, never
+        per-player. A per-player fallback ("if this player specifically has
+        no row this season, use their last one from any prior season") is
+        exactly what let Tom Brady back onto the 2026 board via his 2022 row
+        — he genuinely has no 2026 depth-chart row (he's retired), and the
+        2026 week-1 chart already exists (3,185 rows), so that absence must
+        exclude him, not fall through to whatever season he last appeared in.
+        """
         import psycopg2
         import psycopg2.extras
 
@@ -614,11 +642,11 @@ class ProjectionService:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT DISTINCT ON (fm.player_id)
-                           fm.player_id,
-                           COALESCE(pl.full_name, fm.player_id) AS player_name,
-                           COALESCE(pl.position, '') AS position,
-                           pl.team,
+                    SELECT DISTINCT ON (dc.player_id)
+                           dc.player_id,
+                           COALESCE(pl.full_name, dc.player_id) AS player_name,
+                           COALESCE(dc.position, pl.position, '') AS position,
+                           dc.team,
                            fm.prior_snap_share,
                            fm.seas_games_played AS prior_games,
                            -- seas_games_played only increments on a week the player
@@ -629,70 +657,86 @@ class ProjectionService:
                            -- prior_active_games directly.
                            fm.seas_games_played AS prior_active_games,
                            -- Real denominator for p_active_from_priors: how many games
-                           -- has this player's CURRENT team actually played (completed,
-                           -- home_score IS NOT NULL), scoped to the SAME season/week this
-                           -- snapshot row (fm.season, fm.week) represents — seas_games_played
-                           -- resets every season, so the denominator must too, or an
-                           -- early-season snapshot for a team that played many seasons ago
-                           -- would pull in years of unrelated games. Using seas_games_played
-                           -- for both numerator and denominator (as an earlier fix attempt
-                           -- did) makes them mathematically always equal, which collapses
-                           -- the active rate to a function of sample size alone rather than
+                           -- has this player's CURRENT (depth-chart) team actually played
+                           -- (completed, home_score IS NOT NULL), scoped to the TARGET
+                           -- (season, start_week) window being served — not fm.season/
+                           -- fm.week, which may be a stale prior-season row when a player
+                           -- has no current-season feature_matrix history yet (a rookie,
+                           -- or an early-season snapshot). seas_games_played resets every
+                           -- season, so the denominator must too, or an early-season
+                           -- snapshot for a team that played many seasons ago would pull
+                           -- in years of unrelated games. Using seas_games_played for both
+                           -- numerator and denominator (as an earlier fix attempt did)
+                           -- makes them mathematically always equal, which collapses the
+                           -- active rate to a function of sample size alone rather than
                            -- actual availability.
-                           --
-                           -- At week 1 of a season, fm.season's own game count is 0 before
-                           -- any game has been played, while seas_games_played (the
-                           -- numerator) still reported the carried-over PRIOR-season total
-                           -- for the one week-1/new-season snapshot checked (2026 week 1,
-                           -- carrying 2025's final count) — this DB has no 2026 week-2/3
-                           -- feature_matrix rows yet to confirm the transition (does it stay
-                           -- carried-over through week 2-3 too, or reset once real 2026 rows
-                           -- start landing?). Assumed, not fully verified, that it carries
-                           -- forward the same way at week 1 generally — so the denominator
-                           -- does too, via COALESCE onto the prior season's team game count.
-                           -- If wrong, min(active, games) plus shrinkage bounds the damage
-                           -- (degrades toward the pre-fix behavior for that narrow window,
-                           -- doesn't produce a nonsensical value) rather than breaking.
                            COALESCE(
                                NULLIF((
                                    SELECT COUNT(*) FROM games g
-                                   WHERE (g.home_team = pl.team OR g.away_team = pl.team)
+                                   WHERE (g.home_team = dc.team OR g.away_team = dc.team)
                                      AND g.home_score IS NOT NULL
-                                     AND g.season = fm.season AND g.week < fm.week
+                                     AND g.season = %(season)s AND g.week < %(start_week)s
                                ), 0),
                                (
                                    SELECT COUNT(*) FROM games g
-                                   WHERE (g.home_team = pl.team OR g.away_team = pl.team)
+                                   WHERE (g.home_team = dc.team OR g.away_team = dc.team)
                                      AND g.home_score IS NOT NULL
-                                     AND g.season = fm.season - 1
+                                     AND g.season = %(season)s - 1
                                )
                            ) AS team_games_played,
                            fm.seas_avg_fantasy_ppr,
                            fm.seas_avg_passing_yards,
                            fm.seas_avg_rushing_yards,
                            fm.seas_avg_receiving_yards,
-                           fm.depth_chart_rank AS depth_rank,
+                           dc.depth_rank AS depth_rank,
                            fm.season,
                            fm.week
-                    FROM feature_matrix fm
-                    JOIN players pl ON pl.id = fm.player_id
-                    WHERE UPPER(COALESCE(pl.position, '')) = ANY(%s)
+                    FROM depth_charts dc
+                    JOIN players pl ON pl.id = dc.player_id
+                    LEFT JOIN LATERAL (
+                        SELECT fm2.prior_snap_share, fm2.seas_games_played,
+                               fm2.seas_avg_fantasy_ppr, fm2.seas_avg_passing_yards,
+                               fm2.seas_avg_rushing_yards, fm2.seas_avg_receiving_yards,
+                               fm2.season, fm2.week
+                        FROM feature_matrix fm2
+                        WHERE fm2.player_id = dc.player_id
+                          AND (
+                                (fm2.season = %(season)s AND fm2.week < %(start_week)s)
+                             OR (fm2.season < %(season)s)
+                              )
+                        ORDER BY fm2.season DESC, fm2.week DESC
+                        LIMIT 1
+                    ) fm ON true
+                    WHERE UPPER(COALESCE(dc.position, pl.position, '')) = ANY(%(positions)s)
                       AND COALESCE(pl.status, 'ACT') != 'RET'
                       AND (
-                            (fm.season = %s AND fm.week < %s)
-                         OR (fm.season < %s)
-                      )
-                    ORDER BY fm.player_id, fm.season DESC, fm.week DESC
+                            CASE WHEN EXISTS (
+                                SELECT 1 FROM depth_charts WHERE season = %(season)s
+                            )
+                            THEN (dc.season = %(season)s AND dc.week <= %(start_week)s)
+                            ELSE dc.season = %(season)s - 1
+                            END
+                          )
+                    ORDER BY dc.player_id, dc.season DESC, dc.week DESC
                     """,
-                    (positions, season, start_week, season),
+                    {"season": season, "start_week": start_week, "positions": positions},
                 )
                 rows = [dict(item) for item in cur.fetchall()]
         finally:
             conn.close()
         return rows
 
-    def _warn_if_depth_chart_stale(self, season: int) -> None:
-        """Log-only staleness check; never blocks the season board (Component E)."""
+    def _require_depth_chart_fresh(self, season: int) -> None:
+        """
+        Blocking staleness check (promoted from the prior log-only
+        _warn_if_depth_chart_stale, Phase 1 Component E). _load_season_feature_rows
+        now gates roster membership itself on depth_charts, for both the
+        materialized-simulation and flat-rate paths — a stale or
+        under-populated depth chart no longer just risks quietly
+        under-counting a roster, it is the thing standing between the board
+        and serving whoever's feature_matrix row happens to survive the
+        filter. Fail loud instead.
+        """
         import psycopg2
 
         try:
@@ -705,9 +749,12 @@ class ProjectionService:
             logger.debug("depth-chart freshness check failed to run: %s", exc)
             return
         if not result.ok:
-            logger.warning(
-                "Depth chart freshness gate FAILED for season=%s: %s",
-                season, result.reason,
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"{SEASON_PROJECTIONS_UNAVAILABLE} Depth chart freshness gate "
+                    f"failed for season={season}: {result.reason}"
+                ),
             )
 
     def _load_weekly_rates(

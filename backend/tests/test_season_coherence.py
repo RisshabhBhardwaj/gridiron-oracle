@@ -94,7 +94,7 @@ def test_prefers_materialized_simulation_when_approved(monkeypatch) -> None:
     the fuller test surface on this path."""
     svc = ProjectionService("postgresql://unused")
     monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({"run"}))
-    monkeypatch.setattr(svc, "_warn_if_depth_chart_stale", lambda season: None)
+    monkeypatch.setattr(svc, "_require_depth_chart_fresh", lambda season: None)
     monkeypatch.setattr(svc, "_load_season_simulation_rows", lambda *_a, **_k: [{
         "player_id": "wr1", "player_name": "WR One", "position": "WR", "team": "MIN",
         "prior_games": 10, "prior_active_games": 9, "depth_rank": 1.0, "p_active": 0.9,

@@ -352,6 +352,12 @@ def test_season_board_excludes_retired_players(db_conn):
     """
     Phase 1 verification bullet: no retired player in the rest-of-season
     board. _load_season_feature_rows excludes players.status = 'RET'.
+
+    Weak on its own: players.status is stale for many genuinely-retired
+    players (Tom Brady is stored ACT), so this only proves the WHERE clause
+    ran, not that retired players are absent — see
+    test_season_feature_rows_gates_roster_on_depth_charts below for the
+    independent check.
     """
     from backend.app.services.projection import ProjectionService
 
@@ -367,3 +373,37 @@ def test_season_board_excludes_retired_players(db_conn):
         (player_ids,),
     )
     assert cur.fetchone()[0] == 0
+
+
+def test_season_feature_rows_gates_roster_on_depth_charts(db_conn):
+    """
+    Independent check of the actual defect: every player
+    _load_season_feature_rows returns for (season, start_week) must have a
+    depth_charts row for that season — not merely players.status != 'RET'.
+    Regression guard for the missing-join bug that let Tom Brady (stored
+    status='ACT', last real season 2022) onto the served 2026 season board
+    at rank 21.
+    """
+    from backend.app.services.projection import ProjectionService
+
+    svc = ProjectionService(db_url=_DB_URL)
+    rows = svc._load_season_feature_rows(2026, 1, ["QB", "RB", "WR", "TE"])
+    if not rows:
+        pytest.skip("no 2026 depth chart in this database")
+
+    player_ids = [r["player_id"] for r in rows]
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT count(DISTINCT player_id) FROM depth_charts "
+        "WHERE season = 2026 AND player_id = ANY(%s)",
+        (player_ids,),
+    )
+    assert cur.fetchone()[0] == len(set(player_ids))
+
+    # Tom Brady by name: has no 2026 depth-chart row (retired), so the
+    # per-player fallback-to-any-prior-season bug this test guards against
+    # would surface him specifically if it regressed.
+    cur.execute("SELECT id FROM players WHERE full_name = 'Tom Brady'")
+    brady = cur.fetchone()
+    if brady:
+        assert brady[0] not in player_ids
