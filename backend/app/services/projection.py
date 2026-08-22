@@ -621,6 +621,47 @@ class ProjectionService:
                            pl.team,
                            fm.prior_snap_share,
                            fm.seas_games_played AS prior_games,
+                           -- seas_games_played only increments on a week the player
+                           -- actually appears in game_logs (verified: a bye week or a
+                           -- missed game leaves no row, so it never falls behind by
+                           -- counting a "gap" that wasn't really an opportunity) — it IS
+                           -- the active-games numerator, so also serves as
+                           -- prior_active_games directly.
+                           fm.seas_games_played AS prior_active_games,
+                           -- Real denominator for p_active_from_priors: how many games
+                           -- has this player's CURRENT team actually played (completed,
+                           -- home_score IS NOT NULL), scoped to the SAME season/week this
+                           -- snapshot row (fm.season, fm.week) represents — seas_games_played
+                           -- resets every season, so the denominator must too, or an
+                           -- early-season snapshot for a team that played many seasons ago
+                           -- would pull in years of unrelated games. Using seas_games_played
+                           -- for both numerator and denominator (as an earlier fix attempt
+                           -- did) makes them mathematically always equal, which collapses
+                           -- the active rate to a function of sample size alone rather than
+                           -- actual availability.
+                           --
+                           -- At week 1 of a season, fm.season's own game count is 0 before
+                           -- any 2026 game has been played, while seas_games_played (the
+                           -- numerator) still reports the carried-over PRIOR-season total
+                           -- (verified: a player's week-1/new-season snapshot shows last
+                           -- season's final seas_games_played, not a reset to 0) — so the
+                           -- denominator must carry forward the same way, via COALESCE onto
+                           -- the prior season's team game count, or every player's p_active
+                           -- collapses to the cold-start floor at the start of every season.
+                           COALESCE(
+                               NULLIF((
+                                   SELECT COUNT(*) FROM games g
+                                   WHERE (g.home_team = pl.team OR g.away_team = pl.team)
+                                     AND g.home_score IS NOT NULL
+                                     AND g.season = fm.season AND g.week < fm.week
+                               ), 0),
+                               (
+                                   SELECT COUNT(*) FROM games g
+                                   WHERE (g.home_team = pl.team OR g.away_team = pl.team)
+                                     AND g.home_score IS NOT NULL
+                                     AND g.season = fm.season - 1
+                               )
+                           ) AS team_games_played,
                            fm.seas_avg_fantasy_ppr,
                            fm.seas_avg_passing_yards,
                            fm.seas_avg_rushing_yards,

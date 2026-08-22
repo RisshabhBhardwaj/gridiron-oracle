@@ -62,6 +62,41 @@ def test_cold_start_qb_is_not_in_ros_top24() -> None:
     assert_cold_start_qb_not_in_top24(ranked)
 
 
+def test_attach_playing_time_prefers_team_games_played_as_denominator() -> None:
+    """prior_games is the player's OWN participation count (used elsewhere
+    for cold-start detection) and must not double as the active-rate
+    denominator — that collapses p_active toward 0 for well-established
+    players instead of reflecting real availability. team_games_played (the
+    team's own completed-game count over the same window) is the correct
+    denominator; a player active every one of those games should score much
+    higher than one who missed most of them, given the SAME prior_games."""
+    healthy = {
+        "player_id": "healthy", "prior_snap_share": 0.9,
+        "prior_games": 16, "prior_active_games": 16, "team_games_played": 16,
+        "depth_rank": 1.0,
+    }
+    injured = {
+        "player_id": "injured", "prior_snap_share": 0.9,
+        "prior_games": 16, "prior_active_games": 4, "team_games_played": 16,
+        "depth_rank": 1.0,
+    }
+    attached = attach_playing_time([healthy, injured])
+    by_id = {r["player_id"]: r for r in attached}
+    assert by_id["healthy"]["p_active"] > 0.8
+    assert by_id["injured"]["p_active"] < 0.5
+    assert by_id["healthy"]["p_active"] > by_id["injured"]["p_active"]
+
+
+def test_attach_playing_time_falls_back_to_prior_games_when_team_games_played_missing() -> None:
+    """Callers that don't supply team_games_played (older fixtures, callers
+    outside this codebase's DB) keep the pre-fix behavior rather than
+    erroring — this only documents that the fallback exists, not that its
+    values are correct."""
+    row = {"player_id": "p1", "prior_snap_share": 0.5, "prior_games": 10}
+    attached = attach_playing_time([row])
+    assert 0.0 <= attached[0]["p_active"] <= 1.0
+
+
 def test_simulate_season_paths_scales_with_availability() -> None:
     high = simulate_season_paths(15.0, 0.95, 17, residual_scale=0.01, n_sims=200, rng=1)
     low = simulate_season_paths(15.0, 0.05, 17, residual_scale=0.01, n_sims=200, rng=1)

@@ -113,9 +113,22 @@ def attach_playing_time(rows: Iterable[Mapping[str, object]]) -> list[dict]:
     out = []
     for raw in rows:
         row = dict(raw)
+        # p_active_from_priors' `prior_games` arg is the DENOMINATOR — total
+        # opportunities to play. `team_games_played` (the player's team's own
+        # completed-game count over the same window) is the correct source
+        # for that; `row["prior_games"]` is the player's OWN participation
+        # count (used elsewhere for cold-start detection) and is NOT a valid
+        # denominator — passing it as one makes the "active rate" collapse
+        # toward 0 for well-established players instead of reflecting real
+        # availability. Callers that don't supply team_games_played (existing
+        # test fixtures, callers outside this codebase's DB) fall back to the
+        # old prior_games-as-denominator behavior rather than erroring.
+        denominator = row.get("team_games_played")
+        if denominator is None:
+            denominator = row.get("prior_games")
         row["p_active"] = p_active_from_priors(
             _opt_float(row.get("prior_snap_share")),
-            _opt_float(row.get("prior_games")),
+            _opt_float(denominator),
             depth_rank=_opt_float(row.get("depth_rank")),
             prior_active_games=_opt_float(row.get("prior_active_games")),
         )

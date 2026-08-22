@@ -175,8 +175,13 @@ def materialize(
     rows = []
     for player_id, stat_dict in result.player_season_totals.items():
         meta = meta_by_player.get(player_id, {})
+        # prior_games is the player's OWN participation count (correct for
+        # cold-start detection elsewhere) — NOT a valid denominator for an
+        # active-rate calculation. team_games_played (the player's team's own
+        # completed-game count over the same window) is; see
+        # ml.playing_time.attach_playing_time's docstring for the same fix.
         p_active = p_active_from_priors(
-            meta.get("prior_snap_share"), meta.get("prior_games"),
+            meta.get("prior_snap_share"), meta.get("team_games_played"),
             depth_rank=meta.get("depth_rank"), prior_active_games=meta.get("prior_active_games"),
         )
         for stat in _SERVED_STATS:
