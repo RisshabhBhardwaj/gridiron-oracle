@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pipeline.team_game_features import _build_coach_tendency, build_team_game_frame
+from pipeline.team_game_features import (
+    _build_coach_tendency,
+    build_team_game_forward_frame,
+    build_team_game_frame,
+)
 
 _DB_URL = os.environ.get("DATABASE_URL", "postgresql://oracle:oracle@localhost:15439/oracle").replace(
     "postgresql+asyncpg://", "postgresql://"
@@ -111,3 +115,27 @@ def test_build_team_game_frame_does_not_drop_raiders_rows_to_abbreviation_drift(
         "Raiders rows missing entirely — abbreviation join likely broken again"
     )
     assert "OAK" not in set(df["team"]), "team codes must be normalized to current franchise abbreviations"
+
+
+def test_build_team_game_forward_frame_has_every_model_feature_column():
+    """
+    ml.team_game_model.FEATURE_COLS is the contract the forward frame must
+    satisfy — a missing column here fails loudly at predict time (KeyError),
+    which is exactly what caught a real bug: an earlier version of this
+    function's `keep` list dropped "rest"/"opp_rest" entirely.
+    """
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(_DB_URL)
+        conn.close()
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL not reachable ({exc})")
+
+    from ml.team_game_model import FEATURE_COLS
+
+    df = build_team_game_forward_frame(_DB_URL, 2026, 1)
+    if df.empty:
+        pytest.skip("No scheduled 2026 week 1 games in this database")
+    missing = set(FEATURE_COLS) - set(df.columns)
+    assert not missing, f"forward frame is missing model feature columns: {missing}"

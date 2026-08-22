@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import psycopg2
 import psycopg2.extras
@@ -167,6 +168,112 @@ def _build_coach_tendency(coach_plays: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out_rows)
 
 
+def _load_forward_games(conn, season: int, week: int) -> pd.DataFrame:
+    """Games for a specific (season, week) regardless of whether they've been played."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id AS game_id, season, week, home_team, away_team,
+                   home_score, away_score, home_rest, away_rest,
+                   spread_line, total_line, roof, surface,
+                   home_coach, away_coach, kickoff_at
+            FROM games
+            WHERE season = %s AND week = %s
+            """,
+            (season, week),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    return pd.DataFrame(rows)
+
+
+def _load_latest_team_elo(conn, season: int, week: int) -> pd.DataFrame:
+    """Each team's most recent known Elo strictly before (season, week)."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (team) team, team_off_elo, team_def_elo
+            FROM feature_matrix
+            WHERE team_off_elo IS NOT NULL
+              AND (season < %s OR (season = %s AND week < %s))
+            ORDER BY team, season DESC, week DESC
+            """,
+            (season, season, week),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    return pd.DataFrame(rows)
+
+
+def build_team_game_forward_frame(db_url: str, season: int, week: int) -> pd.DataFrame:
+    """
+    Same feature set as build_team_game_frame's inputs (Elo, coach tendency,
+    rest, venue), for a game that hasn't been played yet — no
+    team_game_stats/points requirement, since those are the outputs, not
+    inputs. Elo and coach tendency use the most recent known values as of
+    strictly before the target week rather than requiring a feature_matrix
+    row for that exact week (which won't exist for a future week).
+    """
+    conn = psycopg2.connect(db_url)
+    try:
+        games = _load_forward_games(conn, season, week)
+        elo = _load_latest_team_elo(conn, season, week)
+        coach_plays = _load_coach_plays(conn, list(range(2019, season + 1)))
+    finally:
+        conn.close()
+
+    if games.empty:
+        return pd.DataFrame()
+
+    games["home_team_n"] = games["home_team"].map(normalize_team_abbr)
+    games["away_team_n"] = games["away_team"].map(normalize_team_abbr)
+
+    home = games.rename(columns={
+        "home_team_n": "team_n", "away_team_n": "opponent_n",
+        "home_rest": "rest", "away_rest": "opp_rest", "home_coach": "coach",
+    }).copy()
+    home["is_home"] = 1
+    away = games.rename(columns={
+        "away_team_n": "team_n", "home_team_n": "opponent_n",
+        "away_rest": "rest", "home_rest": "opp_rest", "away_coach": "coach",
+    }).copy()
+    away["is_home"] = 0
+
+    keep = [
+        "game_id", "season", "week", "team_n", "opponent_n", "rest", "opp_rest",
+        "coach", "is_home", "spread_line", "total_line", "roof", "surface", "kickoff_at",
+    ]
+    frame = pd.concat([home[keep], away[keep]], ignore_index=True)
+
+    elo["team_n"] = elo["team"].map(normalize_team_abbr)
+    frame = frame.merge(
+        elo[["team_n", "team_off_elo", "team_def_elo"]], on="team_n", how="left",
+    )
+    opp_elo = elo.rename(columns={
+        "team_n": "opponent_n", "team_off_elo": "opp_off_elo", "team_def_elo": "opp_def_elo",
+    })
+    frame = frame.merge(
+        opp_elo[["opponent_n", "opp_off_elo", "opp_def_elo"]], on="opponent_n", how="left",
+    )
+
+    tendency = _build_coach_tendency(coach_plays)
+    # Most recent known tendency per coach, strictly before the target week —
+    # same lag discipline as the historical path, just resolved to "latest
+    # known" rather than an exact (season, week) match that won't exist yet.
+    tendency = tendency[
+        (tendency["season"] < season) | ((tendency["season"] == season) & (tendency["week"] < week))
+    ]
+    latest_tendency = (
+        tendency.sort_values(["coach", "season", "week"])
+        .groupby("coach", as_index=False)
+        .last()[["coach", "prior_coach_pass_rate", "prior_coach_neutral_plays"]]
+    )
+    frame = frame.merge(latest_tendency, on="coach", how="left")
+
+    frame["is_dome"] = frame["roof"].isin(["dome", "closed"]).astype(int)
+    frame["is_turf"] = (frame["surface"].fillna("").str.lower() == "turf").astype(int)
+    frame = frame.rename(columns={"team_n": "team", "opponent_n": "opponent"})
+    return frame.sort_values(["team"]).reset_index(drop=True)
+
+
 def build_team_game_frame(db_url: str, seasons: list[int]) -> pd.DataFrame:
     """
     Assemble the Phase 4 team-game training/serving frame.
@@ -237,5 +344,9 @@ def build_team_game_frame(db_url: str, seasons: list[int]) -> pd.DataFrame:
 
     frame["is_dome"] = frame["roof"].isin(["dome", "closed"]).astype(int)
     frame["is_turf"] = (frame["surface"].fillna("").str.lower() == "turf").astype(int)
+    frame["pass_rate"] = np.where(
+        frame["total_plays"] > 0, frame["pass_attempts"] / frame["total_plays"], np.nan
+    )
+    frame["win"] = (frame["points"] > frame["opp_points"]).astype(int)
     frame = frame.rename(columns={"team_n": "team", "opponent_n": "opponent"})
     return frame.sort_values(["season", "week", "team"]).reset_index(drop=True)

@@ -451,3 +451,70 @@ class TestAlertsWebSocket:
         assert alert.get("severity") in ("info", "warning", "edge", "injury")
         # Timestamp must be valid ISO 8601
         datetime.fromisoformat(alert["timestamp"])
+
+
+class TestTeamGamePredictions:
+    """
+    Phase 4's first real game-outcome endpoint.
+
+    Prerequisites: team_game_predictions populated —
+        python scripts/materialize_team_game_predictions.py --season 2026 --week 1
+    """
+
+    def test_week_endpoint_returns_all_scheduled_games(self, int_client):
+        r = int_client.get("/team-games/2026/1")
+        if r.status_code == 404:
+            pytest.skip("team_game_predictions not materialized for 2026 week 1")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["season"] == 2026
+        assert body["week"] == 1
+        assert body["count"] == len(body["games"])
+        assert body["count"] > 0
+
+    def test_week_endpoint_games_have_all_targets(self, int_client):
+        r = int_client.get("/team-games/2026/1")
+        if r.status_code == 404:
+            pytest.skip("team_game_predictions not materialized for 2026 week 1")
+        game = r.json()["games"][0]
+        for field in ("points", "yards", "pass_rate", "win_probability"):
+            assert game[field] is not None
+        assert 0.0 <= game["win_probability"] <= 1.0
+
+    def test_week_endpoint_404_for_unmaterialized_week(self, int_client):
+        r = int_client.get("/team-games/2099/1")
+        assert r.status_code == 404
+
+    def test_team_endpoint_matches_week_endpoint(self, int_client):
+        week_resp = int_client.get("/team-games/2026/1")
+        if week_resp.status_code == 404:
+            pytest.skip("team_game_predictions not materialized for 2026 week 1")
+        team = week_resp.json()["games"][0]["team"]
+        team_resp = int_client.get(f"/team-games/2026/1/{team}")
+        assert team_resp.status_code == 200
+        assert team_resp.json()["team"] == team
+
+    def test_team_endpoint_404_for_unknown_team(self, int_client):
+        r = int_client.get("/team-games/2026/1/ZZZ")
+        assert r.status_code == 404
+
+    def test_a_home_and_away_team_pair_have_complementary_win_probability(self, int_client):
+        """
+        EXACTLY 1.0 - p, not approximately: both sides' win_probability come
+        from the SAME points model's predictions for both teams (see
+        ml.team_game_model.derive_win_probability), so
+        margin_opponent = pred_opp - pred_team = -margin_team exactly, and
+        norm.cdf(-x) = 1 - norm.cdf(x) exactly. If this drifts from exact,
+        the two sides stopped being derived from one shared points
+        prediction — the whole point of deriving win_probability instead of
+        fitting it as an independent classifier.
+        """
+        week_resp = int_client.get("/team-games/2026/1")
+        if week_resp.status_code == 404:
+            pytest.skip("team_game_predictions not materialized for 2026 week 1")
+        games = {g["team"]: g for g in week_resp.json()["games"]}
+        game = next(iter(games.values()))
+        opponent = games.get(game["opponent"])
+        if opponent is None:
+            pytest.skip("opponent row not present in this materialization")
+        assert abs((game["win_probability"] + opponent["win_probability"]) - 1.0) < 1e-9
