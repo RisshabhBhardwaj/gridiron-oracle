@@ -209,6 +209,43 @@ class TestTeamVolumePredictor:
         vol = vp.predict_pass_volume("MIN", {"spread_line": -50.0, "total_line": 25.0, "is_home": 1})
         assert vol >= 1.0
 
+    def test_pass_rate_present_replaces_spread_total_heuristic(self, sample_game_logs_df):
+        """
+        Phase 6 L1→L3 wiring: when team_game_predictions.pass_rate is
+        available, it drives the pass/rush SPLIT of total historical plays
+        instead of the hand-tuned spread/total coefficients. total_plays
+        still comes from this class's own historical average — Phase 4
+        doesn't serve a plays count (see migration 20260822_0020).
+        """
+        vp = TeamVolumePredictor()
+        vp.fit(sample_game_logs_df)
+        total_plays = vp._total_plays("MIN")
+
+        pass_vol = vp.predict_pass_volume("MIN", {"pass_rate": 0.65, "spread_line": -50.0, "total_line": 25.0})
+        rush_vol = vp.predict_rush_volume("MIN", {"pass_rate": 0.65, "spread_line": -50.0, "total_line": 25.0})
+
+        # Exact reconciliation: the extreme spread/total values above would
+        # move the fallback heuristic a lot — pass_rate must override them
+        # entirely, not blend, so this only holds if pass_rate truly won.
+        assert pass_vol == pytest.approx(total_plays * 0.65, abs=1e-9)
+        assert rush_vol == pytest.approx(total_plays * 0.35, abs=1e-9)
+        assert pass_vol + rush_vol == pytest.approx(total_plays, abs=1e-9)
+
+    def test_higher_pass_rate_strictly_increases_pass_volume(self, sample_game_logs_df):
+        vp = TeamVolumePredictor()
+        vp.fit(sample_game_logs_df)
+        low = vp.predict_pass_volume("MIN", {"pass_rate": 0.40})
+        high = vp.predict_pass_volume("MIN", {"pass_rate": 0.70})
+        assert high > low
+
+    def test_missing_pass_rate_falls_back_to_spread_total_heuristic(self):
+        """No pass_rate in game_context → identical to pre-Phase-6 behavior."""
+        vp = TeamVolumePredictor()
+        ctx = {"spread_line": 7.0, "total_line": 45.0, "is_home": 1}
+        with_none = vp.predict_pass_volume("MIN", {**ctx, "pass_rate": None})
+        without_key = vp.predict_pass_volume("MIN", ctx)
+        assert with_none == pytest.approx(without_key, abs=1e-9)
+
 
 # ── VolumeRedistributor ───────────────────────────────────────────────────────
 

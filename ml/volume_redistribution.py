@@ -223,6 +223,12 @@ class TeamVolumePredictor:
         )
         return self
 
+    def _total_plays(self, team: str) -> float:
+        """Historical team-average total plays (pass + rush attempts)."""
+        return self._team_pass_avg.get(team, self._global_pass_avg) + self._team_rush_avg.get(
+            team, self._global_rush_avg
+        )
+
     def predict_pass_volume(
         self,
         team: str,
@@ -231,18 +237,34 @@ class TeamVolumePredictor:
         """
         Predict team pass attempts for this game.
 
-        Layer 1 adjustment:
+        When `game_context["pass_rate"]` is present (from Phase 4's
+        ml.team_game_model / team_game_predictions — a Ridge fit that
+        cleared a holdout MAE gate), volume is total historical plays ×
+        that fitted rate: the two hand-tuned spread/total coefficients
+        below are what pass_rate replaces. Phase 4 deliberately does not
+        serve a `plays` count (its own MAE was worse than a constant-mean
+        baseline — see migration 20260822_0020), so total plays still comes
+        from this class's own historical average; only the pass/rush SPLIT
+        is Phase-4-driven.
+
+        Falls back to the historical spread/total heuristic when pass_rate
+        is absent (e.g. a 2026 week with no materialized team_game_predictions
+        row yet):
             V = V_team_avg
                 + β₁ × spread_line      (negative spread → team favored → fewer passes)
                 + β₂ × (total_line - 45) (higher total → more passing)
 
         Args:
             team:         Team abbreviation ("MIN", "GB", etc.)
-            game_context: dict with optional spread_line, total_line, is_home.
+            game_context: dict with optional pass_rate, spread_line, total_line, is_home.
 
         Returns:
             Predicted pass attempt volume (float, ≥ 1.0).
         """
+        if game_context and game_context.get("pass_rate") is not None:
+            pass_rate = float(game_context["pass_rate"])
+            return max(self._total_plays(team) * pass_rate, 1.0)
+
         base = self._team_pass_avg.get(team, self._global_pass_avg)
 
         if game_context:
@@ -262,7 +284,17 @@ class TeamVolumePredictor:
         return max(base, 1.0)
 
     def predict_rush_volume(self, team: str, game_context: Optional[dict] = None) -> float:
-        """Predict team rush attempts for this game."""
+        """
+        Predict team rush attempts for this game.
+
+        See predict_pass_volume — same pass_rate-driven split when available
+        (rush_volume = total_plays × (1 - pass_rate)), same spread-based
+        fallback otherwise.
+        """
+        if game_context and game_context.get("pass_rate") is not None:
+            pass_rate = float(game_context["pass_rate"])
+            return max(self._total_plays(team) * (1.0 - pass_rate), 1.0)
+
         base = self._team_rush_avg.get(team, self._global_rush_avg)
 
         if game_context:

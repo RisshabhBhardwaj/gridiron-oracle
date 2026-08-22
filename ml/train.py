@@ -708,6 +708,36 @@ class PipelineRunner:
                         "is_home":     int(row.get("is_home") or 0),
                     }
 
+            # Prefer Phase 4's fitted pass_rate (team_game_predictions) for the
+            # pass/rush volume split over the spread/total heuristic above —
+            # see TeamVolumePredictor.predict_pass_volume. Best-effort: a
+            # missing table or unmaterialized week just leaves pass_rate out
+            # of game_context, and the heuristic fallback still applies.
+            try:
+                import psycopg2
+
+                dsn = os.environ.get("DATABASE_URL", "")
+                if dsn and game_context_by_team:
+                    conn = psycopg2.connect(dsn)
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT team, pass_rate FROM team_game_predictions "
+                                "WHERE season = %s AND week = %s",
+                                (season, week),
+                            )
+                            for team, pass_rate in cur.fetchall():
+                                if str(team) in game_context_by_team and pass_rate is not None:
+                                    game_context_by_team[str(team)]["pass_rate"] = float(pass_rate)
+                    finally:
+                        conn.close()
+            except Exception as pass_rate_exc:
+                logger.debug(
+                    "_run_volume_redistribution_step: could not fetch team_game_predictions "
+                    "pass_rate for S%dW%d (%s); falling back to the spread/total heuristic.",
+                    season, week, pass_rate_exc,
+                )
+
             redistributed_df = vr.redistribute_team_projections(
                 projections_df=kalman_df,
                 injury_report=injury_report,
