@@ -546,6 +546,12 @@ class Projection(SQLModel, table=True):
     fantasy_projection: Optional[float] = None
     fantasy_floor: Optional[float] = None
     fantasy_ceiling: Optional[float] = None
+    # Phase 6 (L4 scoring): the composed total from ml.scoring.score_fantasy
+    # over every component-stat cell for this player-game — distinct from
+    # fantasy_projection above, which stays the direct fantasy_ppr
+    # regression's own output (the plan's calibration anchor). Populated on
+    # every stat row for a player-game, not just fantasy_ppr.
+    derived_fantasy_projection: Optional[float] = None
 
     # ── Pipeline provenance ────────────────────────────────────────────
     pipeline_run_id: Optional[str] = None  # MLflow run ID; NULL for dry_run

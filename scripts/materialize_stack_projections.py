@@ -2,12 +2,20 @@
 """
 Materialize Phase-5 stack OOF predictions into the projections table.
 
-Writes weekly rows for:
+Writes weekly rows for every cell in ml.artifact_manifest.REQUIRED_SERVING_CELLS:
   - fantasy_ppr × QB/RB/WR/TE
   - targets × WR/TE/RB
   - carries × RB
-  - pass_attempts × QB
-  - passing_yards × QB (if stack present)
+  - pass_attempts × QB, completions × QB
+  - passing_yards × QB, passing_tds × QB, interceptions × QB
+  - receiving_yards × WR/TE/RB, receptions × WR/TE/RB, receiving_tds × WR/TE/RB
+  - rushing_yards × QB/RB, rushing_tds × QB/RB/TE/WR
+  - fumbles × QB/RB/TE/WR
+
+The Phase 6 additions (receptions/TDs/interceptions/fumbles/completions)
+give ml.scoring.score_fantasy a full component-stat set per position —
+without them a "derived" fantasy total built from yardage cells alone
+would omit every touchdown and every reception.
 
 Source of truth: the SHA-256-pinned stack artifact for each cell in
 releases/current_baseline.json (y_pred). Never "newest by mtime".
@@ -42,6 +50,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, get_manifest  # noqa: E402
+from ml.scoring import SCORED_STATS, score_fantasy  # noqa: E402
 from pipeline.schema import normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -164,6 +173,29 @@ def _load_cell(stat: str, position: str) -> pd.DataFrame:
     return df
 
 
+def _attach_derived_fantasy_projection(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute one derived fantasy total per (player_id, game_id) from every
+    scored component-stat cell available for that player-game, via
+    ml.scoring.score_fantasy, and attach it to every row for that
+    player-game — including the fantasy_ppr row, whose OWN
+    `fantasy_projection` stays the direct regression's untouched output
+    (the plan's calibration anchor). The two numbers living on the same
+    fantasy_ppr row is what makes them comparable.
+
+    This sums whatever REQUIRED_SERVING_CELLS rows actually exist for a
+    given player-game — not a schema-guaranteed-complete set. A player
+    with no receiving_tds row for some rare game (a model wasn't computed
+    for them that week) gets a total missing that component, same as any
+    real serving system built from independently-fit per-stat models.
+    """
+    pivot = df.pivot_table(index=["player_id", "game_id"], columns="stat", values="projection", aggfunc="first")
+    scored_cols = [c for c in pivot.columns if c in SCORED_STATS]
+    derived = pivot[scored_cols].apply(lambda row: score_fantasy(row.dropna().to_dict()), axis=1)
+    derived = derived.rename("derived_fantasy_projection").reset_index()
+    return df.merge(derived, on=["player_id", "game_id"], how="left")
+
+
 def _upsert(conn, df: pd.DataFrame) -> int:
     sql = """
         INSERT INTO projections
@@ -171,12 +203,14 @@ def _upsert(conn, df: pd.DataFrame) -> int:
              projection, floor, ceiling, p25, p75,
              boom_probability, bust_probability,
              fantasy_projection, fantasy_floor, fantasy_ceiling,
+             derived_fantasy_projection,
              pipeline_run_id, posterior_samples, max_train_season, interval_method)
         VALUES (
             %(player_id)s, %(game_id)s, %(season)s, %(week)s, %(stat)s, %(position)s,
             %(projection)s, %(floor)s, %(ceiling)s, %(p25)s, %(p75)s,
             NULL, NULL,
             %(fantasy_projection)s, %(fantasy_floor)s, %(fantasy_ceiling)s,
+            %(derived_fantasy_projection)s,
             %(pipeline_run_id)s, NULL, %(max_train_season)s, %(interval_method)s
         )
         ON CONFLICT (player_id, game_id, stat) DO UPDATE SET
@@ -191,6 +225,7 @@ def _upsert(conn, df: pd.DataFrame) -> int:
             fantasy_projection = EXCLUDED.fantasy_projection,
             fantasy_floor = EXCLUDED.fantasy_floor,
             fantasy_ceiling = EXCLUDED.fantasy_ceiling,
+            derived_fantasy_projection = EXCLUDED.derived_fantasy_projection,
             pipeline_run_id = EXCLUDED.pipeline_run_id,
             boom_probability = EXCLUDED.boom_probability,
             bust_probability = EXCLUDED.bust_probability,
@@ -221,6 +256,9 @@ def _upsert(conn, df: pd.DataFrame) -> int:
                 else None,
                 "fantasy_ceiling": float(r.fantasy_ceiling)
                 if r.fantasy_ceiling is not None and pd.notna(r.fantasy_ceiling)
+                else None,
+                "derived_fantasy_projection": float(r.derived_fantasy_projection)
+                if r.derived_fantasy_projection is not None and pd.notna(r.derived_fantasy_projection)
                 else None,
                 "pipeline_run_id": str(r.pipeline_run_id),
                 "max_train_season": int(r.max_train_season),
@@ -268,6 +306,7 @@ def main() -> int:
     all_df = pd.concat(frames, ignore_index=True)
     # Drop rows without usable projections
     all_df = all_df.dropna(subset=["projection", "player_id", "game_id"])
+    all_df = _attach_derived_fantasy_projection(all_df)
     summary = (
         all_df.groupby(["stat", "position"], as_index=False)
         .agg(n=("projection", "size"), seasons=("season", "nunique"))

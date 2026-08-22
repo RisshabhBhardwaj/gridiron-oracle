@@ -556,23 +556,27 @@ class TestStackingInferenceHelpers:
             runner._load_ridge_coefs("rushing_yards")
 
     def test_load_ridge_coefs_rejects_nan_and_unknown_learner(self, tmp_path):
+        # A stat/position deliberately outside REQUIRED_SERVING_CELLS so
+        # load_ridge_coefs's manifest-first lookup (ml/artifact_manifest)
+        # can't resolve a real pinned artifact and falls through to this
+        # test's scratch oof_dir, which is what's actually under test here.
         from ml.train import PipelineRunner
-        (tmp_path / "ridge_fumbles_WR_coefs.json").write_text(
+        (tmp_path / "ridge_unpinned_test_stat_WR_coefs.json").write_text(
             '{"learner_order": ["lgbm", "catboost"], '
             '"weights": {"lgbm": NaN, "catboost": 0.4, "unknown_learner": 99}, '
             '"intercept": 0.0}'
         )
         with pytest.raises(ValueError):
-            PipelineRunner(oof_dir=tmp_path)._load_ridge_coefs("fumbles", "WR")
+            PipelineRunner(oof_dir=tmp_path)._load_ridge_coefs("unpinned_test_stat", "WR")
 
     def test_load_ridge_coefs_requires_position_specific_file_when_position_given(self, tmp_path):
         import json
         from ml.train import PipelineRunner
-        (tmp_path / "ridge_fumbles_coefs.json").write_text(json.dumps({
+        (tmp_path / "ridge_unpinned_test_stat_coefs.json").write_text(json.dumps({
             "xgb": 1.0, "lgbm": 1.0, "catboost": 1.0, "tft": 1.0, "intercept": 0.0,
         }))
         runner = PipelineRunner(oof_dir=tmp_path)
-        assert runner._load_ridge_coefs("fumbles", position="WR") is None
+        assert runner._load_ridge_coefs("unpinned_test_stat", position="WR") is None
 
     # ── _run_stacking_step — no MLflow configured ────────────────────────────
 

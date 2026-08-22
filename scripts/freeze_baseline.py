@@ -112,7 +112,8 @@ def _materialize_run_id() -> str:
     ):
         raise RuntimeError(
             "Materialization report is not a complete run for this HEAD; "
-            "materialize all 15 manifest-pinned cells before freezing."
+            "materialize all manifest-pinned cells before freezing (see "
+            "ml.artifact_manifest.REQUIRED_SERVING_CELLS)."
         )
     return run_id
 

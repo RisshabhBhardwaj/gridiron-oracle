@@ -76,6 +76,15 @@ POSITIONS: frozenset[str] = frozenset({"QB", "RB", "WR", "TE"})
 # The promoted serving matrix. A release may only omit a cell by making an
 # explicit, reviewed manifest policy change; silent materializer drift is not
 # an allowed state.
+#
+# Phase 6 (L4 scoring): the volume/yardage cells below were the only ones
+# served for years even though receptions/TD/turnover models for every
+# position had already cleared their promotion gate (serving_approved: true
+# in ml/oof/candidate_20260821_fixed/promotion_*.json) and simply were never
+# added here. Without them, ml.scoring.score_fantasy has no touchdown or
+# reception input for any position — composing a "derived" fantasy total
+# from yardage alone silently omits 6 pts/TD and 1 pt/reception for every
+# player. This is the fix.
 REQUIRED_SERVING_CELLS: tuple[tuple[str, str], ...] = (
     ("fantasy_ppr", "QB"), ("fantasy_ppr", "RB"),
     ("fantasy_ppr", "WR"), ("fantasy_ppr", "TE"),
@@ -84,6 +93,13 @@ REQUIRED_SERVING_CELLS: tuple[tuple[str, str], ...] = (
     ("receiving_yards", "WR"), ("receiving_yards", "TE"),
     ("receiving_yards", "RB"), ("rushing_yards", "QB"),
     ("rushing_yards", "RB"),
+    # ── Phase 6 additions: TD/reception/turnover cells needed for score_fantasy ──
+    ("receptions", "RB"), ("receptions", "TE"), ("receptions", "WR"),
+    ("receiving_tds", "RB"), ("receiving_tds", "TE"), ("receiving_tds", "WR"),
+    ("rushing_tds", "QB"), ("rushing_tds", "RB"), ("rushing_tds", "TE"), ("rushing_tds", "WR"),
+    ("passing_tds", "QB"), ("interceptions", "QB"),
+    ("fumbles", "QB"), ("fumbles", "RB"), ("fumbles", "TE"), ("fumbles", "WR"),
+    ("completions", "QB"),
 )
 
 

@@ -16,7 +16,7 @@ def test_materializer_declares_the_complete_serving_matrix():
     from scripts.materialize_stack_projections import CELLS
 
     assert tuple(CELLS) == REQUIRED_SERVING_CELLS
-    assert len(CELLS) == 15
+    assert len(CELLS) == 32
 
 
 def test_materializer_uses_prior_seasons_for_conformal_bounds_not_percentiles(tmp_path, monkeypatch):

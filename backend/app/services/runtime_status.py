@@ -210,17 +210,9 @@ class RuntimeStatusService:
         except (OSError, subprocess.CalledProcessError) as exc:
             return {"status": "error", "detail": f"Cannot inspect release Git state: {exc}"}
 
-        expected_cells = {
-            ("fantasy_ppr", "QB"), ("fantasy_ppr", "RB"),
-            ("fantasy_ppr", "WR"), ("fantasy_ppr", "TE"),
-            ("targets", "WR"), ("targets", "TE"), ("targets", "RB"),
-            ("carries", "RB"), ("pass_attempts", "QB"), ("passing_yards", "QB"),
-            ("receiving_yards", "WR"), ("receiving_yards", "TE"),
-            ("receiving_yards", "RB"), ("rushing_yards", "QB"),
-            ("rushing_yards", "RB"),
-        }
         try:
-            from ml.artifact_manifest import load_manifest
+            from ml.artifact_manifest import REQUIRED_SERVING_CELLS, load_manifest
+            expected_cells = set(REQUIRED_SERVING_CELLS)
             manifest = load_manifest(path, root=_REPO_ROOT)
             actual_cells = set(manifest.stack_index)
             if actual_cells != expected_cells:
