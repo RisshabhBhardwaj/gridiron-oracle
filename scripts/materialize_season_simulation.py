@@ -156,6 +156,25 @@ def materialize(
     )
     schedule_df = _load_schedule_gate(database_url, season, start_week, end_week)
 
+    from ml.playing_time import p_active_from_priors
+
+    # Computed BEFORE sim.run() so it can gate the simulation itself (each
+    # simulated week draws its own Bernoulli(p_active) "did this player play"
+    # outcome — see SeasonSimulator.run's player_active_prob docstring) rather
+    # than only being stored as metadata alongside a simulation that ignored
+    # it. prior_games is the player's OWN participation count (correct for
+    # cold-start detection elsewhere) — NOT a valid denominator for an
+    # active-rate calculation. team_games_played (the player's team's own
+    # completed-game count over the same window) is; see
+    # ml.playing_time.attach_playing_time's docstring for the same fix.
+    p_active_by_player = {
+        str(pid): p_active_from_priors(
+            meta.get("prior_snap_share"), meta.get("team_games_played"),
+            depth_rank=meta.get("depth_rank"), prior_active_games=meta.get("prior_active_games"),
+        )
+        for pid, meta in meta_by_player.items()
+    }
+
     sim = SeasonSimulator(
         season=season, start_week=start_week, end_week=end_week,
         n_simulations=n_simulations, stats=_SERVED_STATS,
@@ -163,10 +182,8 @@ def materialize(
     )
     result = sim.run(
         players_df=players_df, prior_game_rows=prior_game_rows,
-        schedule_df=schedule_df, rng_seed=0,
+        schedule_df=schedule_df, player_active_prob=p_active_by_player, rng_seed=0,
     )
-
-    from ml.playing_time import p_active_from_priors
 
     model_run_id = (
         f"season_sim_{season}_{start_week}_"
@@ -175,15 +192,7 @@ def materialize(
     rows = []
     for player_id, stat_dict in result.player_season_totals.items():
         meta = meta_by_player.get(player_id, {})
-        # prior_games is the player's OWN participation count (correct for
-        # cold-start detection elsewhere) — NOT a valid denominator for an
-        # active-rate calculation. team_games_played (the player's team's own
-        # completed-game count over the same window) is; see
-        # ml.playing_time.attach_playing_time's docstring for the same fix.
-        p_active = p_active_from_priors(
-            meta.get("prior_snap_share"), meta.get("team_games_played"),
-            depth_rank=meta.get("depth_rank"), prior_active_games=meta.get("prior_active_games"),
-        )
+        p_active = p_active_by_player.get(player_id, 0.0)
         for stat in _SERVED_STATS:
             d = stat_dict.get(stat)
             if d is None:

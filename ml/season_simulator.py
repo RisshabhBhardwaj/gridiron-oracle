@@ -284,6 +284,7 @@ class SeasonSimulator:
         prior_game_rows: dict[str, list[dict]],
         schedule_df: Optional[pd.DataFrame] = None,
         injury_projections: Optional[dict[int, dict[str, str]]] = None,
+        player_active_prob: Optional[dict[str, float]] = None,
         rng_seed: Optional[int] = None,
     ) -> SeasonSimulation:
         """
@@ -306,7 +307,24 @@ class SeasonSimulator:
                                  projections still work.
             injury_projections:  Optional {week: {player_id: injury_status}}.
                                  Projected injuries per week (e.g. from ESPN IR list
-                                 or user-defined scenario).
+                                 or user-defined scenario) — a KNOWN status for a
+                                 SPECIFIC week, discounting volume via
+                                 _apply_injury_to_kalman.
+            player_active_prob:  Optional {player_id: p_active}, p_active in [0, 1]
+                                 — the season-long probability a player suits up
+                                 in a given week (ml.playing_time.
+                                 p_active_from_priors). Unlike injury_projections
+                                 (a known per-week status), this is genuine
+                                 uncertainty: each simulated week, each path draws
+                                 its own independent Bernoulli(p_active) "did this
+                                 player play" outcome, shared across all stats for
+                                 that player so a path where they're inactive
+                                 zeroes every stat together rather than each stat
+                                 independently deciding. Without this, a retired
+                                 or seldom-active player's low p_active is stored
+                                 as metadata but never actually discounts their
+                                 simulated volume — see
+                                 test_season_simulator_availability_gating.py.
             rng_seed:            Optional seed for reproducibility.
 
         Returns:
@@ -314,6 +332,7 @@ class SeasonSimulator:
         """
         rng = np.random.default_rng(rng_seed)
         injury_projections = injury_projections or {}
+        player_active_prob = player_active_prob or {}
 
         # Accumulated stats per player per stat: (n_simulations, n_weeks) → list
         # Key: (player_id, stat) → list of per-simulation season totals
@@ -379,6 +398,7 @@ class SeasonSimulator:
                 n_simulations=self.n_simulations,
                 rng=rng,
                 team_score_paths=team_score_paths,
+                player_active_prob=player_active_prob,
             )
             # week_paths: dict[(player_id, stat)] → np.ndarray(n_simulations,)
 
@@ -538,6 +558,7 @@ class SeasonSimulator:
         n_simulations: int,
         rng: np.random.Generator,
         team_score_paths: Optional[dict[str, np.ndarray]] = None,
+        player_active_prob: Optional[dict[str, float]] = None,
     ) -> dict[tuple[str, str], np.ndarray]:
         """
         Simulate one week's stats for all players across n_simulations paths.
@@ -552,12 +573,28 @@ class SeasonSimulator:
             what ties a player's simulated outlier game to their team's
             simulated result on that same path, instead of the two being
             independent draws — see _apply_team_script_coupling.
+          - player_active_prob (if given): draws one Bernoulli(p_active)
+            "played this week" outcome per player per path (shared across all
+            stats for that player-path so they zero out together, not
+            independently per stat), and zeroes that player's samples on
+            paths where they didn't play. Drawn fresh here since this method
+            runs once per week, so a path where a player sits out week 6 can
+            still have them active in week 7.
 
         Returns:
             {(player_id, stat): np.ndarray(n_simulations,)} — per-sim weekly totals.
         """
         results: dict[tuple[str, str], np.ndarray] = {}
         team_score_paths = team_score_paths or {}
+        player_active_prob = player_active_prob or {}
+
+        active_masks: dict[str, np.ndarray] = {}
+        for pid in kalman_df["player_id"].astype(str).unique():
+            p = player_active_prob.get(pid)
+            if p is None:
+                continue
+            p = min(max(float(p), 0.0), 1.0)
+            active_masks[pid] = (rng.random(n_simulations) < p).astype(float)
 
         for stat in self.stats:
             coupling = _TEAM_SCRIPT_COUPLING.get(stat, _DEFAULT_TEAM_SCRIPT_COUPLING)
@@ -587,6 +624,11 @@ class SeasonSimulator:
                         team_results = self._apply_team_script_coupling(
                             team_results, team_score_paths[team], coupling
                         )
+                    for key, samples in team_results.items():
+                        mask = active_masks.get(key[0])
+                        if mask is not None:
+                            samples = samples * mask
+                        team_results[key] = samples
                     results.update(team_results)
             else:
                 # Independent draws per player
@@ -604,6 +646,9 @@ class SeasonSimulator:
                             {(pid, stat): samples}, team_score_paths[team], coupling
                         )[(pid, stat)]
                     samples  = np.maximum(samples, 0.0)
+                    mask = active_masks.get(pid)
+                    if mask is not None:
+                        samples = samples * mask
                     results[(pid, stat)] = samples
 
         return results
