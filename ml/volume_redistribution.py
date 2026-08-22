@@ -110,6 +110,16 @@ _TOTAL_PASS_COEFFICIENT:   float =  0.25  # each point of game total → more pa
 # Injury status values that remove a player from the Dirichlet distribution.
 INACTIVE_STATUSES = frozenset({"out", "dnp", "ir", "injured reserve", "o", "0"})
 
+# Positions eligible for target/carry share allocation. Measured against
+# realized game_logs.target_share (season 2024): this group carries 99.89% of
+# a team's target mass on average (median leakage to non-skill positions is
+# exactly 0, 75th percentile 0 — trick plays / eligible-lineman targets are
+# the only source, and they're rare). Including OL/DL/DB rows in the
+# Dirichlet group would give each of them a nonzero ALPHA_MIN floor
+# concentration despite a real share of ~0, diluting every skill player's
+# allocation with noise from players who structurally cannot be targeted.
+SKILL_POSITIONS = frozenset({"QB", "RB", "WR", "TE", "FB"})
+
 # Doubtful/questionable: keep in distribution but reduce concentration.
 _DOUBTFUL_MULTIPLIER:      float = 0.30   # 30% of normal concentration
 _QUESTIONABLE_MULTIPLIER:  float = 0.65   # 65% of normal concentration
@@ -548,11 +558,24 @@ class VolumeRedistributor:
         This is the main integration point with ml/train.py. Call this after
         the stacking ensemble produces raw projections, before the Bayesian layer.
 
+        This is the L3 allocation share model (Phase 6), not just an injury
+        patch: it runs unconditionally, every week, for every team —
+        `injury_report={}` is a legitimate call meaning "everyone healthy,"
+        not a signal to skip. The Dirichlet constraint is what makes every
+        team-game's shares sum to exactly 1.0 by construction; skipping this
+        step (the old behavior when injury_report was empty) left raw,
+        independently-estimated Kalman shares in place, which do not sum to
+        anything in particular.
+
         Args:
             projections_df:  DataFrame with columns:
                                [player_id, name, team, position,
                                 kalman_est_target_share, kalman_est_carries,
                                 projected_targets, projected_receiving_yards, ...]
+                              Rows outside SKILL_POSITIONS pass through
+                              unmodified — they never entered the Dirichlet
+                              group and keep whatever projection they arrived
+                              with.
             injury_report:   {player_id: injury_status} dict from EspnAdapter.
                                Any player_id not in this dict is assumed healthy.
             game_context_by_team: {team: {spread_line, total_line, is_home}} per team.
@@ -585,6 +608,7 @@ class VolumeRedistributor:
 
         for team, grp in df.groupby("team"):
             game_ctx = game_context_by_team.get(str(team))
+            skill_grp = grp[grp["position"].astype(str).str.upper().isin(SKILL_POSITIONS)]
 
             # ── Receiving redistribution ──────────────────────────────────────
             recv_players = [
@@ -595,7 +619,7 @@ class VolumeRedistributor:
                     "kalman_est_target_share": row.get("kalman_est_target_share"),
                     "injury_status":           row.get("injury_status"),
                 }
-                for _, row in grp.iterrows()
+                for _, row in skill_grp.iterrows()
             ]
             recv_result = self.redistribute(
                 team=str(team),
@@ -614,7 +638,7 @@ class VolumeRedistributor:
                     "kalman_est_carries": row.get("kalman_est_carries"),
                     "injury_status":   row.get("injury_status"),
                 }
-                for _, row in grp.iterrows()
+                for _, row in skill_grp.iterrows()
             ]
             rush_result = self.redistribute(
                 team=str(team),

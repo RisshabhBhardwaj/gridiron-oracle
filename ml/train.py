@@ -688,9 +688,12 @@ class PipelineRunner:
             if not injury_report:
                 logger.debug(
                     "_run_volume_redistribution_step: empty injury report for "
-                    "S%dW%d — skipping redistribution.", season, week,
+                    "S%dW%d — redistributing anyway (Phase 6 L3: allocation is "
+                    "the team-level share model, not just an injury patch; an "
+                    "empty report means every player's injury multiplier is "
+                    "1.0, not that redistribution should be skipped).",
+                    season, week,
                 )
-                return kalman_df
 
             vr = get_redistributor(df=None)  # fit lazily (defaults if not pre-fitted)
 

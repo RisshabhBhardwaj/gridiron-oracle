@@ -405,6 +405,47 @@ class TestOutputConsistency:
 
 
 # ---------------------------------------------------------------------------
+# F.5 Volume redistribution step (Phase 6 L3 — unconditional allocation)
+# ---------------------------------------------------------------------------
+
+class TestVolumeRedistributionStep:
+    def test_runs_dirichlet_allocation_even_with_empty_espn_report(self, monkeypatch):
+        """
+        Phase 6 fix: an empty (or unavailable) injury report must NOT skip
+        allocation. Before this fix, _run_volume_redistribution_step
+        returned kalman_df completely unchanged whenever the injury report
+        was empty — which is every week without a live ESPN fetch turning
+        up anything, i.e. most weeks. Mocks the ESPN adapter to return an
+        empty frame and asserts the Dirichlet-only column
+        (target_share_mean) is present in the output.
+        """
+        import ml.train as train_module
+
+        class _EmptyEspnAdapter:
+            def __init__(self, db_url=None):
+                pass
+
+            def fetch_injury_report(self, week, season):
+                return pd.DataFrame()
+
+        monkeypatch.setattr("scraper.adapters.espn_adapter.EspnAdapter", _EmptyEspnAdapter)
+
+        kalman_df = pd.DataFrame([
+            {"player_id": "p1", "name": "WR1", "team": "MIN", "position": "WR",
+             "kalman_est_target_share": 0.30, "kalman_est_carries": 0.0,
+             "spread_line": -3.0, "total_line": 45.0, "is_home": 1},
+            {"player_id": "p2", "name": "WR2", "team": "MIN", "position": "WR",
+             "kalman_est_target_share": 0.15, "kalman_est_carries": 0.0,
+             "spread_line": -3.0, "total_line": 45.0, "is_home": 1},
+        ])
+        runner = train_module.PipelineRunner()
+        result = runner._run_volume_redistribution_step(kalman_df, season=2026, week=3)
+
+        assert "target_share_mean" in result.columns
+        assert result["target_share_mean"].notna().all()
+
+
+# ---------------------------------------------------------------------------
 # G. Stacking inference helpers (_build_inference_features, _load_ridge_coefs,
 #    _run_stacking_step fallback / MLflow paths)
 # ---------------------------------------------------------------------------
