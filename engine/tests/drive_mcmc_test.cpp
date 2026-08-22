@@ -32,7 +32,7 @@ TEST_CASE("DriveMCMC: fourth down decision follows current threshold policy",
 TEST_CASE("DriveMCMC: simulate_drive returns a valid probability distribution",
           "[drive_mcmc]") {
     DriveMCMC sim(2000, 42);
-    const DriveState start{25, 1, 10, DriveOutcome::IN_PROGRESS};
+    const DriveState start{25, 1, 10, 0, 1, DriveOutcome::IN_PROGRESS};
 
     const DriveResult res = sim.simulate_drive(start);
 
@@ -49,6 +49,9 @@ TEST_CASE("DriveMCMC: simulate_drive returns a valid probability distribution",
     REQUIRE(res.drive_value
             == Approx(7.0f * res.p_touchdown + 3.0f * res.p_field_goal).margin(1e-6));
     REQUIRE(res.p50_yards <= res.p90_yards);
+    REQUIRE(res.expected_pass_rate >= 0.0f);
+    REQUIRE(res.expected_pass_rate <= 1.0f);
+    REQUIRE(res.expected_plays > 0.0f);
     REQUIRE(res.n_simulations == 2000);
 }
 
@@ -56,7 +59,7 @@ TEST_CASE("DriveMCMC: max_plays zero forces timeout punt with zero net yards",
           "[drive_mcmc]") {
     DriveMCMC sim(128, 42);
     sim.set_max_plays(0);
-    const DriveState start{25, 1, 10, DriveOutcome::IN_PROGRESS};
+    const DriveState start{25, 1, 10, 0, 1, DriveOutcome::IN_PROGRESS};
 
     const DriveResult res = sim.simulate_drive(start);
 
@@ -67,6 +70,23 @@ TEST_CASE("DriveMCMC: max_plays zero forces timeout punt with zero net yards",
     REQUIRE(res.expected_yards == Approx(0.0f).margin(1e-7));
     REQUIRE(res.p50_yards == Approx(0.0f).margin(1e-7));
     REQUIRE(res.p90_yards == Approx(0.0f).margin(1e-7));
+    REQUIRE(res.expected_plays == Approx(0.0f).margin(1e-7));
+    REQUIRE(res.expected_pass_rate == Approx(0.0f).margin(1e-7));
+}
+
+TEST_CASE("DriveMCMC: default transitions run more when leading big in Q4",
+          "[drive_mcmc]") {
+    // Documents the prior baked into load_default_transitions (see
+    // drive_mcmc.cpp) — an unconfigured engine should still show the right
+    // qualitative direction, not just a flat pass rate everywhere.
+    DriveMCMC sim(4000, 42);
+    const DriveState leading_big{50, 1, 10, 20, 4, DriveOutcome::IN_PROGRESS};
+    const DriveState trailing_big{50, 1, 10, -20, 4, DriveOutcome::IN_PROGRESS};
+
+    const DriveResult leading_res = sim.simulate_drive(leading_big);
+    const DriveResult trailing_res = sim.simulate_drive(trailing_big);
+
+    REQUIRE(leading_res.expected_pass_rate < trailing_res.expected_pass_rate);
 }
 
 TEST_CASE("DriveMCMC: CSV transition override can force deterministic touchdown",
@@ -75,14 +95,15 @@ TEST_CASE("DriveMCMC: CSV transition override can force deterministic touchdown"
     {
         std::ofstream out(path);
         REQUIRE(out.is_open());
-        out << "field_pos_bucket,down,ytg_bucket,mean_gain,gain_std,p_turnover,p_penalty_gain,p_penalty_loss\n";
-        out << "0,0,0,99,0,0,0,0\n";
+        out << "fp_bucket,down_idx,ytg_bucket,score_diff_bucket,quarter_idx,"
+               "mean_gain,gain_std,p_turnover,p_penalty_gain,p_penalty_loss,p_pass,count\n";
+        out << "0,0,0,2,0,99,0,0,0,0,1.0,500\n";
     }
 
     DriveMCMC sim(64, 42);
     REQUIRE(sim.load_transitions_from_csv(path));
 
-    const DriveState start{5, 1, 1, DriveOutcome::IN_PROGRESS};
+    const DriveState start{5, 1, 1, 0, 1, DriveOutcome::IN_PROGRESS};
     const DriveResult res = sim.simulate_drive(start);
 
     std::remove(path.c_str());
@@ -92,6 +113,7 @@ TEST_CASE("DriveMCMC: CSV transition override can force deterministic touchdown"
     REQUIRE(res.p_punt == Approx(0.0f).margin(1e-7));
     REQUIRE(res.p_turnover == Approx(0.0f).margin(1e-7));
     REQUIRE(res.expected_yards == Approx(95.0f).margin(1e-6));
+    REQUIRE(res.expected_pass_rate == Approx(1.0f).margin(1e-6));
 }
 
 TEST_CASE("DriveMCMC: missing transition CSV returns false",
@@ -110,13 +132,17 @@ TEST_CASE("DriveMCMC C API: simulate writes sane outputs",
     float p_td = -1.0f;
     float p_fg = -1.0f;
     float expected_yards = 0.0f;
+    float pass_rate = -1.0f;
     float drive_value = 0.0f;
-    drive_mcmc_simulate(handle, 25, 1, 10, &p_td, &p_fg, &expected_yards, &drive_value);
+    drive_mcmc_simulate(handle, 25, 1, 10, 0, 1, &p_td, &p_fg, &expected_yards,
+                        &pass_rate, &drive_value);
 
     REQUIRE(p_td >= 0.0f);
     REQUIRE(p_td <= 1.0f);
     REQUIRE(p_fg >= 0.0f);
     REQUIRE(p_fg <= 1.0f);
+    REQUIRE(pass_rate >= 0.0f);
+    REQUIRE(pass_rate <= 1.0f);
     REQUIRE(drive_value == Approx(7.0f * p_td + 3.0f * p_fg).margin(1e-6));
     REQUIRE(expected_yards == expected_yards); // not NaN
 

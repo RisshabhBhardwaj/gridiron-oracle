@@ -3,14 +3,10 @@
 // Drive-Level MCMC — Implementation.
 // See engine/include/drive_mcmc.hpp for API documentation.
 //
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║  PHASE 5 STUB — NOT PRODUCTION-READY                           ║
-// ║  Drive/play-level Markov chain requires PBP pipeline            ║
-// ║  (BLOCKED: formation data needs NGS/PFF).                       ║
-// ║  Catch2 tests exist for default transitions, policy boundaries, ║
-// ║  CSV loading, and C API behavior; keep that coverage before     ║
-// ║  promoting to production.                                       ║
-// ╚══════════════════════════════════════════════════════════════════╝
+// Phase 5: state space now includes score_differential and quarter,
+// matching ml/markov_simulator.py's fit. Catch2 tests exist for default
+// transitions, policy boundaries, CSV loading, and C API behavior; keep
+// that coverage current when touching this file.
 
 #include "drive_mcmc.hpp"
 
@@ -35,15 +31,43 @@ DriveMCMC::DriveMCMC(uint32_t n_simulations, uint32_t rng_seed)
 // ── Table Indexing
 // ────────────────────────────────────────────────────────────
 
-static uint32_t table_index(uint8_t field_pos, uint8_t down, uint8_t ytg) {
+// Mirrors ml.markov_simulator._score_diff_bucket exactly: 0=trailing_big
+// (<=-9), 1=trailing_small (-8..-1), 2=tied (0), 3=leading_small (1..8),
+// 4=leading_big (>=9).
+static uint32_t score_diff_bucket(int8_t score_differential) {
+  if (score_differential <= -9)
+    return 0;
+  if (score_differential <= -1)
+    return 1;
+  if (score_differential == 0)
+    return 2;
+  if (score_differential <= 8)
+    return 3;
+  return 4;
+}
+
+static uint32_t table_index(uint8_t field_pos, uint8_t down, uint8_t ytg,
+                            int8_t score_differential, uint8_t quarter) {
   uint32_t fp_bucket = std::min(static_cast<uint32_t>(field_pos / 10), 10u);
   uint32_t down_idx = std::min(static_cast<uint32_t>(down - 1), 3u);
   uint32_t ytg_bucket = std::min(static_cast<uint32_t>((ytg - 1) / 5), 5u);
-  return fp_bucket * (4 * 6) + down_idx * 6 + ytg_bucket;
+  uint32_t score_bucket = score_diff_bucket(score_differential);
+  uint32_t quarter_idx =
+      std::min(static_cast<uint32_t>(std::max<int>(quarter, 1) - 1), 3u);
+
+  constexpr uint32_t N_QUARTER = 4;
+  constexpr uint32_t N_SCORE = 5;
+  constexpr uint32_t N_YTG = 6;
+  constexpr uint32_t N_DOWN = 4;
+  return fp_bucket * (N_DOWN * N_YTG * N_SCORE * N_QUARTER) +
+         down_idx * (N_YTG * N_SCORE * N_QUARTER) +
+         ytg_bucket * (N_SCORE * N_QUARTER) + score_bucket * N_QUARTER +
+         quarter_idx;
 }
 
 const PlayDistribution &DriveMCMC::lookup(const DriveState &s) const {
-  uint32_t idx = table_index(s.field_pos, s.down, s.yards_to_go);
+  uint32_t idx = table_index(s.field_pos, s.down, s.yards_to_go,
+                             s.score_differential, s.quarter);
   return transitions_[idx];
 }
 
@@ -58,11 +82,21 @@ void DriveMCMC::load_default_transitions() {
   //   P(turnover):    0.027   (~2.7% per play; includes INT + fumbles lost)
   //   P(penalty+):    0.08
   //   P(penalty-):    0.05
+  //   Passing rate:   0.57 (baseline; see score/quarter skew below)
   //
   // Zone-specific adjustments:
   //   Red zone (fp >= 80):   mean_gain = 4.2, std=6.5 (compressed field)
   //   Mid-field (fp 40-60):  mean_gain = 6.1
   //   Own territory (fp<40): mean_gain = 5.5
+  //
+  // Score/quarter adjustment to p_pass: this is a documented PRIOR, not a
+  // fit — real signal comes from load_transitions_from_csv. It exists so an
+  // unconfigured engine (e.g. before the CSV is generated) shows the right
+  // qualitative direction rather than a flat 0.57 everywhere. Amount is
+  // loosely calibrated to scripts/verify_drive_transitions.py's real
+  // numbers (Q4 leading_big ~0.38 vs trailing_big ~0.75 pass rate).
+  constexpr float kBasePassRate = 0.57f;
+  constexpr float kScoreSkewPerBucket = 0.06f;
 
   for (uint32_t fp = 0; fp < N_FP_BUCKETS; ++fp) {
     float fp_real = fp * 10.0f;
@@ -75,12 +109,28 @@ void DriveMCMC::load_default_transitions() {
       float d_std_factor = (d >= 2) ? 1.2f : 1.0f;
 
       for (uint32_t ytg = 0; ytg < N_YTG_BUCKETS; ++ytg) {
-        uint32_t idx = fp * (N_DOWN * N_YTG_BUCKETS) + d * N_YTG_BUCKETS + ytg;
-        transitions_[idx] = {
-            mean_gain, gain_std * d_std_factor, p_turn,
-            0.08f, // p_penalty_gain
-            0.05f, // p_penalty_loss
-        };
+        for (uint32_t sb = 0; sb < N_SCORE_BUCKETS; ++sb) {
+          // signed_score: -2 (trailing_big) .. +2 (leading_big)
+          int signed_score = static_cast<int>(sb) - 2;
+
+          for (uint32_t q = 0; q < N_QUARTER; ++q) {
+            float quarter_weight = 1.0f + 0.5f * static_cast<float>(q);
+            float p_pass = kBasePassRate - kScoreSkewPerBucket *
+                                                static_cast<float>(signed_score) *
+                                                quarter_weight;
+            p_pass = std::max(0.15f, std::min(0.85f, p_pass));
+
+            uint32_t idx = fp * (N_DOWN * N_YTG_BUCKETS * N_SCORE_BUCKETS * N_QUARTER) +
+                           d * (N_YTG_BUCKETS * N_SCORE_BUCKETS * N_QUARTER) +
+                           ytg * (N_SCORE_BUCKETS * N_QUARTER) + sb * N_QUARTER + q;
+            transitions_[idx] = {
+                mean_gain, gain_std * d_std_factor, p_turn,
+                0.08f, // p_penalty_gain
+                0.05f, // p_penalty_loss
+                p_pass,
+            };
+          }
+        }
       }
     }
   }
@@ -109,18 +159,25 @@ bool DriveMCMC::load_transitions_from_csv(const std::string &csv_path) {
         vals.push_back(0.0f);
       }
     }
-    if (vals.size() < 8)
+    if (vals.size() < 11)
       continue;
-    // CSV columns: fp_bucket, down, ytg_bucket, mean_gain, gain_std,
-    //              p_turnover, p_penalty_gain, p_penalty_loss
+    // CSV columns (ml.markov_simulator export_transitions_by_game_state):
+    // fp_bucket, down_idx, ytg_bucket, score_diff_bucket, quarter_idx,
+    // mean_gain, gain_std, p_turnover, p_penalty_gain, p_penalty_loss,
+    // p_pass, [count]
     uint32_t fp = static_cast<uint32_t>(vals[0]);
     uint32_t dn = static_cast<uint32_t>(vals[1]);
     uint32_t ytg = static_cast<uint32_t>(vals[2]);
-    if (fp >= N_FP_BUCKETS || dn >= N_DOWN || ytg >= N_YTG_BUCKETS)
+    uint32_t sb = static_cast<uint32_t>(vals[3]);
+    uint32_t q = static_cast<uint32_t>(vals[4]);
+    if (fp >= N_FP_BUCKETS || dn >= N_DOWN || ytg >= N_YTG_BUCKETS ||
+        sb >= N_SCORE_BUCKETS || q >= N_QUARTER)
       continue;
 
-    uint32_t idx = fp * (N_DOWN * N_YTG_BUCKETS) + dn * N_YTG_BUCKETS + ytg;
-    transitions_[idx] = {vals[3], vals[4], vals[5], vals[6], vals[7]};
+    uint32_t idx = fp * (N_DOWN * N_YTG_BUCKETS * N_SCORE_BUCKETS * N_QUARTER) +
+                   dn * (N_YTG_BUCKETS * N_SCORE_BUCKETS * N_QUARTER) +
+                   ytg * (N_SCORE_BUCKETS * N_QUARTER) + sb * N_QUARTER + q;
+    transitions_[idx] = {vals[5], vals[6], vals[7], vals[8], vals[9], vals[10]};
     ++rows;
   }
   return rows > 0;
@@ -148,8 +205,10 @@ DriveOutcome DriveMCMC::fourth_down_decision(uint8_t field_pos,
 // ── Single Drive Simulation
 // ───────────────────────────────────────────────────
 
-DriveState DriveMCMC::advance_one_play(const DriveState &s) {
+DriveState DriveMCMC::advance_one_play(const DriveState &s, float &pass_sum, uint32_t &play_count) {
   const PlayDistribution &dist = lookup(s);
+  pass_sum += dist.p_pass;
+  ++play_count;
   DriveState next = s;
 
   // Turnover?
@@ -216,14 +275,14 @@ DriveState DriveMCMC::advance_one_play(const DriveState &s) {
   return next;
 }
 
-DriveState DriveMCMC::simulate_single_drive(const DriveState &start) {
+DriveState DriveMCMC::simulate_single_drive(const DriveState &start, float &pass_sum, uint32_t &play_count) {
   DriveState state = start;
   state.outcome = DriveOutcome::IN_PROGRESS;
 
   for (uint32_t play = 0; play < max_plays_; ++play) {
     if (state.is_terminal())
       break;
-    state = advance_one_play(state);
+    state = advance_one_play(state, pass_sum, play_count);
   }
   if (!state.is_terminal()) {
     state.outcome = DriveOutcome::PUNT; // timeout — count as punt
@@ -239,8 +298,11 @@ DriveResult DriveMCMC::simulate_drive(const DriveState &start) {
   std::vector<float> yards_per_path;
   yards_per_path.reserve(n_simulations_);
 
+  float pass_sum = 0.0f;
+  uint32_t play_count = 0;
+
   for (uint32_t s = 0; s < n_simulations_; ++s) {
-    DriveState terminal = simulate_single_drive(start);
+    DriveState terminal = simulate_single_drive(start, pass_sum, play_count);
 
     switch (terminal.outcome) {
     case DriveOutcome::TOUCHDOWN:
@@ -284,6 +346,9 @@ DriveResult DriveMCMC::simulate_drive(const DriveState &start) {
     return sorted_y[static_cast<uint32_t>(p * (n_simulations_ - 1))];
   };
 
+  float expected_plays = play_count / n;
+  float expected_pass_rate = play_count > 0 ? pass_sum / static_cast<float>(play_count) : 0.0f;
+
   return DriveResult{
       p_td,
       p_fg,
@@ -292,7 +357,8 @@ DriveResult DriveMCMC::simulate_drive(const DriveState &start) {
       mean_y,
       pct(0.50f),
       pct(0.90f),
-      18.0f,                     // placeholder: expected plays (from NFL avg)
+      expected_plays,
+      expected_pass_rate,
       7.0f * p_td + 3.0f * p_fg, // expected points
       n_simulations_,
   };
@@ -328,15 +394,18 @@ void drive_mcmc_load_defaults(void *handle) {
 }
 
 void drive_mcmc_simulate(void *handle, uint8_t field_pos, uint8_t down,
-                         uint8_t yards_to_go, float *out_p_td, float *out_p_fg,
-                         float *out_expected_yards, float *out_drive_value) {
+                         uint8_t yards_to_go, int8_t score_differential,
+                         uint8_t quarter, float *out_p_td, float *out_p_fg,
+                         float *out_expected_yards, float *out_pass_rate,
+                         float *out_drive_value) {
   auto *sim = static_cast<gridiron::DriveMCMC *>(handle);
-  gridiron::DriveState start{field_pos, down, yards_to_go,
-                             gridiron::DriveOutcome::IN_PROGRESS};
+  gridiron::DriveState start{field_pos, down, yards_to_go, score_differential,
+                             quarter, gridiron::DriveOutcome::IN_PROGRESS};
   gridiron::DriveResult res = sim->simulate_drive(start);
   *out_p_td = res.p_touchdown;
   *out_p_fg = res.p_field_goal;
   *out_expected_yards = res.expected_yards;
+  *out_pass_rate = res.expected_pass_rate;
   *out_drive_value = res.drive_value;
 }
 

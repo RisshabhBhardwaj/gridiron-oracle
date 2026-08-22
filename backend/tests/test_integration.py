@@ -518,3 +518,46 @@ class TestTeamGamePredictions:
         if opponent is None:
             pytest.skip("opponent row not present in this materialization")
         assert abs((game["win_probability"] + opponent["win_probability"]) - 1.0) < 1e-9
+
+
+class TestDriveSimulate:
+    """
+    Phase 5's serving endpoint for the C++ DriveMCMC engine.
+
+    Prerequisites: engine/build/libgridiron_engine.{dylib,so} built and
+    ml/oof/transitions_by_game_state.csv materialized —
+        cmake --build engine/build
+        python scripts/export_drive_transitions.py --db
+    Skips rather than fails when either is missing (mirrors
+    backend/tests/test_drive_engine.py's engine fixture).
+    """
+
+    def _get_or_skip(self, int_client, **params):
+        r = int_client.get("/drive/simulate", params=params)
+        if r.status_code == 503:
+            pytest.skip(f"DriveMCMC engine unavailable: {r.json()['detail']}")
+        return r
+
+    def test_simulate_returns_valid_response(self, int_client):
+        r = self._get_or_skip(int_client, field_pos=50, down=1, yards_to_go=10, score_differential=0, quarter=1)
+        assert r.status_code == 200
+        body = r.json()
+        assert 0.0 <= body["p_touchdown"] <= 1.0
+        assert 0.0 <= body["p_field_goal"] <= 1.0
+        assert 0.0 <= body["expected_pass_rate"] <= 1.0
+        assert body["field_pos"] == 50
+
+    def test_leading_team_passes_less_in_q4(self, int_client):
+        """The plan's Phase 5 acceptance check, through the served endpoint."""
+        leading = self._get_or_skip(
+            int_client, field_pos=50, down=1, yards_to_go=10, score_differential=20, quarter=4
+        )
+        trailing = self._get_or_skip(
+            int_client, field_pos=50, down=1, yards_to_go=10, score_differential=-20, quarter=4
+        )
+        assert leading.status_code == 200 and trailing.status_code == 200
+        assert leading.json()["expected_pass_rate"] < trailing.json()["expected_pass_rate"] - 0.15
+
+    def test_invalid_down_returns_422(self, int_client):
+        r = int_client.get("/drive/simulate", params={"field_pos": 50, "down": 5})
+        assert r.status_code == 422

@@ -1,22 +1,30 @@
 // engine/include/drive_mcmc.hpp
 //
-// PHASE 5 STUB — not production code. Transition probabilities use NFL
-// averages (hardcoded); the real model requires Phase 4 play-by-play data
-// (ml/markov_simulator.py). Catch2 coverage lives in
-// engine/tests/drive_mcmc_test.cpp.
-//
-// Drive-Level MCMC — Markov Chain simulation over NFL drive states.
+// Drive-Level MCMC — Markov Chain simulation over NFL drive states,
+// conditioned on game script (Phase 5).
 //
 // OVERVIEW
 // --------
 // Models an NFL drive as a Markov chain over states:
 //
-//     State = (field_position, down, yards_to_go)
+//     State = (field_position, down, yards_to_go, score_differential, quarter)
 //
 //     where:
-//         field_position: 0 (own goal-line) → 100 (opponent goal-line)
-//         down:           1, 2, 3, or 4
-//         yards_to_go:    1–30 (capped at 30 for state space tractability)
+//         field_position:     0 (own goal-line) → 100 (opponent goal-line)
+//         down:                1, 2, 3, or 4
+//         yards_to_go:         1–30 (capped at 30 for state space tractability)
+//         score_differential:  posteam's margin, fixed for the life of one
+//                              simulated drive (a drive doesn't span scoring
+//                              plays by construction)
+//         quarter:             1-4, fixed for the life of one simulated drive;
+//                              OT is clamped to 4
+//
+// score_differential and quarter exist so game script — a leading team
+// running more, especially late — emerges from the fitted transition table
+// rather than being assumed. Each state now also carries p_pass: the
+// learned probability a play at that state is a pass, exposed on
+// DriveResult as expected_pass_rate so callers (and tests) can check the
+// simulated mix against the real one, not just the fitted table.
 //
 // Terminal states:
 //     TOUCHDOWN (field_pos >= 97)
@@ -26,11 +34,12 @@
 //     SAFETY (tackled in own end zone)
 //     TURNOVER (fumble/INT)
 //
-// Transition probabilities are learned from historical game_logs play-by-play
-// data (Phase 4). Until then, they are approximated from NFL averages:
-//     - Expected yards per play: ~5.8 (NFL 2018-2024 average)
-//     - Passing rate: 0.61
-//     - TD rate per drive: 0.22
+// Transition probabilities are learned from pbp_plays (Phase 2/5;
+// ml/markov_simulator.py, scripts/export_drive_transitions.py). Without a
+// loaded CSV, load_default_transitions() falls back to NFL-average priors
+// with a documented, modest score/quarter skew (see drive_mcmc.cpp) — not a
+// fit, just a plausible prior so an unconfigured engine doesn't behave
+// nonsensically.
 //
 // USAGE
 // -----
@@ -38,11 +47,11 @@
 //   using namespace gridiron;
 //
 //   DriveMCMC sim(n_simulations=50000, rng_seed=42);
-//   sim.load_default_transitions();  // NFL-average priors
+//   sim.load_transitions_from_csv("ml/oof/transitions_by_game_state.csv");
 //
-//   DriveResult res = sim.simulate_drive({field_pos=25, down=1, ytg=10});
-//   printf("P(TD) = %.2f, E[yards] = %.1f\n", res.p_touchdown,
-//   res.expected_yards);
+//   DriveResult res = sim.simulate_drive({25, 1, 10, 0, 1, DriveOutcome::IN_PROGRESS});
+//   printf("P(TD) = %.2f, E[yards] = %.1f, pass rate = %.2f\n",
+//          res.p_touchdown, res.expected_yards, res.expected_pass_rate);
 
 #pragma once
 
@@ -74,6 +83,8 @@ struct DriveState {
   uint8_t field_pos;   ///< 0 = own goal, 100 = opp goal. Drive ends at 97+ (TD)
   uint8_t down;        ///< 1-4
   uint8_t yards_to_go; ///< 1-30 (capped)
+  int8_t score_differential = 0; ///< posteam margin, fixed for the whole drive
+  uint8_t quarter = 1;            ///< 1-4 (OT clamps to 4), fixed for the whole drive
   DriveOutcome outcome; ///< IN_PROGRESS while drive is active
 
   bool is_terminal() const { return outcome != DriveOutcome::IN_PROGRESS; }
@@ -90,8 +101,9 @@ struct DriveResult {
   float p50_yards;      ///< median yards
   float p90_yards;      ///< 90th percentile yards
 
-  float expected_plays; ///< mean plays per drive
-  float drive_value;    ///< expected points ≈ 7×P(TD) + 3×P(FG)
+  float expected_plays;     ///< mean plays per drive
+  float expected_pass_rate; ///< mean p_pass looked up across every play, every path
+  float drive_value;        ///< expected points ≈ 7×P(TD) + 3×P(FG)
 
   uint32_t n_simulations;
 };
@@ -106,6 +118,7 @@ struct PlayDistribution {
   float p_turnover;     ///< P(fumble or INT on this play)
   float p_penalty_gain; ///< P(penalty in favor of offense)
   float p_penalty_loss; ///< P(penalty against offense)
+  float p_pass;         ///< P(play call is a pass) — informational, doesn't split the yardage model
 };
 
 // ── DriveMCMC ────────────────────────────────────────────────────────────────
@@ -121,9 +134,11 @@ public:
   /// These approximate 2018-2024 NFL averages.
   void load_default_transitions();
 
-  /// Load learned transitions from serialized CSV (Phase 4 PBP data).
-  /// CSV format: field_pos_bucket, down, ytg_bucket, mean_gain, gain_std,
-  ///             p_turnover, p_penalty_gain, p_penalty_loss
+  /// Load learned transitions from serialized CSV (Phase 5 PBP data,
+  /// ml/markov_simulator.py's transitions_by_game_state export).
+  /// CSV format: fp_bucket, down_idx, ytg_bucket, score_diff_bucket,
+  ///             quarter_idx, mean_gain, gain_std, p_turnover,
+  ///             p_penalty_gain, p_penalty_loss, p_pass, count
   bool load_transitions_from_csv(const std::string &csv_path);
 
   // ── Simulation ────────────────────────────────────────────────────────────
@@ -166,23 +181,32 @@ private:
   std::normal_distribution<float> norm_dist_;
   std::uniform_real_distribution<float> unif_dist_;
 
-  // Transition table: (field_pos_bucket, down, ytg_bucket) → PlayDistribution
-  // Buckets: field_pos /10 → 10 buckets, ytg /5 → 6 buckets
+  // Transition table: (fp_bucket, down, ytg_bucket, score_diff_bucket,
+  // quarter_idx) → PlayDistribution. Buckets: field_pos /10 → 11 buckets,
+  // ytg /5 → 6 buckets, score_differential → 5 buckets (see
+  // score_diff_bucket in drive_mcmc.cpp — mirrors
+  // ml.markov_simulator._score_diff_bucket), quarter 1-4 → 4 buckets.
   static constexpr uint32_t N_FP_BUCKETS = 11;
   static constexpr uint32_t N_DOWN = 4;
   static constexpr uint32_t N_YTG_BUCKETS = 6;
-  static constexpr uint32_t TABLE_SIZE = N_FP_BUCKETS * N_DOWN * N_YTG_BUCKETS;
+  static constexpr uint32_t N_SCORE_BUCKETS = 5;
+  static constexpr uint32_t N_QUARTER = 4;
+  static constexpr uint32_t TABLE_SIZE =
+      N_FP_BUCKETS * N_DOWN * N_YTG_BUCKETS * N_SCORE_BUCKETS * N_QUARTER;
 
   std::array<PlayDistribution, TABLE_SIZE> transitions_;
 
   // Look up the play distribution for a given state.
   const PlayDistribution &lookup(const DriveState &s) const;
 
-  // Simulate one play from state s, return the new state.
-  DriveState advance_one_play(const DriveState &s);
+  // Simulate one play from state s, return the new state. Accumulates the
+  // looked-up p_pass and a play count into the given running totals so
+  // simulate_drive can report expected_pass_rate.
+  DriveState advance_one_play(const DriveState &s, float &pass_sum, uint32_t &play_count);
 
   // Simulate one complete drive path from start, return terminal state.
-  DriveState simulate_single_drive(const DriveState &start);
+  // Accumulates into pass_sum/play_count same as advance_one_play.
+  DriveState simulate_single_drive(const DriveState &start, float &pass_sum, uint32_t &play_count);
 };
 
 } // namespace gridiron
@@ -207,9 +231,15 @@ extern "C" {
 void *drive_mcmc_create(uint32_t n_simulations, uint32_t rng_seed);
 void drive_mcmc_destroy(void *handle);
 void drive_mcmc_load_defaults(void *handle);
+
+/// score_differential/quarter select the fitted state alongside field_pos/
+/// down/yards_to_go (see DriveState); out_pass_rate is the simulated mean
+/// P(pass) across every play, every simulated path from this start.
 void drive_mcmc_simulate(void *handle, uint8_t field_pos, uint8_t down,
-                         uint8_t yards_to_go, float *out_p_td, float *out_p_fg,
-                         float *out_expected_yards, float *out_drive_value);
+                         uint8_t yards_to_go, int8_t score_differential,
+                         uint8_t quarter, float *out_p_td, float *out_p_fg,
+                         float *out_expected_yards, float *out_pass_rate,
+                         float *out_drive_value);
 bool drive_mcmc_load_transitions_csv(void *handle, const char *csv_path);
 
 } // extern "C"

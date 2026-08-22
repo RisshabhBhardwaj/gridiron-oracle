@@ -107,6 +107,9 @@ if LIB is not None:
         ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.c_uint8,
+        ctypes.c_int8,
+        ctypes.c_uint8,
+        ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
@@ -206,24 +209,41 @@ class CppDriveMCMC:
     def load_transitions_csv(self, path: str) -> bool:
         return bool(LIB.drive_mcmc_load_transitions_csv(self.handle, path.encode("utf-8")))
 
-    def simulate(self, field_pos: int = 25, down: int = 1, yards_to_go: int = 10) -> dict[str, float]:
+    def simulate(
+        self,
+        field_pos: int = 25,
+        down: int = 1,
+        yards_to_go: int = 10,
+        score_differential: int = 0,
+        quarter: int = 1,
+    ) -> dict[str, float]:
+        """
+        score_differential is the possessing team's margin (positive =
+        leading), fixed for the simulated drive. quarter is 1-4 (OT clamps
+        to 4 on the C++ side).
+        """
         p_td = ctypes.c_float()
         p_fg = ctypes.c_float()
         yards = ctypes.c_float()
+        pass_rate = ctypes.c_float()
         value = ctypes.c_float()
         LIB.drive_mcmc_simulate(
             self.handle,
             field_pos,
             down,
             yards_to_go,
+            score_differential,
+            quarter,
             ctypes.byref(p_td),
             ctypes.byref(p_fg),
             ctypes.byref(yards),
+            ctypes.byref(pass_rate),
             ctypes.byref(value),
         )
         return {
             "p_touchdown": float(p_td.value),
             "p_field_goal": float(p_fg.value),
             "expected_yards": float(yards.value),
+            "expected_pass_rate": float(pass_rate.value),
             "drive_value": float(value.value),
         }

@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-TRANSITIONS_PATH = ROOT / "ml" / "oof" / "transitions.csv"
+# The C++ DriveMCMC engine (Phase 5) consumes the game-state-aware 5D table
+# (fp, down, ytg, score_diff_bucket, quarter) — not the older 3D
+# transitions.csv, which load_transitions_from_csv no longer accepts.
+TRANSITIONS_PATH = ROOT / "ml" / "oof" / "transitions_by_game_state.csv"
 
 
 def transitions_artifact_path() -> Path:
@@ -21,8 +24,9 @@ def require_transitions(path: Path | None = None) -> Path:
     artifact = path or TRANSITIONS_PATH
     if not artifact.is_file():
         raise FileNotFoundError(
-            f"{artifact} is missing. Fit DriveMarkovModel via "
-            "scripts/export_drive_transitions.py --pbp <extract> before DriveMCMC."
+            f"{artifact} is missing. Fit DriveMarkovModel and call "
+            "export_transitions_by_game_state() (see "
+            "scripts/export_drive_transitions.py) before DriveMCMC."
         )
     return artifact
 
