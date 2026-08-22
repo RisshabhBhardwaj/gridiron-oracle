@@ -421,7 +421,14 @@ class ProjectionService:
         stats: list[str] = ["passing_yards", "rushing_yards", "receiving_yards", "fantasy_ppr"],
         positions: list[str] | None = None,
     ) -> list[dict]:
-        """Rest-of-season totals from weekly stack rate × SP2 availability paths."""
+        """
+        Rest-of-season totals. Prefers a materialized SeasonSimulator run
+        (scripts/materialize_season_simulation.py — the real Phase 4 model +
+        autoregressive Kalman/Elo/Pickens-coupled Monte Carlo, too slow to run
+        synchronously here) for an approved (season, start_week) pipeline run;
+        falls back to the flat weekly-stack-rate x SP2-availability path
+        otherwise.
+        """
         from ml.playing_time import (
             assert_cold_start_qb_not_in_top24,
             attach_playing_time,
@@ -436,6 +443,9 @@ class ProjectionService:
         try:
             approved = load_approved_pipeline_run_ids()
             self._warn_if_depth_chart_stale(season)
+            simulated = self._load_season_simulation_rows(season, start_week, skill, stats, approved)
+            if simulated:
+                return self._rank_with_cold_start_guard(simulated)
             feature_rows = self._load_season_feature_rows(season, start_week, skill)
             weekly_rates = self._load_weekly_rates(season, start_week, approved)
         except HTTPException:
@@ -492,7 +502,23 @@ class ProjectionService:
                 }
             item["mean"] = float((item.get("fantasy_ppr") or {}).get("mean") or 0.0)
             out.append(item)
-        ranked = rank_rest_of_season(out, value_key="mean")
+        return self._rank_with_cold_start_guard(out)
+
+    @staticmethod
+    def _rank_with_cold_start_guard(rows: list[dict]) -> list[dict]:
+        """
+        Shared by both the flat-rate path and the materialized-simulation
+        path: rank by mean, then enforce SP2's cold-start guard (a QB with no
+        prior snaps cannot be a rest-of-season top-24 star — see
+        ml.playing_time.assert_cold_start_qb_not_in_top24's docstring and
+        the memory note on the old top-24 metric scoring a 9-11 QB roster as
+        optimal). On violation, zero and flag the offending rows and re-rank
+        rather than 500ing — a cold-start QB is a data-quality signal to
+        surface via `degraded`, not a reason to fail the whole board.
+        """
+        from ml.playing_time import assert_cold_start_qb_not_in_top24, rank_rest_of_season
+
+        ranked = rank_rest_of_season(rows, value_key="mean")
         try:
             assert_cold_start_qb_not_in_top24(ranked)
         except AssertionError:
@@ -509,6 +535,73 @@ class ProjectionService:
             ranked = rank_rest_of_season(ranked, value_key="mean")
             assert_cold_start_qb_not_in_top24(ranked)
         return ranked
+
+    def _load_season_simulation_rows(
+        self,
+        season: int,
+        start_week: int,
+        positions: list[str],
+        stats: list[str],
+        approved: frozenset[str],
+    ) -> list[dict]:
+        """
+        Read a materialized SeasonSimulator run (season_simulations table) if
+        one exists under an approved pipeline_run_id for (season, start_week).
+        Returns [] on no match — the caller falls back to the flat-rate path.
+        Pivots the table's one-row-per-(player, stat) shape into the same
+        {player_id, ..., <stat>: {mean,p10,p50,p90}, ...} item shape
+        get_season_projections's flat-rate path already produces, so
+        _rank_with_cold_start_guard and the response model don't need to
+        know which path served a given row.
+        """
+        import psycopg2
+        import psycopg2.extras
+
+        conn = psycopg2.connect(self._db_url)
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT player_id, player_name, position, team, stat,
+                           mean, p10, p50, p90, p_active, prior_games,
+                           prior_active_games, depth_rank, degraded, interval_method
+                    FROM season_simulations
+                    WHERE season = %s AND start_week = %s
+                      AND pipeline_run_id = ANY(%s)
+                      AND UPPER(COALESCE(position, '')) = ANY(%s)
+                    """,
+                    (season, start_week, list(approved), positions),
+                )
+                rows = [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+        by_player: dict[str, dict] = {}
+        for r in rows:
+            if r["stat"] not in stats:
+                continue
+            pid = str(r["player_id"])
+            item = by_player.setdefault(pid, {
+                "player_id": pid,
+                "player_name": r.get("player_name") or pid,
+                "position": r.get("position") or "",
+                "team": r.get("team"),
+                "prior_games": r.get("prior_games"),
+                "prior_active_games": r.get("prior_active_games"),
+                "depth_rank": r.get("depth_rank"),
+                "p_active": r.get("p_active"),
+                "degraded": bool(r.get("degraded", False)),
+                "interval_method": r.get("interval_method") or "season_simulator_mc",
+            })
+            item[r["stat"]] = {
+                "mean": r.get("mean"), "p10": r.get("p10"),
+                "p50": r.get("p50"), "p90": r.get("p90"),
+            }
+
+        out = list(by_player.values())
+        for item in out:
+            item["mean"] = float((item.get("fantasy_ppr") or {}).get("mean") or 0.0)
+        return out
 
     def _load_season_feature_rows(
         self, season: int, start_week: int, positions: list[str]

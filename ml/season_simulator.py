@@ -270,6 +270,11 @@ class SeasonSimulator:
         self._points_model        = None
         self._points_fill         = None
         self._points_residual_std = None
+        # Per-week build_team_game_forward_frame cache — _resolve_week_games
+        # is normally called once per week by run(), but callers that probe
+        # a week more than once (retries, tests) shouldn't pay for a second
+        # DB round trip for data that can't have changed within a run.
+        self._forward_frame_cache: dict[int, pd.DataFrame] = {}
 
     # ── Main Entry Point ─────────────────────────────────────────────────────
 
@@ -882,10 +887,14 @@ class SeasonSimulator:
 
         self._ensure_points_model()
         self._ensure_sim_elo()
-        frame = build_team_game_forward_frame(self._db_url(), self.season, week)
-        if frame.empty:
-            return frame
-        frame = frame.copy()
+        if week not in self._forward_frame_cache:
+            self._forward_frame_cache[week] = build_team_game_forward_frame(
+                self._db_url(), self.season, week
+            )
+        static_frame = self._forward_frame_cache[week]
+        if static_frame.empty:
+            return static_frame
+        frame = static_frame.copy()
         teams = pd.concat([frame["team"], frame["opponent"]]).unique()
         off_elo = {}
         def_elo = {}

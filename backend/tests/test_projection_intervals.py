@@ -54,6 +54,7 @@ def test_season_projections_rank_by_playing_time(monkeypatch) -> None:
 
     svc = ProjectionService("postgresql://unused")
     monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({"run"}))
+    monkeypatch.setattr(svc, "_load_season_simulation_rows", lambda *_a, **_k: [])
 
     def features(_season, _start_week, _positions):
         rows = []

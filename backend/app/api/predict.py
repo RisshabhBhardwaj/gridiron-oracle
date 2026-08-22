@@ -331,7 +331,12 @@ def season_projections(
 ) -> SeasonProjectionsResponse:
     """
     Batch rest-of-season projections for all players.
-    Uses the C++ autoregressive engine.
+
+    Reads a materialized SeasonSimulator run (the real Phase 4 team-game
+    model, autoregressive Kalman/Elo, player stats coupled to their team's
+    simulated score) when one is approved for (season, start_week); falls
+    back to a flat weekly-rate x availability Monte Carlo otherwise — see
+    ProjectionService.get_season_projections.
     """
     results = svc.get_season_projections(
         season=season,

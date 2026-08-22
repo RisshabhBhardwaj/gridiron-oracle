@@ -3,24 +3,31 @@
 The Coherent Prediction Hierarchy plan's Phase 7 verify criterion is:
 "summed weekly equals season; team win totals match the game-by-game surface."
 
-That criterion cannot pass today for a structural reason, not a modeling one:
-`ProjectionService.get_season_projections` and `ml.season_simulator.SeasonSimulator`
-are two independent code paths that never call each other and share no data.
+`ProjectionService.get_season_projections` now has two paths:
 
-- `get_season_projections` (used by the real `/projections/season/{n}` API) draws
-  Bernoulli(p_active) x N(rate, residual_scale) `remaining` times from a single
-  flat per-player rate (a weekly-materialized rate if present, else a season
-  average) — it never reads the per-week `projections` table for future weeks,
-  so it cannot reconcile with what `/projections/week/{n}` would serve for those
-  same weeks.
-- `SeasonSimulator` (schedule- and Elo-aware, but with its own game-resolution
-  defects per the plan) has no production API consumer at all — only tests
-  reference it (`grep -rn "SeasonSimulator" --include="*.py" .` outside its own
-  module and `ml.season_simulator_bridge`/`ml.win_eval` turns up test files only).
+- A materialized-simulation path: reads `season_simulations`
+  (scripts/materialize_season_simulation.py's output — a real
+  `ml.season_simulator.SeasonSimulator` run using the Phase 4 team-game
+  model, autoregressive Elo, and player stats coupled to their team's
+  simulated score) when an approved pipeline_run_id exists for
+  (season, start_week). See test_season_simulator_game_resolution.py and its
+  TestPickensCoherence for what that simulator itself guarantees.
+- A flat-rate fallback: draws Bernoulli(p_active) x N(rate, residual_scale)
+  `remaining` times from a single flat per-player rate, with no per-week
+  schedule signal folded in. This path remains exactly as limited as before
+  — it's what serves whenever no approved simulation exists for the
+  requested (season, start_week), which is the common case until someone
+  runs the materializer and approves its output (see
+  scripts/materialize_season_simulation.py's module docstring for why
+  approval is a deliberate, separate release step).
 
-These tests document that gap rather than paper over it. They should keep failing
-(or keep asserting the disconnect) until a real reconciliation is built — see the
-plan file's Phase 7 section for what that would require.
+test_flat_rate_fallback_draws_one_flat_rate documents the fallback path's
+remaining limitation. test_prefers_materialized_simulation_when_approved
+(and test_season_simulation_serving.py generally) documents that the
+materialized path is real and reachable — the "SeasonSimulator has no
+production API consumer" gap this module used to document is now closed for
+the read side; the write side (running + approving a materialization) is
+still a manual, deliberate step, not an automatic one.
 """
 import pytest
 
@@ -28,12 +35,16 @@ from backend.app.services.projection import ProjectionService
 from backend.app.services import projection as projection_mod
 
 
-def test_season_projections_draw_one_flat_rate_not_per_week_values(monkeypatch) -> None:
-    """get_season_projections cannot equal a sum of real per-week projections:
-    it draws every remaining week from the SAME rate, with no per-week schedule
-    signal (opponent, home/away, injury changes week-to-week) folded in."""
+def test_flat_rate_fallback_draws_one_flat_rate_not_per_week_values(monkeypatch) -> None:
+    """When no approved season_simulations row exists, get_season_projections
+    falls back to drawing every remaining week from the SAME flat rate, with
+    no per-week schedule signal (opponent, home/away, injury changes
+    week-to-week) folded in — the pre-Phase-7 limitation, still present in
+    this fallback path by design (see scripts/materialize_season_simulation.py
+    for the real, schedule-aware alternative)."""
     svc = ProjectionService("postgresql://unused")
     monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({"run"}))
+    monkeypatch.setattr(svc, "_load_season_simulation_rows", lambda *_a, **_k: [])
 
     captured_rates = []
 
@@ -75,31 +86,25 @@ def test_season_projections_draw_one_flat_rate_not_per_week_values(monkeypatch) 
     assert rate == pytest.approx(70.0)
 
 
-def test_season_simulator_has_no_production_api_consumer() -> None:
-    """Documents the other half of the Phase 7 gap: `SeasonSimulator` is schedule-
-    and Elo-aware but nothing in `backend/app` calls it — only tests do. Confirmed
-    by grepping every `.py` file outside `ml/season_simulator.py` itself for
-    `SeasonSimulator`/`season_simulator` and checking each hit's file: as of this
-    test's writing, the only non-test, non-`ml/` hits are `ml/win_eval.py` (borrows
-    the `_AFC`/`_NFC` conference sets, doesn't run the simulator) and
-    `ml/season_simulator_bridge.py` (a C++-fast-path wrapper around it that is
-    itself uncalled from `backend/app`). If this test starts failing because a
-    route now imports `SeasonSimulator`, that's good news — update this docstring
-    and reconsider whether `test_season_projections_draw_one_flat_rate_not_per_week_values`
-    above is still the live gap or whether `get_season_projections` has been
-    replaced by the real simulator per the Phase 7 plan."""
-    import ast
-    import pathlib
+def test_prefers_materialized_simulation_when_approved(monkeypatch) -> None:
+    """The other half of what used to be the gap: when a materialized
+    SeasonSimulator run IS approved for (season, start_week),
+    get_season_projections serves it directly and never touches the
+    flat-rate loaders at all — see test_season_simulation_serving.py for
+    the fuller test surface on this path."""
+    svc = ProjectionService("postgresql://unused")
+    monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({"run"}))
+    monkeypatch.setattr(svc, "_warn_if_depth_chart_stale", lambda season: None)
+    monkeypatch.setattr(svc, "_load_season_simulation_rows", lambda *_a, **_k: [{
+        "player_id": "wr1", "player_name": "WR One", "position": "WR", "team": "MIN",
+        "prior_games": 10, "prior_active_games": 9, "depth_rank": 1.0, "p_active": 0.9,
+        "degraded": False, "interval_method": "season_simulator_mc",
+        "receiving_yards": {"mean": 900.0, "p10": 700.0, "p50": 900.0, "p90": 1100.0},
+        "mean": 0.0,
+    }])
+    monkeypatch.setattr(svc, "_load_season_feature_rows", lambda *_a, **_k: (_ for _ in ()).throw(
+        AssertionError("flat-rate path should not run when a simulation is approved")))
 
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
-    api_dir = repo_root / "backend" / "app"
-    hits = []
-    for path in api_dir.rglob("*.py"):
-        text = path.read_text()
-        if "SeasonSimulator" in text or "season_simulator" in text:
-            hits.append(path.relative_to(repo_root))
-    assert hits == [], (
-        f"backend/app now references the season simulator: {hits}. "
-        "The season/week coherence gap this module documents may be resolved — "
-        "verify get_season_projections actually delegates to it before updating this test."
-    )
+    results = svc.get_season_projections(season=2025, start_week=10, stats=["receiving_yards"])
+    assert results[0]["interval_method"] == "season_simulator_mc"
+    assert results[0]["receiving_yards"]["mean"] == 900.0
