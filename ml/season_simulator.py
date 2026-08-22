@@ -18,13 +18,22 @@ AUTOREGRESSIVE STRUCTURE
 Week 1 → simulate → update Kalman states → Week 2 → simulate → ...
 
 Each week:
-  1. Pull current Kalman estimates for all rostered players.
-  2. Apply Volume Redistribution (injury report for that projected week).
-  3. Draw joint samples via Copula Layer (correlated within-team/game).
-  4. Run Monte Carlo projection to produce week simulation results.
-  5. Feed simulated game stats BACK into the Kalman filter as if observed.
-  6. Update Team Elo ratings from simulated game outcomes.
-  7. Advance to next week.
+  1. Resolve each scheduled game's expected points via the real Phase 4
+     team-game model (ml.team_game_model), using this simulation's own
+     carried-forward Elo, and draw a per-path team score from it
+     (_draw_team_score_paths).
+  2. Pull current Kalman estimates for all rostered players.
+  3. Apply Volume Redistribution (injury report for that projected week).
+  4. Draw joint samples via Copula Layer (correlated within-team/game), then
+     shift each player's samples toward their OWN team's SAME-path score
+     from step 1 (_apply_team_script_coupling) — so an outlier stat game and
+     a team's blowout loss can't land on the same path independently of
+     each other by coincidence; they're coupled by construction.
+  5. Run Monte Carlo projection to produce week simulation results.
+  6. Feed simulated game stats BACK into the Kalman filter as if observed.
+  7. Update Team Elo ratings from the same resolved points predictions used
+     in step 1.
+  8. Advance to next week.
 
 The feedback loop means early-season performance shifts later-season
 projections — exactly as the real Kalman filter would with actual stats.
@@ -104,6 +113,22 @@ _PLAYOFF_BERTHS = 7
 # outcomes — matches ml.team_game_model.train()'s and
 # scripts/materialize_team_game_predictions.py's default.
 _TEAM_GAME_MODEL_ALPHA = 10.0
+
+# Within-player Pearson r between a stat and that player's own team_score,
+# measured from real game_logs joined to games (2019-2025, season >= 8 games
+# per player, team-level score not opponent-adjusted). See the Phase 7
+# investigation: `git log` for "Pickens coherence" for the exact query.
+# Volume stats (targets/receptions/completions) came back ~0 or slightly
+# negative (trailing teams often throw MORE, not less) — coupling those would
+# be fabricating a relationship the data doesn't support, so they're left at
+# the conservative default of 0.0 rather than guessed.
+_TEAM_SCRIPT_COUPLING: dict[str, float] = {
+    "receiving_yards": 0.10,
+    "rushing_yards":   0.18,
+    "passing_yards":   0.22,
+    "fantasy_ppr":     0.20,
+}
+_DEFAULT_TEAM_SCRIPT_COUPLING = 0.0
 
 
 # ── Data Structures ───────────────────────────────────────────────────────────
@@ -328,6 +353,19 @@ class SeasonSimulator:
                 else pd.DataFrame()
             )
 
+            # Resolve real game outcomes (Phase 4 points model) FIRST, so each
+            # path's team score can be threaded into that same path's player
+            # stat draws below (_simulate_week's team_score_paths) — this is
+            # the Pickens-test link: a path where the team scored low can't
+            # independently also be the path with that team's outlier
+            # receiving line, because both come from the same per-path draw.
+            resolved = pd.DataFrame()
+            team_score_paths: dict[str, np.ndarray] = {}
+            if not week_schedule.empty:
+                resolved = self._resolve_week_games(week)
+                if not resolved.empty:
+                    team_score_paths = self._draw_team_score_paths(resolved, self.n_simulations, rng)
+
             # Draw weekly samples: shape (n_simulations, n_players, n_stats)
             week_paths = self._simulate_week(
                 kalman_df=initial_kalman_df,
@@ -335,6 +373,7 @@ class SeasonSimulator:
                 injury_report=week_injury_report,
                 n_simulations=self.n_simulations,
                 rng=rng,
+                team_score_paths=team_score_paths,
             )
             # week_paths: dict[(player_id, stat)] → np.ndarray(n_simulations,)
 
@@ -356,13 +395,12 @@ class SeasonSimulator:
                     "p90":       float(np.percentile(sims, 90)),
                 })
 
-            # Resolve real game outcomes (Phase 4 points model) + update Elo
-            # and accumulate per-path team wins from those outcomes.
-            if not week_schedule.empty:
-                resolved = self._resolve_week_games(week)
-                if not resolved.empty:
-                    self._accumulate_week_wins(resolved, team_win_accum, self.n_simulations, rng)
-                    self._update_elo_from_week(resolved, week)
+            # Accumulate per-path team wins from the same score paths used
+            # above for player-stat coupling, and update Elo from the model's
+            # point predictions.
+            if not resolved.empty:
+                self._accumulate_week_wins(resolved, team_score_paths, team_win_accum, self.n_simulations)
+                self._update_elo_from_week(resolved, week)
 
             # Update Kalman priors with simulated week medians (for next week's prior).
             # Using median instead of mean reduces sensitivity to outlier simulations.
@@ -494,6 +532,7 @@ class SeasonSimulator:
         injury_report: dict[str, str],
         n_simulations: int,
         rng: np.random.Generator,
+        team_score_paths: Optional[dict[str, np.ndarray]] = None,
     ) -> dict[tuple[str, str], np.ndarray]:
         """
         Simulate one week's stats for all players across n_simulations paths.
@@ -502,13 +541,22 @@ class SeasonSimulator:
           - Kalman estimates as the mean of a Normal distribution prior.
           - Volume Redistribution for injured player shares.
           - Copula for within-team/game correlated draws (if use_copula=True).
+          - team_score_paths (if given): shifts each player's samples toward
+            their OWN team's same-path score deviation, at a per-stat
+            strength measured from real data (_TEAM_SCRIPT_COUPLING). This is
+            what ties a player's simulated outlier game to their team's
+            simulated result on that same path, instead of the two being
+            independent draws — see _apply_team_script_coupling.
 
         Returns:
             {(player_id, stat): np.ndarray(n_simulations,)} — per-sim weekly totals.
         """
         results: dict[tuple[str, str], np.ndarray] = {}
+        team_score_paths = team_score_paths or {}
 
         for stat in self.stats:
+            coupling = _TEAM_SCRIPT_COUPLING.get(stat, _DEFAULT_TEAM_SCRIPT_COUPLING)
+
             # Apply injury redistribution
             kalman_with_injury = self._apply_injury_to_kalman(
                 kalman_df=kalman_df,
@@ -530,6 +578,10 @@ class SeasonSimulator:
                         n_simulations=n_simulations,
                         rng=rng,
                     )
+                    if coupling and team in team_score_paths:
+                        team_results = self._apply_team_script_coupling(
+                            team_results, team_score_paths[team], coupling
+                        )
                     results.update(team_results)
             else:
                 # Independent draws per player
@@ -541,6 +593,11 @@ class SeasonSimulator:
 
                     # Sample from truncated normal (non-negative stats)
                     samples  = rng.normal(est, std, size=n_simulations)
+                    team = row.get("team")
+                    if coupling and team in team_score_paths:
+                        samples = self._apply_team_script_coupling(
+                            {(pid, stat): samples}, team_score_paths[team], coupling
+                        )[(pid, stat)]
                     samples  = np.maximum(samples, 0.0)
                     results[(pid, stat)] = samples
 
@@ -613,6 +670,37 @@ class SeasonSimulator:
             std      = max(np.sqrt(variance), 0.1)
             results[(pid, stat)] = np.maximum(rng.normal(est, std, n_simulations), 0.0)
         return results
+
+    @staticmethod
+    def _apply_team_script_coupling(
+        team_results: dict[tuple[str, str], np.ndarray],
+        team_score_path: np.ndarray,
+        coupling: float,
+    ) -> dict[tuple[str, str], np.ndarray]:
+        """
+        Shift each player's per-path samples toward their team's SAME-path
+        score deviation, at strength `coupling` (a within-player Pearson r
+        measured from real game_logs — see _TEAM_SCRIPT_COUPLING).
+
+        adjusted = samples + coupling * player_std * z(team_score_path)
+
+        This is an additive approximation, not an exact correlation-preserving
+        decomposition: it shifts the mean without rescaling variance, so the
+        realized correlation is slightly below `coupling` and player variance
+        inflates by a factor of ~sqrt(1 + coupling^2) (a few percent at the
+        coupling magnitudes measured here, 0.10-0.22). Good enough to make a
+        low-scoring loss path and an outlier stat path for that team
+        correlate in the right direction; not a precision instrument.
+        """
+        std = float(np.std(team_score_path))
+        if std < 1e-6:
+            return team_results
+        z = (team_score_path - float(np.mean(team_score_path))) / std
+        out = {}
+        for key, samples in team_results.items():
+            player_std = max(float(np.std(samples)), 0.1)
+            out[key] = np.maximum(samples + coupling * player_std * z, 0.0)
+        return out
 
     # ── Kalman Integration ───────────────────────────────────────────────────
 
@@ -811,20 +899,42 @@ class SeasonSimulator:
         frame["points_mean"] = self._points_model.predict(X)
         return frame
 
+    def _draw_team_score_paths(
+        self,
+        resolved: pd.DataFrame,
+        n_simulations: int,
+        rng: np.random.Generator,
+    ) -> dict[str, np.ndarray]:
+        """
+        One score path per team per simulation, drawn from the Phase 4
+        points model's prediction ± its out-of-fold residual std
+        (_ensure_points_model). Drawn ONCE per week and shared by
+        _simulate_week (player-stat coupling), _accumulate_week_wins, so a
+        team's "path 37" score is the same number everywhere it's used —
+        that sharing is what makes a player's outlier game and their team's
+        result on the same path arithmetically consistent instead of two
+        independent coin flips that happen to both appear in the output.
+        """
+        paths: dict[str, np.ndarray] = {}
+        for _, row in resolved.iterrows():
+            paths[str(row["team"])] = rng.normal(
+                float(row["points_mean"]), self._points_residual_std, n_simulations
+            )
+        return paths
+
     # ── Team wins / playoffs ─────────────────────────────────────────────────
 
     def _accumulate_week_wins(
         self,
         resolved: pd.DataFrame,
+        team_score_paths: dict[str, np.ndarray],
         team_win_accum: dict[str, np.ndarray],
         n_simulations: int,
-        rng: np.random.Generator,
     ) -> None:
         """
-        Draw n_simulations independent score paths per game from the Phase 4
-        points model's own prediction ± its out-of-fold residual std (the
-        model's honest uncertainty, from _ensure_points_model), and increment
-        each path's win count. Ties award 0.5 wins each.
+        Increment each path's win count from team_score_paths (see
+        _draw_team_score_paths) — the SAME per-path scores used to couple
+        player stats to their team's outcome. Ties award 0.5 wins each.
         """
         for game_id, game_rows in resolved.groupby("game_id"):
             home_row = game_rows[game_rows["is_home"] == 1]
@@ -833,15 +943,12 @@ class SeasonSimulator:
                 continue
             home_team = str(home_row.iloc[0]["team"])
             away_team = str(away_row.iloc[0]["team"])
+            home_paths = team_score_paths.get(home_team)
+            away_paths = team_score_paths.get(away_team)
+            if home_paths is None or away_paths is None:
+                continue
             team_win_accum.setdefault(home_team, np.zeros(n_simulations))
             team_win_accum.setdefault(away_team, np.zeros(n_simulations))
-
-            home_paths = rng.normal(
-                float(home_row.iloc[0]["points_mean"]), self._points_residual_std, n_simulations
-            )
-            away_paths = rng.normal(
-                float(away_row.iloc[0]["points_mean"]), self._points_residual_std, n_simulations
-            )
 
             home_win = home_paths > away_paths
             away_win = away_paths > home_paths

@@ -149,19 +149,21 @@ class TestBuildFeatureRowPhase4:
 
 class TestWinAccumulation:
     def test_accumulate_week_wins_increments(self) -> None:
-        """_accumulate_week_wins now consumes a resolved-games frame (Phase 4
-        points model predictions) rather than a fantasy_ppr proxy — see
-        SeasonSimulator._resolve_week_games. A tiny residual_std (near-zero)
-        makes the per-path draws deterministic so the win split is exact."""
+        """_accumulate_week_wins now consumes team_score_paths (Phase 4
+        points model predictions, drawn once per week by
+        _draw_team_score_paths and shared with the player-stat coupling)
+        rather than a fantasy_ppr proxy — see SeasonSimulator._resolve_week_games."""
         sim = SeasonSimulator(season=2024, start_week=1, end_week=1, n_simulations=4)
-        sim._points_residual_std = 1e-9
         resolved = pd.DataFrame([
             {"game_id": "g1", "team": "MIN", "opponent": "GB", "is_home": 1, "points_mean": 27.0},
             {"game_id": "g1", "team": "GB", "opponent": "MIN", "is_home": 0, "points_mean": 17.0},
         ])
+        team_score_paths = {
+            "MIN": np.array([27.0, 27.0, 27.0, 27.0]),
+            "GB": np.array([17.0, 17.0, 17.0, 17.0]),
+        }
         accum = {"MIN": np.zeros(4), "GB": np.zeros(4)}
-        rng = np.random.default_rng(0)
-        sim._accumulate_week_wins(resolved, accum, 4, rng)
+        sim._accumulate_week_wins(resolved, team_score_paths, accum, 4)
         assert list(accum["MIN"]) == [1.0, 1.0, 1.0, 1.0]
         assert list(accum["GB"]) == [0.0, 0.0, 0.0, 0.0]
 

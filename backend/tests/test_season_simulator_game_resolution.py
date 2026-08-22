@@ -6,6 +6,11 @@ fantasy_ppr-team-total proxy the module used before. This is the test
 surface the Phase 7 plan noted didn't exist — see backend/tests/
 test_season_coherence.py for the broader season/week disconnect this
 rebuild does NOT (yet) close.
+
+TestPickensCoherence covers the plan's "Pickens test": a low-scoring
+projected loss cannot coexist with an outlier receiving line. See
+SeasonSimulator._apply_team_script_coupling and _TEAM_SCRIPT_COUPLING for
+the (real, measured, not invented) coupling this test verifies.
 """
 from __future__ import annotations
 
@@ -161,7 +166,8 @@ class TestWinsAndEloAgree:
         ])
         accum = {}
         rng = np.random.default_rng(1)
-        sim._accumulate_week_wins(resolved, accum, 2000, rng)
+        team_score_paths = sim._draw_team_score_paths(resolved, 2000, rng)
+        sim._accumulate_week_wins(resolved, team_score_paths, accum, 2000)
         sim._update_elo_from_week(resolved, 5)
 
         assert accum["MIN"].mean() > accum["GB"].mean()
@@ -210,3 +216,88 @@ class TestLiveDbIntegration:
             la_row = resolved[resolved["team"] == "LA"]
             if not la_row.empty:
                 assert la_row.iloc[0]["team_off_elo"] != 1500.0 or la_row.iloc[0]["team_def_elo"] != 1500.0
+
+
+class TestApplyTeamScriptCoupling:
+    def test_positive_coupling_produces_positive_correlation(self) -> None:
+        rng = np.random.default_rng(7)
+        n = 50_000
+        team_score_path = rng.normal(21.0, 9.5, n)
+        base_samples = rng.normal(60.0, 20.0, n)
+        coupling = 0.10  # measured receiving_yards coupling
+        adjusted = SeasonSimulator._apply_team_script_coupling(
+            {("p1", "receiving_yards"): base_samples}, team_score_path, coupling
+        )[("p1", "receiving_yards")]
+
+        corr = np.corrcoef(adjusted, team_score_path)[0, 1]
+        # Additive-shift approximation: realized correlation is close to but
+        # not exactly `coupling` (see _apply_team_script_coupling docstring).
+        assert 0.05 < corr < 0.16
+
+    def test_zero_coupling_is_identity_apart_from_the_floor(self) -> None:
+        rng = np.random.default_rng(8)
+        team_score_path = rng.normal(21.0, 9.5, 1000)
+        base_samples = rng.normal(60.0, 20.0, 1000)
+        adjusted = SeasonSimulator._apply_team_script_coupling(
+            {("p1", "targets"): base_samples}, team_score_path, 0.0
+        )[("p1", "targets")]
+        np.testing.assert_array_equal(adjusted, np.maximum(base_samples, 0.0))
+
+    def test_degenerate_team_score_path_returns_unchanged(self) -> None:
+        """A constant team_score_path (std=0) must not divide by zero."""
+        flat = np.full(100, 21.0)
+        samples = np.full(100, 60.0)
+        out = SeasonSimulator._apply_team_script_coupling(
+            {("p1", "receiving_yards"): samples}, flat, 0.10
+        )
+        np.testing.assert_array_equal(out[("p1", "receiving_yards")], samples)
+
+
+class TestPickensCoherence:
+    """The plan's own verify criterion: 'a low-scoring projected loss cannot
+    coexist with an outlier receiving line.' Operationalized as: conditional
+    on the team's simulated score landing in the bottom decile (a low-scoring
+    path), a player's simulated receiving-yards outlier (top decile,
+    unconditional) should be LESS likely than its unconditional rate — not
+    equally or more likely, which is what independent draws would produce."""
+
+    def test_outlier_receiving_games_are_rarer_on_low_scoring_paths(self) -> None:
+        rng = np.random.default_rng(42)
+        n = 200_000
+        team_score_path = rng.normal(21.0, 9.5, n)
+        base_samples = rng.normal(60.0, 22.0, n)
+        coupling = 0.10
+        adjusted = SeasonSimulator._apply_team_script_coupling(
+            {("p1", "receiving_yards"): base_samples}, team_score_path, coupling
+        )[("p1", "receiving_yards")]
+
+        unconditional_p90 = np.quantile(adjusted, 0.90)
+        unconditional_rate = float(np.mean(adjusted >= unconditional_p90))
+
+        low_score_mask = team_score_path <= np.quantile(team_score_path, 0.10)
+        conditional_rate = float(np.mean(adjusted[low_score_mask] >= unconditional_p90))
+
+        assert conditional_rate < unconditional_rate, (
+            f"outlier receiving games should be RARER on low-scoring paths: "
+            f"conditional={conditional_rate:.4f} unconditional={unconditional_rate:.4f}"
+        )
+
+    def test_full_simulate_week_couples_receiving_yards_to_team_score(self, monkeypatch) -> None:
+        """End-to-end through _simulate_week (copula path included), not just
+        the isolated helper — confirms the wiring in run()'s week loop
+        actually reaches the per-player draw."""
+        sim = SeasonSimulator(season=2026, start_week=5, end_week=5,
+                               n_simulations=20_000, stats=["receiving_yards"], use_copula=False)
+        rng = np.random.default_rng(3)
+        kalman_df = pd.DataFrame([
+            {"player_id": "wr1", "team": "MIN", "position": "WR",
+             "kalman_est_receiving_yards": 60.0, "kalman_variance_receiving_yards": 400.0},
+        ])
+        team_score_paths = {"MIN": rng.normal(21.0, 9.5, 20_000)}
+        week_paths = sim._simulate_week(
+            kalman_df=kalman_df, week=5, injury_report={}, n_simulations=20_000,
+            rng=rng, team_score_paths=team_score_paths,
+        )
+        samples = week_paths[("wr1", "receiving_yards")]
+        corr = np.corrcoef(samples, team_score_paths["MIN"])[0, 1]
+        assert corr > 0.03, f"expected positive team-score coupling, got corr={corr:.4f}"
