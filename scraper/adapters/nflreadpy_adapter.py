@@ -44,7 +44,7 @@ class _DateEncoder(json.JSONEncoder):
 def _safe_pg_json(d: dict) -> PGJson:
     """Wrap a dict in PGJson using the date-safe encoder."""
     return PGJson(d, dumps=lambda v: json.dumps(v, cls=_DateEncoder))
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, computed_field
 from tenacity import (
     before_sleep_log,
     retry,
@@ -329,6 +329,14 @@ class TeamStatsRow(BaseModel):
     """
     One row from nfl.load_team_stats(). Team-level game stats for pace/game script.
     Docs: https://nflreadr.nflverse.com/articles/dictionary_team_stats.html
+
+    nfl.load_team_stats() has no total_plays or total_yards column at all
+    (verified directly against the source — 138 columns, neither name
+    present); declaring them here meant every row silently validated to
+    None instead of erroring, and team_game_stats.total_plays/total_yards
+    sat at 0% fill from day one. Both are cheap, well-defined derivations
+    from columns that ARE present and fully populated: total_plays =
+    attempts + carries, total_yards = passing_yards + rushing_yards.
     """
     model_config = {"extra": "ignore"}
 
@@ -340,8 +348,24 @@ class TeamStatsRow(BaseModel):
     passing_yards: Optional[float] = None
     carries: Optional[int] = None
     rushing_yards: Optional[float] = None
-    total_plays: Optional[int] = None
-    total_yards: Optional[float] = None
+
+    # @computed_field (not plain @property) so model_dump() — what
+    # _process_source actually calls before writing to staging — includes
+    # these. A plain @property is invisible to model_dump() and the bug
+    # would have silently persisted.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def total_plays(self) -> Optional[int]:
+        if self.attempts is None or self.carries is None:
+            return None
+        return self.attempts + self.carries
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def total_yards(self) -> Optional[float]:
+        if self.passing_yards is None or self.rushing_yards is None:
+            return None
+        return self.passing_yards + self.rushing_yards
 
 
 class FtnChartingRow(BaseModel):

@@ -62,16 +62,16 @@ def _load_games(conn, seasons: list[int]) -> pd.DataFrame:
 
 
 def _load_team_game_stats(conn, seasons: list[int]) -> pd.DataFrame:
-    # total_plays/total_yards are declared columns but 0% filled in this
-    # table (verified directly — not a join artifact). total_plays is
-    # reconstructed as pass_attempts + rush_attempts, the standard practical
-    # proxy; total_yards has no substitute here and is left out of the frame
-    # until team_game_stats itself is backfilled.
+    # total_plays/total_yards are now real (backfilled from nfl.load_team_stats()'s
+    # attempts/carries/passing_yards/rushing_yards via TeamStatsRow's
+    # @computed_field derivations — see scraper/adapters/nflreadpy_adapter.py).
+    # COALESCE against the stored value in case a row predates the backfill.
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
             SELECT team, season, week, pass_attempts, rush_attempts,
-                   (pass_attempts + rush_attempts) AS total_plays
+                   COALESCE(total_plays, pass_attempts + rush_attempts) AS total_plays,
+                   total_yards
             FROM team_game_stats
             WHERE season = ANY(%s)
             """,
@@ -215,7 +215,7 @@ def build_team_game_frame(db_url: str, seasons: list[int]) -> pd.DataFrame:
     frame = pd.concat([home[keep], away[keep]], ignore_index=True)
 
     frame = frame.merge(
-        tgs[["team_n", "season", "week", "pass_attempts", "rush_attempts", "total_plays"]],
+        tgs[["team_n", "season", "week", "pass_attempts", "rush_attempts", "total_plays", "total_yards"]],
         on=["team_n", "season", "week"], how="inner",
     )
 
