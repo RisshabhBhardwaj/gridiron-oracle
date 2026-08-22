@@ -632,6 +632,7 @@ _PBP_PLAYS_COLS = [
     "play_type", "down", "ydstogo", "yardline_100", "quarter",
     "game_seconds_remaining", "score_differential",
     "offense_personnel", "defense_personnel",
+    "yards_gained", "interception", "fumble_lost", "penalty", "penalty_yards",
 ]
 
 
