@@ -229,16 +229,34 @@ FEATURE_GROUP_PROGRESSION: list[str] = [
     "exp_bucket",
 ]
 # Phase 3 — legal lagged (strictly-prior-games) counterparts of the
-# permanently-forbidden contemporaneous PBP/NGS fields (epa_per_play, adot,
-# drop_rate, avg_separation, avg_cushion), plus routes_run_per_game which
-# was already computed this way but never wired to any group. See
-# feature_engineer._fill_prior_pbp_ngs_features / _fill_prior_routes_run.
+# permanently-forbidden contemporaneous PBP/NGS fields, plus routes_run_per_game
+# which was already computed this way but never wired to any group. Covers
+# every PBP-family field with a real source in pbp_features/nextgen_stats
+# (pipeline/pbp_pipeline.py) — the only ones NOT here are weather (observed,
+# not forecast) and the xFP family (fantasy_points_exp etc.), which has no
+# source anywhere in the pipeline to lag from. See feature_engineer.
+# _fill_prior_pbp_ngs_features / _fill_prior_routes_run.
 FEATURE_GROUP_TRAILING_PBP_NGS: list[str] = [
     "prior_epa_per_play",
+    "prior_epa_per_target",
+    "prior_epa_per_rush",
+    "prior_qb_epa_per_dropback",
     "prior_adot",
     "prior_drop_rate",
     "prior_avg_separation",
     "prior_avg_cushion",
+    "prior_target_share_pbp",
+    "prior_air_yards_share_pbp",
+    "prior_red_zone_targets",
+    "prior_end_zone_targets",
+    "prior_red_zone_target_share",
+    "prior_pass_left_rate",
+    "prior_pass_middle_rate",
+    "prior_pass_right_rate",
+    "prior_ol_pressure_rate",
+    "prior_ol_sack_rate",
+    "prior_yac_per_reception",
+    "prior_xyac_per_reception",
     "routes_run_per_game",
 ]
 FEATURE_GROUPS: dict[str, list[str]] = {

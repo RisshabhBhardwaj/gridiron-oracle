@@ -590,11 +590,11 @@ def test_upsert_feature_rows_does_not_wipe_elo_columns_on_rerun():
 
 def test_fill_prior_pbp_ngs_features_only_reads_strictly_prior_rows():
     """
-    prior_epa_per_play/prior_adot/prior_drop_rate/prior_avg_separation/
-    prior_avg_cushion are the legal lagged counterparts of contemporaneous
-    fields FORBIDDEN_MODEL_FIELDS permanently excludes. If the correlated
-    subquery ever dropped its week/season filter, the target game's own PBP
-    or NGS row would leak into a supposedly pre-kickoff feature.
+    Every prior_* column in _PRIOR_PBP_FIELD_MAP/_PRIOR_NGS_FIELD_MAP is the
+    legal lagged counterpart of a contemporaneous field FORBIDDEN_MODEL_FIELDS
+    permanently excludes. If the correlated subquery ever dropped its
+    week/season filter, the target game's own PBP or NGS row would leak into
+    a supposedly pre-kickoff feature.
     """
     from unittest.mock import MagicMock
     from pipeline.feature_engineer import FeatureEngineer
@@ -608,14 +608,15 @@ def test_fill_prior_pbp_ngs_features_only_reads_strictly_prior_rows():
     fe._fill_prior_pbp_ngs_features(2025)
 
     sql = mock_cursor.execute.call_args[0][0]
-    for cols in (
-        ("epa_per_play", "adot", "drop_rate"),
-        ("avg_separation", "avg_cushion"),
-    ):
-        for col in cols:
-            assert f"prior_{col} = (" in sql
+    n_pbp = len(FeatureEngineer._PRIOR_PBP_FIELD_MAP)
+    n_ngs = len(FeatureEngineer._PRIOR_NGS_FIELD_MAP)
+    assert n_pbp >= 15  # covers red-zone, ol pressure, pass-location, yac, EPA variants
+    for target, src in FeatureEngineer._PRIOR_PBP_FIELD_MAP.items():
+        assert f"{target} = (SELECT AVG(pf.{src})" in sql
+    for target, src in FeatureEngineer._PRIOR_NGS_FIELD_MAP.items():
+        assert f"{target} = (SELECT AVG(ns.{src})" in sql
     assert "FROM pbp_features pf" in sql
     assert "FROM nextgen_stats ns" in sql
-    assert sql.count("pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week)") == 3
-    assert sql.count("ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week)") == 2
+    assert sql.count("pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week)") == n_pbp
+    assert sql.count("ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week)") == n_ngs
     mock_conn.commit.assert_called_once()

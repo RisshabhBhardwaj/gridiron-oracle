@@ -841,59 +841,64 @@ class FeatureEngineer:
             logger.warning("prior routes_run fill skipped for season=%s: %s", season, exc)
             self._conn.rollback()
 
-    def _fill_prior_pbp_ngs_features(self, season: int) -> None:
-        """Fill trailing PBP/NGS quality signals from strictly prior games.
+    # Maps each legal prior_* column to its permanently-forbidden contemporaneous
+    # source column. Every source here is a real, live pbp_features/nextgen_stats
+    # column (pipeline/pbp_pipeline.py) — the only PBP/NGS-family fields left
+    # out are weather (observed, not forecast — see FORBIDDEN_MODEL_FIELDS) and
+    # the xFP family (fantasy_points_exp etc.), which has no source anywhere in
+    # the pipeline to lag from in the first place.
+    _PRIOR_PBP_FIELD_MAP: dict[str, str] = {
+        "prior_epa_per_play": "epa_per_play",
+        "prior_epa_per_target": "epa_per_target",
+        "prior_epa_per_rush": "epa_per_rush",
+        "prior_qb_epa_per_dropback": "qb_epa_per_dropback",
+        "prior_adot": "adot",
+        "prior_drop_rate": "drop_rate",
+        "prior_target_share_pbp": "target_share_pbp",
+        "prior_air_yards_share_pbp": "air_yards_share_pbp",
+        "prior_red_zone_targets": "red_zone_targets",
+        "prior_end_zone_targets": "end_zone_targets",
+        "prior_red_zone_target_share": "red_zone_target_share",
+        "prior_pass_left_rate": "pass_left_rate",
+        "prior_pass_middle_rate": "pass_middle_rate",
+        "prior_pass_right_rate": "pass_right_rate",
+        "prior_ol_pressure_rate": "ol_pressure_rate",
+        "prior_ol_sack_rate": "ol_sack_rate",
+        "prior_yac_per_reception": "yac_per_reception",
+        "prior_xyac_per_reception": "xyac_per_reception",
+    }
+    _PRIOR_NGS_FIELD_MAP: dict[str, str] = {
+        "prior_avg_separation": "avg_separation",
+        "prior_avg_cushion": "avg_cushion",
+    }
 
-        epa_per_play, adot, drop_rate, avg_separation, and avg_cushion are
-        contemporaneous (computed from the target game's own plays) and stay
-        permanently forbidden as model inputs. These prior_* columns are the
-        legal, lagged replacements — season-to-date averages that never touch
-        the target game.
+    def _fill_prior_pbp_ngs_features(self, season: int) -> None:
+        """Fill trailing PBP/NGS signals from strictly prior games.
+
+        Every source column here is contemporaneous (computed from the
+        target game's own plays) and stays permanently forbidden as a model
+        input. These prior_* columns are the legal, lagged replacements —
+        season-to-date averages that never touch the target game.
         """
         if not self._conn:
             return
+        assignments = []
+        for target, src in self._PRIOR_PBP_FIELD_MAP.items():
+            assignments.append(
+                f"{target} = (SELECT AVG(pf.{src}) FROM pbp_features pf "
+                f"WHERE pf.player_id = fm.player_id AND pf.{src} IS NOT NULL "
+                f"AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week)))"
+            )
+        for target, src in self._PRIOR_NGS_FIELD_MAP.items():
+            assignments.append(
+                f"{target} = (SELECT AVG(ns.{src}) FROM nextgen_stats ns "
+                f"WHERE ns.player_id = fm.player_id AND ns.{src} IS NOT NULL "
+                f"AND (ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week)))"
+            )
         try:
             with self._conn.cursor() as cur:
                 cur.execute(
-                    """
-                    UPDATE feature_matrix fm
-                    SET prior_epa_per_play = (
-                            SELECT AVG(pf.epa_per_play)
-                            FROM pbp_features pf
-                            WHERE pf.player_id = fm.player_id
-                              AND pf.epa_per_play IS NOT NULL
-                              AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week))
-                        ),
-                        prior_adot = (
-                            SELECT AVG(pf.adot)
-                            FROM pbp_features pf
-                            WHERE pf.player_id = fm.player_id
-                              AND pf.adot IS NOT NULL
-                              AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week))
-                        ),
-                        prior_drop_rate = (
-                            SELECT AVG(pf.drop_rate)
-                            FROM pbp_features pf
-                            WHERE pf.player_id = fm.player_id
-                              AND pf.drop_rate IS NOT NULL
-                              AND (pf.season < fm.season OR (pf.season = fm.season AND pf.week < fm.week))
-                        ),
-                        prior_avg_separation = (
-                            SELECT AVG(ns.avg_separation)
-                            FROM nextgen_stats ns
-                            WHERE ns.player_id = fm.player_id
-                              AND ns.avg_separation IS NOT NULL
-                              AND (ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week))
-                        ),
-                        prior_avg_cushion = (
-                            SELECT AVG(ns.avg_cushion)
-                            FROM nextgen_stats ns
-                            WHERE ns.player_id = fm.player_id
-                              AND ns.avg_cushion IS NOT NULL
-                              AND (ns.season < fm.season OR (ns.season = fm.season AND ns.week < fm.week))
-                        )
-                    WHERE fm.season = %s
-                    """,
+                    f"UPDATE feature_matrix fm SET {', '.join(assignments)} WHERE fm.season = %s",
                     (season,),
                 )
             self._conn.commit()

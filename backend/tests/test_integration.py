@@ -95,8 +95,16 @@ def best_wr_projection(db_conn):
 
     Skips if no projections exist (run ml.train first).
     """
+    from backend.app.services.projection import load_approved_pipeline_run_ids
+
     cur = db_conn.cursor()
     try:
+        # /predict only ever serves rows whose pipeline_run_id is on the
+        # approval allowlist (backend/app/services/projection.py). Picking
+        # the raw top projection without this filter can surface a row from
+        # a superseded run that /predict correctly 404s on — that's not a
+        # server bug, it's this fixture testing something the API doesn't.
+        approved = tuple(load_approved_pipeline_run_ids())
         cur.execute(
             """
             SELECT p.player_id,
@@ -115,9 +123,11 @@ def best_wr_projection(db_conn):
               AND  p.week       = 1
               AND  p.projection IS NOT NULL
               AND  p.projection  > 0
+              AND  p.pipeline_run_id = ANY(%s)
             ORDER BY p.projection DESC
             LIMIT 1
-            """
+            """,
+            (list(approved),),
         )
         row = cur.fetchone()
     except Exception as exc:
