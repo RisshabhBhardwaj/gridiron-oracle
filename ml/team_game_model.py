@@ -160,8 +160,11 @@ def compare_to_vegas(holdout_df: pd.DataFrame, y_pred: np.ndarray, target_col: s
     """
     Implied team score from spread/total vs actual, on the subset of
     holdout games that actually carry a Vegas line. total_line is the
-    combined game total; spread_line is the home team's line (negative =
-    home favored). Implied home score = (total - spread) / 2.
+    combined game total; spread_line is the home team's line, and in this
+    database's convention POSITIVE means home favored (verified:
+    corr(spread_line, home_margin) = +0.51 on 285 lined 2025 games — the
+    opposite of the standard Vegas notation where the favorite carries a
+    negative number). Implied home score = (total + spread) / 2.
 
     Points only — plays/yards/pass_rate have no analogous well-defined
     implied value from a spread/total pair.
@@ -174,7 +177,7 @@ def compare_to_vegas(holdout_df: pd.DataFrame, y_pred: np.ndarray, target_col: s
     if lined.empty:
         return None
     home_spread = np.where(lined["is_home"] == 1, lined["spread_line"], -lined["spread_line"])
-    implied = (lined["total_line"].values - home_spread) / 2.0
+    implied = (lined["total_line"].values + home_spread) / 2.0
     model_mae, model_rmse = _compute_metrics(lined[target_col].values, lined["y_pred"].values)
     vegas_mae, vegas_rmse = _compute_metrics(lined[target_col].values, implied)
     return {
