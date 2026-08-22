@@ -444,8 +444,15 @@ class TestStackingInferenceHelpers:
         X_df = runner._build_inference_features(kalman_df)
         assert list(X_df["kalman_est_receiving_yards"]) == [11.0, 22.0, 33.0]
 
-    def test_build_inference_features_missing_cols_become_zero(self):
-        """Buckets 2-7 columns not in kalman_df default to 0."""
+    def test_build_inference_features_missing_cols_become_nan(self):
+        """
+        Buckets 2-7 columns not in kalman_df default to real NaN, not 0.0.
+
+        XGBoost is trained on real NaN (ml/xgb_model.py never fillna's), so
+        serving must preserve NaN rather than silently treating "missing" as
+        an observed zero. LightGBM/CatBoost callers fillna(MISSING_VALUE_SENTINEL)
+        on this output separately — see test_frames_for_lgbm_catboost_use_sentinel.
+        """
         runner = _runner()
         # Minimal df — no seas_*, opp_*, etc.
         df = pd.DataFrame({
@@ -453,22 +460,67 @@ class TestStackingInferenceHelpers:
             "kalman_est_receiving_yards": [50.0],
         })
         X_df = runner._build_inference_features(df)
-        assert (X_df["seas_games_played"] == 0.0).all()
-        assert (X_df["opp_avg_receiving_yards_allowed"] == 0.0).all()
+        assert X_df["seas_games_played"].isna().all()
+        assert X_df["opp_avg_receiving_yards_allowed"].isna().all()
 
-    def test_build_inference_features_no_nans(self):
-        """All values must be finite — no NaN in output."""
-        import numpy as np
+    def test_build_inference_features_preserves_real_nan(self):
+        """build_inference_features must NOT fillna — that's the caller's job."""
         runner = _runner()
-        X_df = runner._build_inference_features(self._minimal_kalman_df())
-        assert not X_df.isnull().any().any()
-        assert np.isfinite(X_df.values).all()
+        df = self._minimal_kalman_df()
+        df.loc[0, "seas_games_played"] = None
+        X_df = runner._build_inference_features(df)
+        assert pd.isna(X_df.loc[0, "seas_games_played"])
 
     def test_build_inference_features_row_count_preserved(self):
         runner = _runner()
         df = self._minimal_kalman_df()
         X_df = runner._build_inference_features(df)
         assert len(X_df) == len(df)
+
+    def test_frames_for_lgbm_catboost_use_sentinel_xgb_uses_nan(self, tmp_path):
+        """
+        LightGBM/CatBoost were trained on MISSING_VALUE_SENTINEL-filled data
+        (ml/lgbm_model.py, ml/catboost_model.py); XGBoost was trained on real
+        NaN (ml/xgb_model.py never fillna's). load_and_run_stacking must route
+        each learner the array it was actually trained on, or "missing"
+        silently reads as an in-range observed value at serving time.
+        """
+        from ml.inference_client import InferenceClient
+        from ml.utils import MISSING_VALUE_SENTINEL
+
+        client = InferenceClient(oof_dir=tmp_path, mlflow_tracking_uri="")
+        # Bypass the release-manifest / on-disk coef lookup entirely — this
+        # test only cares which array each learner receives, not coef sourcing.
+        client.load_ridge_coefs = lambda stat, position=None: (
+            [0.34, 0.33, 0.33], 0.0, ["xgb", "lgbm", "catboost"],
+        )
+        seen_inputs: dict[str, np.ndarray] = {}
+
+        class _FakeModel:
+            def __init__(self, name):
+                self.name = name
+
+            def predict(self, inp):
+                seen_inputs[self.name] = np.asarray(inp)
+                return np.zeros(len(inp), dtype=float)
+
+        def _loader(learner, stat, position):
+            return _FakeModel(learner)
+
+        kalman_df = self._minimal_kalman_df()
+        kalman_df.loc[0, "seas_games_played"] = None  # force a missing value
+
+        # Bypass the ONNX fast path — real .onnx artifacts on disk would
+        # otherwise short-circuit before the mock model is ever called.
+        with patch.object(client, "try_onnx_pred", return_value=None):
+            client.load_and_run_stacking(
+                kalman_df, "receiving_yards", "WR", model_loader=_loader,
+            )
+
+        col_idx = list(client.build_inference_features(kalman_df).columns).index("seas_games_played")
+        assert np.isnan(seen_inputs["xgb"][0, col_idx]), "xgb must receive real NaN for missing features"
+        assert seen_inputs["lgbm"][0, col_idx] == MISSING_VALUE_SENTINEL
+        assert seen_inputs["catboost"][0, col_idx] == MISSING_VALUE_SENTINEL
 
     # ── _load_ridge_coefs ────────────────────────────────────────────────────
 

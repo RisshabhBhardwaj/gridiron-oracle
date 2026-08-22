@@ -132,6 +132,16 @@ suppress_training_warnings()
 # being predicted; `seas_games_played` is assembled before target kickoff.
 MIN_PRIOR_GAMES: int = 1
 
+# LightGBM and CatBoost training (ml/lgbm_model.py, ml/catboost_model.py)
+# fillna() missing features with this sentinel before .fit() — both libraries'
+# sklearn APIs need a concrete float, not real NaN, and the trees learn split
+# thresholds around it as a de facto "missing" indicator. Inference must feed
+# the exact same sentinel for the exact same features, or the model silently
+# treats "missing" as a real, in-range observed value. XGBoost is exempt: its
+# training path (ml/xgb_model.py) never fillna's, relying on native NaN
+# routing instead, so XGBoost inference must receive real NaN, not this value.
+MISSING_VALUE_SENTINEL: float = -9999.0
+
 FEATURE_COLS: list[str] = [
     # Bucket 1 — Kalman Form
     "kalman_est_receiving_yards", "kalman_est_receiving_tds", "kalman_est_targets",

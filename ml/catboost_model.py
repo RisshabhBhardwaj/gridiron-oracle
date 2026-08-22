@@ -42,6 +42,7 @@ import pandas as pd
 
 from ml.utils import (
     FEATURE_COLS,
+    MISSING_VALUE_SENTINEL,
     TARGET_COL_MAP,
     FoldResult,
     _compute_metrics,
@@ -103,9 +104,9 @@ def _run_optuna(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     # CatBoost can handle NaNs if configured, but let's be consistent and fill
-    X_tr = train_df[features].fillna(-9999).values
+    X_tr = train_df[features].fillna(MISSING_VALUE_SENTINEL).values
     y_tr = train_df[target_col].values
-    X_va = val_df[features].fillna(-9999).values
+    X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL).values
     y_va = val_df[target_col].values
 
     def objective(trial: optuna.Trial) -> float:
@@ -121,7 +122,11 @@ def _run_optuna(
             "random_seed":       42,
             "verbose":           0,
             "thread_count":      -1,
-            "nan_mode":          "Min",  # Treat -9999 as missing correctly
+            # nan_mode only applies to real NaN, and X_tr/X_va have none left
+            # after fillna(MISSING_VALUE_SENTINEL) above — the sentinel itself
+            # is what isolates "missing" here, as an out-of-range real value
+            # the trees learn to split around. This param is effectively inert.
+            "nan_mode":          "Min",
         }
         model = cb.CatBoostRegressor(**params)
         model.fit(
@@ -162,9 +167,9 @@ def _train_fold(
     params: dict,
 ) -> tuple[cb.CatBoostRegressor, pd.DataFrame, FoldResult]:
     
-    X_tr = train_df[features].fillna(-9999).values
+    X_tr = train_df[features].fillna(MISSING_VALUE_SENTINEL).values
     y_tr = train_df[target_col].values
-    X_va = val_df[features].fillna(-9999).values
+    X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL).values
     y_va = val_df[target_col].values
 
     model = cb.CatBoostRegressor(**params)

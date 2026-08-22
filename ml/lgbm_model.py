@@ -75,6 +75,7 @@ import pandas as pd
 # generation, metrics, OOF saving, DB loading, and the season-range parser.
 from ml.utils import (
     FEATURE_COLS,
+    MISSING_VALUE_SENTINEL,
     TARGET_COL_MAP,
     FoldResult,
     _compute_metrics,
@@ -166,9 +167,9 @@ def _run_optuna(
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    X_tr = train_df[features].fillna(-9999).infer_objects(copy=False)
+    X_tr = train_df[features].fillna(MISSING_VALUE_SENTINEL).infer_objects(copy=False)
     y_tr = train_df[target_col].values
-    X_va = val_df[features].fillna(-9999).infer_objects(copy=False)
+    X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL).infer_objects(copy=False)
     y_va = val_df[target_col].values
 
     def objective(trial: optuna.Trial) -> float:
@@ -223,19 +224,20 @@ def _train_fold(
     """
     Train one LightGBM model on train_df, evaluate on val_df.
 
-    NaN handling: LightGBM can handle NaN natively by routing them to the
-    child with higher gain. We rely on this — no imputation is performed.
-    Note: LightGBM sklearn API does not natively accept NaN in some versions,
-    so we use fillna(-9999) as a sentinel that LightGBM treats as missing
-    when learning splits. Sentinel value is documented here so reviewers know
-    this is intentional, not a bug.
+    NaN handling: missing features are filled with MISSING_VALUE_SENTINEL
+    (ml/utils.py) before .fit() — a concrete out-of-range float, not real
+    NaN. LightGBM learns split thresholds that isolate the sentinel as a de
+    facto "missing" branch; this is a numeric-splitting trick, not LightGBM's
+    native NaN routing. ml/inference_client.py must fillna() serving input
+    with the exact same sentinel, or "missing" reads as a real observed
+    value. Documented here so reviewers know this is intentional, not a bug.
 
     Returns:
         (model, oof_rows_df, fold_result)
     """
-    X_tr = train_df[features].fillna(-9999).infer_objects(copy=False)
+    X_tr = train_df[features].fillna(MISSING_VALUE_SENTINEL).infer_objects(copy=False)
     y_tr = train_df[target_col].values
-    X_va = val_df[features].fillna(-9999).infer_objects(copy=False)
+    X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL).infer_objects(copy=False)
     y_va = val_df[target_col].values
 
     model = lgb.LGBMRegressor(**params)

@@ -30,7 +30,7 @@ from typing import Callable, Optional
 import numpy as np
 import pandas as pd
 
-from ml.utils import FEATURE_COLS, run_onnx_inference, _ONNX_DIR
+from ml.utils import FEATURE_COLS, MISSING_VALUE_SENTINEL, run_onnx_inference, _ONNX_DIR
 from ml.feature_contract import assert_model_input_columns
 
 logger = logging.getLogger(__name__)
@@ -103,9 +103,22 @@ class InferenceClient:
             )
         coefs, intercept, learner_order = ridge_result
 
+        # build_inference_features leaves missing values as real NaN, matching
+        # XGBoost's training input exactly (ml/xgb_model.py never fillna's).
+        # LightGBM and CatBoost were trained on MISSING_VALUE_SENTINEL-filled
+        # data instead (their sklearn APIs need a concrete float), so serving
+        # must feed them that exact sentinel too, or "missing" silently reads
+        # as a real, in-range observed value to the trained splits.
         X_df = self.build_inference_features(kalman_df)
+        X_df_sentinel = X_df.fillna(MISSING_VALUE_SENTINEL)
         n_rows = len(X_df)
         X_arr = X_df.values.astype("float32")
+        X_arr_sentinel = X_df_sentinel.values.astype("float32")
+
+        def _frames_for(learner: str) -> tuple[pd.DataFrame, np.ndarray]:
+            if learner in ("lgbm", "catboost"):
+                return X_df_sentinel, X_arr_sentinel
+            return X_df, X_arr
 
         # Only load/run learners present in the Ridge artifact (kill TFT/XGB when absent).
         def _pred_for(learner: str) -> np.ndarray:
@@ -120,8 +133,9 @@ class InferenceClient:
                     week=week,
                     dry_run_mode=dry_run_mode,
                 )
+            learner_X_df, learner_X_arr = _frames_for(learner)
             model = _load(learner, stat, position)
-            onnx = self.try_onnx_pred(learner, stat, position, X_arr, n_rows)
+            onnx = self.try_onnx_pred(learner, stat, position, learner_X_arr, n_rows)
             if onnx is not None:
                 logger.info("%s ONNX inference: %d predictions for stat=%s", learner.upper(), n_rows, stat)
                 return onnx
@@ -130,7 +144,7 @@ class InferenceClient:
                     f"Ridge requires learner={learner!r} for stat={stat!r} position={position!r}, "
                     "but no ONNX/MLflow artifact was found."
                 )
-            X_aligned, use_array = self.align_features_to_model(model, X_df)
+            X_aligned, use_array = self.align_features_to_model(model, learner_X_df)
             inp = X_aligned.values if use_array else X_aligned
             logger.info("%s MLflow inference: %d predictions for stat=%s", learner.upper(), n_rows, stat)
             return np.array(model.predict(inp), dtype=float)
@@ -350,24 +364,32 @@ class InferenceClient:
 
     def build_inference_features(self, kalman_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Build a feature DataFrame aligned with XGB/LGB FEATURE_COLS.
+        Build a feature DataFrame aligned with FEATURE_COLS.
 
         FEATURE_COLS uses kalman_est_* names (Bucket 1) which match the live
         feature_matrix columns directly — no column renaming required.
-        Buckets 2-7: columns pass through from kalman_df if present; else 0.0.
-        All missing columns (sparse data in dry_run) → 0.0.
+        Buckets 2-7: columns pass through from kalman_df if present; else NaN.
+
+        Missing/absent values are left as real NaN — matching XGBoost's
+        training input exactly (ml/xgb_model.py never fillna's). Callers that
+        feed LightGBM or CatBoost must fillna(MISSING_VALUE_SENTINEL) on the
+        result first, since those two were trained on sentinel-filled data
+        (ml/lgbm_model.py, ml/catboost_model.py) — a bare 0.0 or NaN here
+        would silently read as an in-range observed value to their learned
+        splits instead of "missing". See load_and_run_stacking's _frames_for.
 
         Returns:
-            DataFrame with exactly FEATURE_COLS column order, all float.
+            DataFrame with exactly FEATURE_COLS column order, all float,
+            NaN where missing.
         """
         work = kalman_df.copy()
         n = len(work)
         result = pd.DataFrame(
             {
                 col: (
-                    pd.to_numeric(work[col], errors="coerce").fillna(0.0).values
+                    pd.to_numeric(work[col], errors="coerce").values
                     if col in work.columns
-                    else np.zeros(n, dtype=np.float64)
+                    else np.full(n, np.nan, dtype=np.float64)
                 )
                 for col in FEATURE_COLS
             },
