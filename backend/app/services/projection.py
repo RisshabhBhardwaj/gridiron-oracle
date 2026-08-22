@@ -641,13 +641,18 @@ class ProjectionService:
                            -- actual availability.
                            --
                            -- At week 1 of a season, fm.season's own game count is 0 before
-                           -- any 2026 game has been played, while seas_games_played (the
-                           -- numerator) still reports the carried-over PRIOR-season total
-                           -- (verified: a player's week-1/new-season snapshot shows last
-                           -- season's final seas_games_played, not a reset to 0) — so the
-                           -- denominator must carry forward the same way, via COALESCE onto
-                           -- the prior season's team game count, or every player's p_active
-                           -- collapses to the cold-start floor at the start of every season.
+                           -- any game has been played, while seas_games_played (the
+                           -- numerator) still reported the carried-over PRIOR-season total
+                           -- for the one week-1/new-season snapshot checked (2026 week 1,
+                           -- carrying 2025's final count) — this DB has no 2026 week-2/3
+                           -- feature_matrix rows yet to confirm the transition (does it stay
+                           -- carried-over through week 2-3 too, or reset once real 2026 rows
+                           -- start landing?). Assumed, not fully verified, that it carries
+                           -- forward the same way at week 1 generally — so the denominator
+                           -- does too, via COALESCE onto the prior season's team game count.
+                           -- If wrong, min(active, games) plus shrinkage bounds the damage
+                           -- (degrades toward the pre-fix behavior for that narrow window,
+                           -- doesn't produce a nonsensical value) rather than breaking.
                            COALESCE(
                                NULLIF((
                                    SELECT COUNT(*) FROM games g
