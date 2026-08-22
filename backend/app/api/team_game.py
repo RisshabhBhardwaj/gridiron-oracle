@@ -6,14 +6,18 @@ endpoint. Reads from team_game_predictions, materialized by
 scripts/materialize_team_game_predictions.py; this route never fits a
 model per-request.
 
-Known caveat, surfaced in the response rather than hidden: nflreadpy's 2026
-schedules feed has at least one verified-wrong home_coach/away_coach entry
-(Baltimore's 2026 rows list "Jesse Minter" — their actual defensive
-coordinator, not head coach John Harbaugh). The coach-tendency feature
-degrades gracefully for an unrecognized name (falls back to the population
-median rather than misattributing another coach's history), but the coach
-identity itself in the response may be wrong for some teams until nflverse
-corrects its feed or Phase 4's curated coach table lands.
+Coach identity (home_coach/away_coach) comes directly from nflreadpy's
+schedules feed, unverified against any second source. An earlier version of
+this note flagged Baltimore's 2026 home_coach ("Jesse Minter") as wrong on
+the assumption John Harbaugh was still head coach — that assumption was
+stale (Minter is in fact the real 2026 HC; Harbaugh was let go), not a data
+bug. Lesson: don't assert a specific coach entry is wrong without a current
+source, since coaching changes happen faster than any static knowledge can
+track. What IS still true and worth documenting: the coach-tendency feature
+degrades gracefully for a name with no prior head-coaching record in
+`games` (falls back to the population median rather than misattributing
+another coach's history), so a genuinely wrong or brand-new name doesn't
+silently corrupt a prediction — it just loses that one feature's signal.
 """
 
 from __future__ import annotations
@@ -31,12 +35,11 @@ router = APIRouter(prefix="", tags=["team_game"])
 
 _COACH_DATA_CAVEAT = (
     "Predictions are a materialized Ridge model, not a per-request live fit. "
-    "Coach identity (used for the tendency feature) comes from nflreadpy's "
-    "schedules feed; a spot check found at least one wrong entry for the "
-    "current season (not a full audit of all 32 teams) — verify before "
-    "treating any single team's coach field as ground truth. An "
-    "unrecognized coach name degrades to the population-median tendency "
-    "rather than misattributing another coach's history."
+    "Coach identity (used for the tendency feature) comes directly from "
+    "nflreadpy's schedules feed and is not independently verified here. A "
+    "coach with no prior head-coaching record in this database's games "
+    "table (e.g. newly promoted) falls back to the population-median "
+    "tendency rather than misattributing another coach's history."
 )
 
 
