@@ -224,6 +224,20 @@ def materialize(
         for w in result.week_by_week
     ]
 
+    # team_win_totals is computed from the SAME per-path team score draws
+    # used for player-stat coupling (_draw_team_score_paths), but was
+    # discarded after run() returned — nothing served it, so there was no
+    # surface for the plan's "team win totals match the game-by-game
+    # surface" verify criterion (the Vikings test) to run against.
+    win_rows = [
+        (
+            season, start_week, team,
+            float(w["wins_mean"]), float(w.get("wins_p10") or 0.0), float(w.get("wins_p90") or 0.0),
+            model_run_id,
+        )
+        for team, w in result.team_win_totals.items()
+    ]
+
     conn = psycopg2.connect(database_url)
     try:
         with conn.cursor() as cur:
@@ -261,16 +275,30 @@ def materialize(
                     """,
                     week_rows,
                 )
+            if win_rows:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO season_team_wins
+                        (season, start_week, team, wins_mean, wins_p10, wins_p90, pipeline_run_id)
+                    VALUES %s
+                    ON CONFLICT (season, start_week, team) DO UPDATE SET
+                        wins_mean = EXCLUDED.wins_mean, wins_p10 = EXCLUDED.wins_p10,
+                        wins_p90 = EXCLUDED.wins_p90, pipeline_run_id = EXCLUDED.pipeline_run_id,
+                        created_at = now()
+                    """,
+                    win_rows,
+                )
         conn.commit()
     finally:
         conn.close()
 
     logger.info(
-        "Wrote %d season_simulations rows + %d season_simulation_weeks rows "
-        "(model_run_id=%s). NOT yet approved for serving — add %r to "
-        "releases/current_baseline.json's projection_policy.approved_pipeline_run_ids "
-        "and re-freeze to serve it.",
-        len(rows), len(week_rows), model_run_id, model_run_id,
+        "Wrote %d season_simulations rows + %d season_simulation_weeks rows + "
+        "%d season_team_wins rows (model_run_id=%s). NOT yet approved for "
+        "serving — add %r to releases/current_baseline.json's "
+        "projection_policy.approved_pipeline_run_ids and re-freeze to serve it.",
+        len(rows), len(week_rows), len(win_rows), model_run_id, model_run_id,
     )
     return len(rows)
 

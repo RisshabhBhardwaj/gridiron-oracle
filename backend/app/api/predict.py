@@ -167,6 +167,21 @@ class SeasonProjectionsResponse(BaseModel):
     data_freshness: datetime
 
 
+class TeamWinProjection(BaseModel):
+    team:       str
+    wins_mean:  float
+    wins_p10:   Optional[float] = None
+    wins_p90:   Optional[float] = None
+
+
+class SeasonTeamWinsResponse(BaseModel):
+    season:        int
+    start_week:    int
+    count:         int
+    teams:         list[TeamWinProjection]
+    data_freshness: datetime
+
+
 # ---------------------------------------------------------------------------
 # Dependency
 # ---------------------------------------------------------------------------
@@ -367,6 +382,37 @@ def season_projections(
         start_week=start_week,
         count=len(items),
         projections=items,
+        data_freshness=datetime.now(timezone.utc),
+    )
+
+
+@router.get("/projections/season/{season}/team-wins", response_model=SeasonTeamWinsResponse)
+@limiter.limit("20/minute")
+def season_team_wins(
+    request:        Request,
+    season:         int,
+    start_week:     int = Query(..., ge=1, le=18, description="First week of simulated rest-of-season"),
+    svc:            ProjectionService = Depends(_svc),
+) -> SeasonTeamWinsResponse:
+    """
+    Season win totals from the same materialized SeasonSimulator run that
+    backs /projections/season/{season} — a count over the SAME per-path
+    team score draws used for player-stat coupling, not an independently
+    computed number. Empty when no approved run covers (season, start_week);
+    that's a real "not available" state, not zero wins for every team.
+    """
+    teams = svc.get_season_team_wins(season=season, start_week=start_week)
+    return SeasonTeamWinsResponse(
+        season=season,
+        start_week=start_week,
+        count=len(teams),
+        teams=[
+            TeamWinProjection(
+                team=t["team"], wins_mean=t["wins_mean"],
+                wins_p10=t.get("wins_p10"), wins_p90=t.get("wins_p90"),
+            )
+            for t in teams
+        ],
         data_freshness=datetime.now(timezone.utc),
     )
 

@@ -536,6 +536,40 @@ class ProjectionService:
             assert_cold_start_qb_not_in_top24(ranked)
         return ranked
 
+    def get_season_team_wins(self, season: int, start_week: int) -> list[dict]:
+        """
+        Season win totals from a materialized SeasonSimulator run
+        (season_team_wins), gated by the same approved_pipeline_run_ids
+        allowlist as the player board — the plan's "team win totals match
+        the game-by-game surface" verify criterion (the Vikings test):
+        this number and /projections/season/{n}'s player board come from
+        the SAME run's per-path team score draws
+        (SeasonSimulator._draw_team_score_paths), so they cannot disagree
+        the way an independently-computed win total could. Returns []
+        when no approved run covers (season, start_week) — callers should
+        treat that as "not available", not zero wins.
+        """
+        import psycopg2
+        import psycopg2.extras
+
+        approved = load_approved_pipeline_run_ids()
+        conn = psycopg2.connect(self._db_url)
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT team, wins_mean, wins_p10, wins_p90, pipeline_run_id
+                    FROM season_team_wins
+                    WHERE season = %s AND start_week = %s
+                      AND pipeline_run_id = ANY(%s)
+                    ORDER BY wins_mean DESC
+                    """,
+                    (season, start_week, list(approved)),
+                )
+                return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
     def _load_season_simulation_rows(
         self,
         season: int,
