@@ -104,7 +104,7 @@ def test_season_projections_rank_by_playing_time(monkeypatch) -> None:
     monkeypatch.setattr(svc, "_load_weekly_rates", lambda *_args, **_kwargs: {})
     results = svc.get_season_projections(season=2025, start_week=1)
     assert results
-    assert all(row.get("interval_method") == "playing_time_enbpi" for row in results)
+    assert all(row.get("interval_method") == "playing_time_gaussian_mc" for row in results)
     assert all("degraded" in row for row in results)
     top24 = [row["player_id"] for row in results if int(row["ros_rank"]) <= 24]
     assert "cold-qb" not in top24

@@ -447,6 +447,8 @@ class ProjectionService:
             ) from exc
 
         attached = attach_playing_time(feature_rows)
+        # Hand-set Gaussian residual scales, not fit from held-out error — tuned to look
+        # plausible per stat, not derived from any per-player or per-position residual model.
         residual = {
             "fantasy_ppr": 6.0,
             "passing_yards": 55.0,
@@ -466,7 +468,9 @@ class ProjectionService:
                 "depth_rank": row.get("depth_rank"),
                 "p_active": row.get("p_active"),
                 "degraded": False,
-                "interval_method": "playing_time_enbpi",
+                # simulate_season_paths draws Bernoulli(p_active) x N(rate, residual_scale) —
+                # a plain Monte Carlo interval, not EnbPI (conformal) or any bootstrap method.
+                "interval_method": "playing_time_gaussian_mc",
             }
             for stat in stats:
                 rate = weekly_rates.get((player_id, stat))

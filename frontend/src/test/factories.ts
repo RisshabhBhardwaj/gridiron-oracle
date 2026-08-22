@@ -103,7 +103,7 @@ export const factories = {
           receiving_yards: { mean: 1024.5, p10: 850.0, p50: 1010.0, p90: 1215.0 },
           fantasy_ppr: { mean: 214.3, p10: 175.0, p50: 210.0, p90: 252.0 },
           degraded: false,
-          interval_method: 'playing_time_enbpi',
+          interval_method: 'playing_time_gaussian_mc',
           p_active: 0.92,
         },
         {
@@ -116,7 +116,7 @@ export const factories = {
           receiving_yards: { mean: 998.0, p10: 790.0, p50: 980.0, p90: 1190.0 },
           fantasy_ppr: { mean: 205.7, p10: 168.0, p50: 201.0, p90: 244.0 },
           degraded: false,
-          interval_method: 'playing_time_enbpi',
+          interval_method: 'playing_time_gaussian_mc',
           p_active: 0.90,
         },
       ],

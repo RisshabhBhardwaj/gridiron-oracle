@@ -708,7 +708,7 @@ class TestStackingInferenceHelpers:
         with TemporaryDirectory() as tmp:
             from pathlib import Path
             tmp_path = Path(tmp)
-            (tmp_path / "ridge_fumbles_WR_coefs.json").write_text(json.dumps({
+            (tmp_path / "ridge_unpinned_test_stat_WR_coefs.json").write_text(json.dumps({
                 "learner_order": ["lgbm", "catboost"],
                 "weights": {"lgbm": 0.5, "catboost": 0.5}, "intercept": 0.0,
             }))
@@ -716,7 +716,7 @@ class TestStackingInferenceHelpers:
             runner._mlflow_reachable = True
             df = pd.DataFrame({
                 "player_id": ["p1", "p2"],
-                "kalman_est_fumbles": [10.0, 20.0],
+                "kalman_est_unpinned_test_stat": [10.0, 20.0],
             })
 
             mock_xgb = MagicMock()
@@ -737,7 +737,7 @@ class TestStackingInferenceHelpers:
                     lambda learner, stat, position=None:
                     mock_lgbm if learner == "lgbm" else (mock_xgb if learner == "catboost" else None)
                 )
-                result = runner._run_stacking_step(df, "fumbles", "WR")
+                result = runner._run_stacking_step(df, "unpinned_test_stat", "WR")
 
         assert abs(result[0] - np.mean([90.0, 100.0])) < 0.01
         assert abs(result[1] - np.mean([180.0, 200.0])) < 0.01
