@@ -172,14 +172,14 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-08-22T13:47:58.893004+00:00",
+  "created_at": "2026-08-22T14:46:46.671693+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
     "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
   },
   "git_branch": "main",
-  "git_commit": "1758064dfff537a30d00e83692215f317a09aa3e",
+  "git_commit": "dbc403c44842b90cd147a8c286570982a5a05ac8",
   "git_dirty": false,
   "integrity": {
     "artifact_mode_ready": false,
@@ -192,11 +192,11 @@
         "status": "ok"
       },
       "baseline_manifest": {
-        "detail": "Baseline manifest commit is an ancestor of HEAD, but HEAD changes non-evidence paths since that commit: ['backend/app/api/team_game.py']",
+        "detail": "Baseline manifest commit is an ancestor of HEAD, but HEAD changes non-evidence paths since that commit: ['alembic/versions/20260822_0021_pbp_plays_outcome_cols.py', 'alembic/versions/20260822_0022_derived_fantasy_projection.py', 'backend/app/api/drive.py', 'backend/app/main.py', 'backend/app/models/production.py', 'backend/app/services/runtime_status.py', 'engine/include/drive_mcmc.hpp', 'engine/python_bindings.py', 'engine/src/drive_mcmc.cpp', 'engine/tests/drive_mcmc_test.cpp', 'ml/artifact_manifest.py', 'ml/drive_engine.py', 'ml/markov_simulator.py', 'ml/oof/stack_completions_QB_0bef5670.csv', 'ml/oof/stack_fumbles_QB_56479ee8.csv', 'ml/oof/stack_fumbles_RB_7079ec7a.csv', 'ml/oof/stack_fumbles_TE_cade05e1.csv', 'ml/oof/stack_fumbles_WR_57ed0630.csv', 'ml/oof/stack_interceptions_QB_184ddf3d.csv', 'ml/oof/stack_passing_tds_QB_6fb3d6b4.csv', 'ml/oof/stack_receiving_tds_RB_43a7a1f8.csv', 'ml/oof/stack_receiving_tds_TE_23e1aaab.csv', 'ml/oof/stack_receiving_tds_WR_f8a1078d.csv', 'ml/oof/stack_receptions_RB_e2b75600.csv', 'ml/oof/stack_receptions_TE_f9b72a68.csv', 'ml/oof/stack_receptions_WR_6276c305.csv', 'ml/oof/stack_rushing_tds_QB_51cfae76.csv', 'ml/oof/stack_rushing_tds_RB_89ac5687.csv', 'ml/oof/stack_rushing_tds_TE_a3761bf9.csv', 'ml/oof/stack_rushing_tds_WR_fa0a0d25.csv', 'ml/scoring.py', 'pipeline/pbp_pipeline.py', 'releases/candidates/causal_20260821_fixed/ridge_completions_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fumbles_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fumbles_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fumbles_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_fumbles_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_interceptions_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_passing_tds_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receiving_tds_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receiving_tds_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receiving_tds_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receptions_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receptions_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_receptions_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_rushing_tds_QB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_rushing_tds_RB_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_rushing_tds_TE_coefs.json', 'releases/candidates/causal_20260821_fixed/ridge_rushing_tds_WR_coefs.json', 'releases/candidates/causal_20260821_fixed/stack_completions_QB_0bef5670.csv', 'releases/candidates/causal_20260821_fixed/stack_fumbles_QB_56479ee8.csv', 'releases/candidates/causal_20260821_fixed/stack_fumbles_RB_7079ec7a.csv', 'releases/candidates/causal_20260821_fixed/stack_fumbles_TE_cade05e1.csv', 'releases/candidates/causal_20260821_fixed/stack_fumbles_WR_57ed0630.csv', 'releases/candidates/causal_20260821_fixed/stack_interceptions_QB_184ddf3d.csv', 'releases/candidates/causal_20260821_fixed/stack_passing_tds_QB_6fb3d6b4.csv', 'releases/candidates/causal_20260821_fixed/stack_receiving_tds_RB_43a7a1f8.csv', 'releases/candidates/causal_20260821_fixed/stack_receiving_tds_TE_23e1aaab.csv', 'releases/candidates/causal_20260821_fixed/stack_receiving_tds_WR_f8a1078d.csv', 'releases/candidates/causal_20260821_fixed/stack_receptions_RB_e2b75600.csv', 'releases/candidates/causal_20260821_fixed/stack_receptions_TE_f9b72a68.csv', 'releases/candidates/causal_20260821_fixed/stack_receptions_WR_6276c305.csv', 'releases/candidates/causal_20260821_fixed/stack_rushing_tds_QB_51cfae76.csv', 'releases/candidates/causal_20260821_fixed/stack_rushing_tds_RB_89ac5687.csv', 'releases/candidates/causal_20260821_fixed/stack_rushing_tds_TE_a3761bf9.csv', 'releases/candidates/causal_20260821_fixed/stack_rushing_tds_WR_fa0a0d25.csv', 'scripts/backfill_pbp_plays_outcomes.py', 'scripts/export_drive_transitions.py', 'scripts/freeze_baseline.py', 'scripts/materialize_stack_projections.py', 'scripts/verify_drive_transitions.py']",
         "observed": {
-          "created_at": "2026-08-22T13:36:37.693845+00:00",
-          "git_commit": "11dbaec484f886abe657710840a8da0b5a5724d1",
-          "head": "1758064dfff537a30d00e83692215f317a09aa3e",
+          "created_at": "2026-08-22T13:47:58.893004+00:00",
+          "git_commit": "1758064dfff537a30d00e83692215f317a09aa3e",
+          "head": "dbc403c44842b90cd147a8c286570982a5a05ac8",
           "model_version": "latest",
           "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
           "worktree_dirty": false
@@ -210,7 +210,7 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 13.87,
+          "age_hours": 14.85,
           "computed_at": "2026-08-21T23:55:45.143265+00:00",
           "season": 2026,
           "week": 1
@@ -239,7 +239,7 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-08-22T13:47:58.874041+00:00",
+    "generated_at": "2026-08-22T14:46:46.650082+00:00",
     "model_version": "latest",
     "overall_status": "blocked",
     "product_mode": "artifact_backed"
@@ -249,7 +249,7 @@
   "product_mode": "artifact_backed",
   "projection_policy": {
     "approved_pipeline_run_ids": [
-      "stack_materialize_20260822T134719Z"
+      "stack_materialize_20260822T144443Z"
     ],
     "require_interval_columns": true,
     "require_posterior_samples": false
