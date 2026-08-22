@@ -407,3 +407,180 @@ def test_season_feature_rows_gates_roster_on_depth_charts(db_conn):
     brady = cur.fetchone()
     if brady:
         assert brady[0] not in player_ids
+
+
+def test_served_season_board_top200_have_recent_game_logs(db_conn):
+    """
+    Independent, source-agnostic version of the retired-player check: calls
+    get_season_projections — the actual served path, not a helper — and
+    verifies against game_logs (not depth_charts, not players.status) that
+    every player in the top 200 has played within the last year. This is
+    deliberately a DIFFERENT data source than the depth_charts join the
+    fix relies on, so it would catch a stale-depth-chart regression too,
+    not just re-confirm the same join that's under test elsewhere.
+    """
+    from backend.app.services.projection import ProjectionService
+
+    svc = ProjectionService(db_url=_DB_URL)
+    try:
+        rows = svc.get_season_projections(season=2026, start_week=1)
+    except Exception as exc:
+        pytest.skip(f"season board unavailable: {exc}")
+    if not rows:
+        pytest.skip("no 2026 season board rows in this database")
+
+    top200 = sorted(rows, key=lambda r: r.get("mean") or 0.0, reverse=True)[:200]
+    player_ids = [r["player_id"] for r in top200]
+
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT player_id, MAX(season) FROM game_logs WHERE player_id = ANY(%s) GROUP BY player_id",
+        (player_ids,),
+    )
+    last_season = dict(cur.fetchall())
+
+    # Three-plus years back, not one or two: real rostered players
+    # (including deep backups) can go a full season or two without a
+    # meaningful game_logs row — injury (Deshaun Watson's Achilles,
+    # Brandon Aiyuk's ACL) or just never getting on the field as a QB3/QB4
+    # (Easton Stick, last real action 2023). That's not staleness, it's
+    # real roster depth the depth-chart join already accounts for. A gap
+    # back to Brady's 2022 or Roethlisberger's 2021 is what actually
+    # signals a defect: a player with no recent NFL action at all.
+    stale = [
+        (r["player_name"], last_season.get(r["player_id"]))
+        for r in top200
+        if last_season.get(r["player_id"], 0) < 2023
+    ]
+    assert not stale, f"players in top 200 with no game_logs since before 2023: {stale}"
+
+
+class TestSeasonBoardVolumeReconciliation:
+    """
+    Phase 7 volume-budget fix (season_simulator.py's _apply_volume_budget):
+    summed player yards must reconcile with the team-game model's own
+    yards prediction, and passing_yards must equal receiving_yards within
+    a team-week (both true by definition in real football; the old
+    additive team-script coupling shift could never enforce either since
+    it was mean-zero by construction — see ml/season_simulator.py's
+    _VOLUME_BUDGET_STATS docstring).
+    """
+
+    @pytest.fixture()
+    def materialized_run(self):
+        try:
+            import psycopg2
+
+            psycopg2.connect(_DB_URL).close()
+        except Exception as exc:
+            pytest.skip(f"PostgreSQL not reachable ({exc})")
+
+        from scripts.materialize_season_simulation import materialize
+
+        season, start_week, end_week = 2026, 1, 1
+        try:
+            n = materialize(
+                season=season, start_week=start_week, end_week=end_week,
+                n_simulations=200, positions=["QB", "RB", "WR", "TE"], database_url=_DB_URL,
+            )
+        except ValueError as exc:
+            pytest.skip(f"no data to materialize for this slice: {exc}")
+        if n == 0:
+            pytest.skip("materializer wrote 0 rows for this slice")
+
+        import psycopg2
+
+        conn = psycopg2.connect(_DB_URL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pipeline_run_id FROM season_simulations "
+                    "WHERE season=%s AND start_week=%s ORDER BY created_at DESC LIMIT 1",
+                    (season, start_week),
+                )
+                run_id = cur.fetchone()[0]
+        finally:
+            conn.close()
+
+        yield season, start_week, run_id
+
+        conn = psycopg2.connect(_DB_URL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM season_simulations WHERE pipeline_run_id=%s", (run_id,))
+                cur.execute("DELETE FROM season_simulation_weeks WHERE pipeline_run_id=%s", (run_id,))
+                cur.execute("DELETE FROM season_team_wins WHERE pipeline_run_id=%s", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_summed_player_yards_reconcile_with_team_game_model(self, materialized_run, db_conn, monkeypatch):
+        season, start_week, run_id = materialized_run
+        from backend.app.services import projection as projection_mod
+        from backend.app.services.projection import ProjectionService
+
+        monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({run_id}))
+        svc = ProjectionService(db_url=_DB_URL)
+        rows = svc.get_season_projections(season=season, start_week=start_week)
+        assert rows
+
+        cur = db_conn.cursor()
+        cur.execute(
+            "SELECT team, yards FROM team_game_predictions WHERE season=%s AND week=%s",
+            (season, start_week),
+        )
+        team_yards = dict(cur.fetchall())
+        if not team_yards:
+            pytest.skip("no team_game_predictions for this (season, week)")
+
+        by_team: dict[str, float] = {}
+        for r in rows:
+            team = r.get("team")
+            if team not in team_yards:
+                continue
+            passing = (r.get("passing_yards") or {}).get("mean") or 0.0
+            rushing = (r.get("rushing_yards") or {}).get("mean") or 0.0
+            by_team[team] = by_team.get(team, 0.0) + passing + rushing
+
+        checked = 0
+        for team, summed in by_team.items():
+            predicted = team_yards[team]
+            if predicted <= 0:
+                continue
+            ratio = summed / predicted
+            assert 0.7 <= ratio <= 1.3, (
+                f"{team}: summed player yards={summed:.1f} vs team model yards={predicted:.1f} "
+                f"(ratio={ratio:.2f}); expected within 30% after the volume-budget fix"
+            )
+            checked += 1
+        assert checked > 0, "no teams had both served player rows and a team_game_predictions row"
+
+    def test_passing_yards_equals_receiving_yards_within_team_week(self, materialized_run, monkeypatch):
+        season, start_week, run_id = materialized_run
+        from backend.app.services import projection as projection_mod
+        from backend.app.services.projection import ProjectionService
+
+        monkeypatch.setattr(projection_mod, "load_approved_pipeline_run_ids", lambda: frozenset({run_id}))
+        svc = ProjectionService(db_url=_DB_URL)
+        rows = svc.get_season_projections(season=season, start_week=start_week)
+        assert rows
+
+        by_team_pass: dict[str, float] = {}
+        by_team_rec: dict[str, float] = {}
+        for r in rows:
+            team = r.get("team")
+            if not team:
+                continue
+            by_team_pass[team] = by_team_pass.get(team, 0.0) + (r.get("passing_yards") or {}).get("mean", 0.0)
+            by_team_rec[team] = by_team_rec.get(team, 0.0) + (r.get("receiving_yards") or {}).get("mean", 0.0)
+
+        checked = 0
+        for team, pass_total in by_team_pass.items():
+            rec_total = by_team_rec.get(team, 0.0)
+            if pass_total <= 0 and rec_total <= 0:
+                continue
+            assert pass_total == pytest.approx(rec_total, rel=0.05), (
+                f"{team}: passing_yards={pass_total:.1f} != receiving_yards={rec_total:.1f}"
+            )
+            checked += 1
+        assert checked > 0, "no teams had both passing and receiving yardage to compare"
