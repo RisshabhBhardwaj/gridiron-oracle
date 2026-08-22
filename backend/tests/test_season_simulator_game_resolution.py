@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ml.season_simulator import SeasonSimulator, load_real_schedule
+from ml.season_simulator import _PASS_YARDS_SHARE, SeasonSimulator, load_real_schedule
 
 
 def _fake_train_df(n_seasons: int = 3) -> pd.DataFrame:
@@ -37,6 +37,7 @@ def _fake_train_df(n_seasons: int = 3) -> pd.DataFrame:
                 "prior_coach_pass_rate": 0.58,
                 "is_dome": 0, "is_turf": 0,
                 "points": 21.0 + rng.normal(0, 9),
+                "total_yards": 350.0 + rng.normal(0, 40),
             })
     return pd.DataFrame(rows)
 
@@ -130,6 +131,17 @@ class TestEnsurePointsModelFailsLoud:
         )
         with pytest.raises(RuntimeError, match="no team-game training rows"):
             sim._ensure_points_model()
+
+
+class TestEnsureYardsModelFailsLoud:
+    def test_raises_when_no_training_rows(self, monkeypatch) -> None:
+        sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=4)
+        monkeypatch.setattr(
+            "pipeline.team_game_features.build_team_game_frame",
+            lambda db_url, seasons: pd.DataFrame(),
+        )
+        with pytest.raises(RuntimeError, match="no team-game training rows"):
+            sim._ensure_yards_model()
 
 
 class TestEnsureSimEloUsesDbBackedLoader:
@@ -406,22 +418,89 @@ class TestPickensCoherence:
             f"conditional={conditional_rate:.4f} unconditional={unconditional_rate:.4f}"
         )
 
-    def test_full_simulate_week_couples_receiving_yards_to_team_score(self, monkeypatch) -> None:
-        """End-to-end through _simulate_week (copula path included), not just
+    def test_full_simulate_week_couples_fantasy_ppr_to_team_score(self, monkeypatch) -> None:
+        """
+        End-to-end through _simulate_week (copula path included), not just
         the isolated helper — confirms the wiring in run()'s week loop
-        actually reaches the per-player draw."""
+        actually reaches the per-player draw. Uses fantasy_ppr, not
+        receiving_yards: receiving_yards is now a volume-budget stat (Phase
+        7 fix — see TestVolumeBudget below), whose team-level total is
+        fixed by _apply_volume_budget rather than correlated via the
+        additive coupling shift this test exercises.
+        """
         sim = SeasonSimulator(season=2026, start_week=5, end_week=5,
-                               n_simulations=20_000, stats=["receiving_yards"], use_copula=False)
+                               n_simulations=20_000, stats=["fantasy_ppr"], use_copula=False)
         rng = np.random.default_rng(3)
         kalman_df = pd.DataFrame([
             {"player_id": "wr1", "team": "MIN", "position": "WR",
-             "kalman_est_receiving_yards": 60.0, "kalman_variance_receiving_yards": 400.0},
+             "kalman_est_fantasy_ppr": 12.0, "kalman_variance_fantasy_ppr": 36.0},
         ])
         team_score_paths = {"MIN": rng.normal(21.0, 9.5, 20_000)}
         week_paths = sim._simulate_week(
             kalman_df=kalman_df, week=5, injury_report={}, n_simulations=20_000,
             rng=rng, team_score_paths=team_score_paths,
         )
-        samples = week_paths[("wr1", "receiving_yards")]
+        samples = week_paths[("wr1", "fantasy_ppr")]
         corr = np.corrcoef(samples, team_score_paths["MIN"])[0, 1]
         assert corr > 0.03, f"expected positive team-score coupling, got corr={corr:.4f}"
+
+
+class TestVolumeBudget:
+    """
+    Phase 7 fix: passing_yards/rushing_yards/receiving_yards are now
+    allocated from a real per-path team yards budget (_draw_team_yards_paths
+    + _apply_volume_budget) instead of an additive score-correlated shift
+    that could never move a team-level total. Guards against the audit's
+    finding: summed player yards ran 1.66x the team-game model's own yards
+    prediction, and passing_yards diverged from receiving_yards by an MAE
+    of 141.3 within a team-week despite being equal by definition.
+    """
+
+    def test_group_total_matches_budget_exactly(self) -> None:
+        sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=500)
+        rng = np.random.default_rng(1)
+        results = {
+            ("wr1", "receiving_yards"): rng.normal(70, 20, 500),
+            ("wr2", "receiving_yards"): rng.normal(50, 15, 500),
+            ("rb1", "rushing_yards"): rng.normal(80, 20, 500),
+            ("qb1", "passing_yards"): rng.normal(250, 40, 500),
+            ("qb1", "rushing_yards"): rng.normal(10, 5, 500),
+        }
+        team_by_pid = {"wr1": "MIN", "wr2": "MIN", "rb1": "MIN", "qb1": "MIN"}
+        budget = np.full(500, 400.0)
+        sim._apply_volume_budget(results, team_by_pid, {"MIN": budget})
+
+        pass_total = results[("qb1", "passing_yards")]
+        rec_total = results[("wr1", "receiving_yards")] + results[("wr2", "receiving_yards")]
+        rush_total = results[("rb1", "rushing_yards")] + results[("qb1", "rushing_yards")]
+
+        np.testing.assert_allclose(pass_total, budget * _PASS_YARDS_SHARE, rtol=1e-6)
+        np.testing.assert_allclose(rec_total, budget * _PASS_YARDS_SHARE, rtol=1e-6)
+        np.testing.assert_allclose(rush_total, budget * (1 - _PASS_YARDS_SHARE), rtol=1e-6)
+        # Same budget drives both — equal by construction, not convergence.
+        np.testing.assert_allclose(pass_total, rec_total, rtol=1e-6)
+
+    def test_larger_raw_draw_gets_larger_share(self) -> None:
+        """A player who simulated for more of the group's raw total should
+        still end up with more of the budget — the budget only fixes the
+        group SUM, not each player's relative standing within it."""
+        sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=200)
+        results = {
+            ("wr1", "receiving_yards"): np.full(200, 100.0),
+            ("wr2", "receiving_yards"): np.full(200, 50.0),
+        }
+        team_by_pid = {"wr1": "MIN", "wr2": "MIN"}
+        budget = np.full(200, 300.0)
+        sim._apply_volume_budget(results, team_by_pid, {"MIN": budget})
+        # wr1 had 2x wr2's raw share -> should still get 2x post-rescale.
+        assert results[("wr1", "receiving_yards")][0] == pytest.approx(
+            2 * results[("wr2", "receiving_yards")][0]
+        )
+
+    def test_zero_raw_group_is_left_unscaled(self) -> None:
+        sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=10)
+        results = {("wr1", "receiving_yards"): np.zeros(10)}
+        team_by_pid = {"wr1": "MIN"}
+        budget = np.full(10, 300.0)
+        sim._apply_volume_budget(results, team_by_pid, {"MIN": budget})
+        assert (results[("wr1", "receiving_yards")] == 0.0).all()

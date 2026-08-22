@@ -130,6 +130,25 @@ _TEAM_SCRIPT_COUPLING: dict[str, float] = {
 }
 _DEFAULT_TEAM_SCRIPT_COUPLING = 0.0
 
+# Volume-budget stats (Phase 7 fix): _apply_team_script_coupling only shifts
+# each player's draw by coupling * player_std * z(team_score_path) — z(.) is
+# standardised (mean zero), so the shift moves samples along a path but
+# leaves the player's EXPECTATION unchanged by construction. That's fine as
+# a correlation device but cannot make summed player yards match the team's
+# own predicted yards, which is why they diverged by 1.66x before this fix.
+# These three stats are instead allocated as a real budget (see
+# _apply_volume_budget): the team's own predicted yards, drawn once per
+# path via the Phase 4 yards model, split passing-vs-rushing by the league
+# split measured from game_logs 2022-2025 (530,441 passing yards vs 268,373
+# rushing = 66.4% passing), then divided among that team's players in each
+# stat's group in proportion to their own raw simulated share — so the
+# group sums to the budget exactly, on every path, and passing_yards and
+# receiving_yards share the SAME budget (verified: receiving_yards is
+# 99.9998% of passing_yards league-wide over the same window), so they
+# agree by construction rather than converging only in expectation.
+_VOLUME_BUDGET_STATS = frozenset({"passing_yards", "rushing_yards", "receiving_yards"})
+_PASS_YARDS_SHARE = 0.6640356828998991
+
 
 # ── Data Structures ───────────────────────────────────────────────────────────
 
@@ -270,6 +289,12 @@ class SeasonSimulator:
         self._points_model        = None
         self._points_fill         = None
         self._points_residual_std = None
+        # Phase 4 team-game yards model (Ridge), fit lazily the same way as
+        # _points_model — the real per-path team volume budget behind
+        # _apply_volume_budget, not a second independent guess.
+        self._yards_model         = None
+        self._yards_fill          = None
+        self._yards_residual_std  = None
         # Per-week build_team_game_forward_frame cache — _resolve_week_games
         # is normally called once per week by run(), but callers that probe
         # a week more than once (retries, tests) shouldn't pay for a second
@@ -394,10 +419,12 @@ class SeasonSimulator:
             # to the "summed weekly equals season" identity since it
             # inflates both sides equally.
             playing_teams: Optional[set[str]] = None
+            team_yards_paths: dict[str, np.ndarray] = {}
             if not week_schedule.empty:
                 resolved = self._resolve_week_games(week)
                 if not resolved.empty:
                     team_score_paths = self._draw_team_score_paths(resolved, self.n_simulations, rng)
+                    team_yards_paths = self._draw_team_yards_paths(resolved, self.n_simulations, rng)
                     playing_teams = set(resolved["team"].astype(str))
 
             # Draw weekly samples: shape (n_simulations, n_players, n_stats)
@@ -412,6 +439,20 @@ class SeasonSimulator:
                 playing_teams=playing_teams,
             )
             # week_paths: dict[(player_id, stat)] → np.ndarray(n_simulations,)
+
+            # Real volume budget (Phase 7 fix): rescale passing/rushing/
+            # receiving yards so each team's group total matches its own
+            # per-path yards budget exactly — see _apply_volume_budget and
+            # _VOLUME_BUDGET_STATS's module docstring for why this replaces
+            # the additive team-script coupling shift for these three stats.
+            # No-op when no schedule was supplied (team_yards_paths empty).
+            if team_yards_paths:
+                team_by_pid = dict(zip(
+                    initial_kalman_df["player_id"].astype(str),
+                    initial_kalman_df["team"] if "team" in initial_kalman_df.columns
+                    else [None] * len(initial_kalman_df),
+                ))
+                self._apply_volume_budget(week_paths, team_by_pid, team_yards_paths)
 
             # Accumulate season totals
             for key, sims in week_paths.items():
@@ -623,7 +664,16 @@ class SeasonSimulator:
             active_masks[pid] = (rng.random(n_simulations) < p).astype(float)
 
         for stat in self.stats:
-            coupling = _TEAM_SCRIPT_COUPLING.get(stat, _DEFAULT_TEAM_SCRIPT_COUPLING)
+            # Volume-budget stats get their team-level total fixed by
+            # _apply_volume_budget after this method returns — the additive
+            # coupling shift only correlated a player's draw with team
+            # script without ever making the group sum honest, so it's
+            # skipped here rather than left to distort the raw shares
+            # _apply_volume_budget allocates from.
+            coupling = (
+                0.0 if stat in _VOLUME_BUDGET_STATS
+                else _TEAM_SCRIPT_COUPLING.get(stat, _DEFAULT_TEAM_SCRIPT_COUPLING)
+            )
 
             # Apply injury redistribution
             kalman_with_injury = self._apply_injury_to_kalman(
@@ -930,6 +980,38 @@ class SeasonSimulator:
             points_df, _TEAM_GAME_MODEL_ALPHA, target_col="points"
         )
 
+    def _ensure_yards_model(self) -> None:
+        """
+        Lazily fit the Phase 4 yards Ridge model — same training window,
+        alpha, and feature set as _ensure_points_model, just target_col=
+        "yards". This is the real per-path team volume budget behind
+        _apply_volume_budget (Phase 7 fix: replaces the additive
+        team-script coupling shift, which could correlate a player's draw
+        with their team's score but never move the team-level total).
+        """
+        if self._yards_model is not None:
+            return
+        from sklearn.linear_model import Ridge
+
+        from ml.team_game_model import FEATURE_COLS, _prepare_x, compute_oof_residual_std
+        from pipeline.team_game_features import build_team_game_frame
+
+        train_df = build_team_game_frame(self._db_url(), list(range(2019, self.season)))
+        yards_df = train_df[train_df["total_yards"].notna()] if not train_df.empty else train_df
+        if yards_df.empty:
+            raise RuntimeError(
+                f"SeasonSimulator: no team-game training rows with a yards target for "
+                f"seasons < {self.season}; cannot allocate a real volume budget."
+            )
+        fill_values = yards_df[FEATURE_COLS].median(numeric_only=True)
+        X = _prepare_x(yards_df, fill_values)
+        y = yards_df["total_yards"].astype(float).values
+        self._yards_model = Ridge(alpha=_TEAM_GAME_MODEL_ALPHA).fit(X, y)
+        self._yards_fill = fill_values
+        self._yards_residual_std = compute_oof_residual_std(
+            yards_df, _TEAM_GAME_MODEL_ALPHA, target_col="total_yards"
+        )
+
     def _ensure_sim_elo(self) -> None:
         """
         Elo carried forward across simulated weeks, seeded from every REAL
@@ -946,17 +1028,19 @@ class SeasonSimulator:
 
     def _resolve_week_games(self, week: int) -> pd.DataFrame:
         """
-        Predict each team's expected points for `week` via the real Phase 4
-        points model, using this simulation's own carried-forward Elo (not
-        the DB's real Elo, which has no rows for weeks that haven't been
-        played) for the team_off_elo/team_def_elo/opp_off_elo/opp_def_elo
-        features. Returns one row per (game_id, team) with a points_mean
-        column, or an empty frame if nothing is scheduled that week.
+        Predict each team's expected points AND yards for `week` via the
+        real Phase 4 models, using this simulation's own carried-forward
+        Elo (not the DB's real Elo, which has no rows for weeks that
+        haven't been played) for the team_off_elo/team_def_elo/opp_off_elo/
+        opp_def_elo features. Returns one row per (game_id, team) with
+        points_mean and yards_mean columns, or an empty frame if nothing is
+        scheduled that week.
         """
         from ml.team_game_model import _prepare_x
         from pipeline.team_game_features import build_team_game_forward_frame
 
         self._ensure_points_model()
+        self._ensure_yards_model()
         self._ensure_sim_elo()
         if week not in self._forward_frame_cache:
             self._forward_frame_cache[week] = build_team_game_forward_frame(
@@ -975,8 +1059,10 @@ class SeasonSimulator:
         frame["team_def_elo"] = frame["team"].map(def_elo)
         frame["opp_off_elo"] = frame["opponent"].map(off_elo)
         frame["opp_def_elo"] = frame["opponent"].map(def_elo)
-        X = _prepare_x(frame, self._points_fill)
-        frame["points_mean"] = self._points_model.predict(X)
+        X_points = _prepare_x(frame, self._points_fill)
+        frame["points_mean"] = self._points_model.predict(X_points)
+        X_yards = _prepare_x(frame, self._yards_fill)
+        frame["yards_mean"] = self._yards_model.predict(X_yards)
         return frame
 
     def _draw_team_score_paths(
@@ -1001,6 +1087,74 @@ class SeasonSimulator:
                 float(row["points_mean"]), self._points_residual_std, n_simulations
             )
         return paths
+
+    def _draw_team_yards_paths(
+        self,
+        resolved: pd.DataFrame,
+        n_simulations: int,
+        rng: np.random.Generator,
+    ) -> dict[str, np.ndarray]:
+        """
+        One total-offensive-yards path per team per simulation, drawn from
+        the Phase 4 yards model's prediction ± its out-of-fold residual std
+        — the real per-path volume budget _apply_volume_budget allocates
+        among that team's players (Phase 7 fix). Floored at 0: the Gaussian
+        residual can occasionally go negative for a low-yardage prediction,
+        and a negative budget has no meaning to allocate.
+        """
+        paths: dict[str, np.ndarray] = {}
+        for _, row in resolved.iterrows():
+            paths[str(row["team"])] = np.maximum(
+                rng.normal(float(row["yards_mean"]), self._yards_residual_std, n_simulations),
+                0.0,
+            )
+        return paths
+
+    def _apply_volume_budget(
+        self,
+        results: dict[tuple[str, str], np.ndarray],
+        team_by_pid: dict[str, str],
+        team_yards_paths: dict[str, np.ndarray],
+    ) -> None:
+        """
+        Rescale passing_yards/rushing_yards/receiving_yards in place so
+        each team's group total matches its own per-path yards budget
+        (see _draw_team_yards_paths) exactly, split passing-vs-rushing by
+        _PASS_YARDS_SHARE — replaces the additive team-script coupling
+        shift for these three stats (see _VOLUME_BUDGET_STATS's docstring
+        for why: a zero-mean shift cannot move a team-level total).
+
+        Each player's share within their stat's group is their own RAW
+        simulated draw's share of the group's raw total on that path — so
+        players who project for more volume still get more of the budget,
+        the budget just makes the group sum honest. A path where the whole
+        group's raw draws floor at ~0 (extremely unlikely group, small
+        n_simulations) is left unscaled rather than dividing by ~0.
+        """
+        by_team: dict[str, list[str]] = {}
+        for pid, team in team_by_pid.items():
+            by_team.setdefault(str(team), []).append(pid)
+
+        for team, budget_path in team_yards_paths.items():
+            pids = by_team.get(team)
+            if not pids:
+                continue
+            pass_budget = budget_path * _PASS_YARDS_SHARE
+            rush_budget = budget_path * (1.0 - _PASS_YARDS_SHARE)
+            for stat, budget in (
+                ("passing_yards", pass_budget),
+                ("receiving_yards", pass_budget),
+                ("rushing_yards", rush_budget),
+            ):
+                group_pids = [pid for pid in pids if (pid, stat) in results]
+                if not group_pids:
+                    continue
+                raw = np.vstack([np.maximum(results[(pid, stat)], 0.0) for pid in group_pids])
+                group_sum = raw.sum(axis=0)
+                has_signal = group_sum > 1e-6
+                scale = np.where(has_signal, budget / np.where(has_signal, group_sum, 1.0), 0.0)
+                for i, pid in enumerate(group_pids):
+                    results[(pid, stat)] = raw[i] * scale
 
     # ── Team wins / playoffs ─────────────────────────────────────────────────
 
