@@ -290,9 +290,3 @@ def draft_board(
         )
     finally:
         conn.close()
-
-
-@router.get("/adp", response_model=DraftBoardResponse)
-def list_adp(**kwargs: Any) -> DraftBoardResponse:
-    """Thin alias — retained for clients that used the original endpoint."""
-    return draft_board(**kwargs)
