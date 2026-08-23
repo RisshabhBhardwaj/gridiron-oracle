@@ -46,7 +46,13 @@ def _fit(train_df: pd.DataFrame, target_col: str, alpha: float) -> tuple[Ridge, 
     return model, fill_values
 
 
-def materialize(season: int, week: int, database_url: str, alpha: float = 10.0) -> int:
+def materialize(
+    season: int,
+    week: int,
+    database_url: str,
+    alpha: float = 10.0,
+    pipeline_run_id: str | None = None,
+) -> int:
     forward = build_team_game_forward_frame(database_url, season, week)
     if forward.empty:
         raise ValueError(f"No scheduled games found for season={season} week={week}")
@@ -83,7 +89,9 @@ def materialize(season: int, week: int, database_url: str, alpha: float = 10.0) 
     margin = paired["points"].values - paired["opp_points"].values
     predictions["win_probability"] = norm.cdf(margin / margin_std)
 
-    model_run_id = f"team_game_{season}_{week}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    model_run_id = str(pipeline_run_id) if pipeline_run_id else (
+        f"team_game_{season}_{week}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    )
     rows = [
         (
             r.game_id, r.team, r.opponent, int(r.season), int(r.week), int(r.is_home),
@@ -126,9 +134,17 @@ def main() -> int:
     parser.add_argument("--week", type=int, required=True)
     parser.add_argument("--alpha", type=float, default=10.0)
     parser.add_argument("--database-url", default=DEFAULT_HOST_DATABASE_URL)
+    parser.add_argument(
+        "--pipeline-run-id",
+        default=None,
+        help="Reuse an approved run id instead of minting a new timestamped id",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    n = materialize(args.season, args.week, args.database_url, alpha=args.alpha)
+    n = materialize(
+        args.season, args.week, args.database_url, alpha=args.alpha,
+        pipeline_run_id=args.pipeline_run_id,
+    )
     print(f"Wrote {n} team_game_predictions rows for season={args.season} week={args.week}")
     return 0
 

@@ -137,6 +137,7 @@ def materialize(
     n_simulations: int = 300,
     positions: list[str] | None = None,
     database_url: str = DEFAULT_HOST_DATABASE_URL,
+    pipeline_run_id: str | None = None,
 ) -> int:
     positions = positions or _DEFAULT_POSITIONS
     roster_rows = _load_roster(database_url, season, start_week, positions)
@@ -185,7 +186,7 @@ def materialize(
         schedule_df=schedule_df, player_active_prob=p_active_by_player, rng_seed=0,
     )
 
-    model_run_id = (
+    model_run_id = str(pipeline_run_id) if pipeline_run_id else (
         f"season_sim_{season}_{start_week}_"
         f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:8]}"
     )
@@ -311,11 +312,17 @@ def main() -> int:
     parser.add_argument("--n-simulations", type=int, default=300)
     parser.add_argument("--positions", nargs="*", default=_DEFAULT_POSITIONS)
     parser.add_argument("--database-url", default=DEFAULT_HOST_DATABASE_URL)
+    parser.add_argument(
+        "--pipeline-run-id",
+        default=None,
+        help="Reuse an approved run id instead of minting a new timestamped id",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     n = materialize(
         args.season, args.start_week, args.end_week, args.n_simulations,
         args.positions, args.database_url,
+        pipeline_run_id=args.pipeline_run_id,
     )
     print(f"Wrote {n} season_simulations rows for season={args.season} start_week={args.start_week}")
     return 0

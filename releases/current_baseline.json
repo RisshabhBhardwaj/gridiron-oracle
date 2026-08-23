@@ -254,7 +254,8 @@
   "projection_policy": {
     "approved_pipeline_run_ids": [
       "stack_materialize_20260822T144443Z",
-      "season_sim_2026_1_20260823T000324_8fb263f0"
+      "season_sim_2026_1_20260823T000324_8fb263f0",
+      "weekly_auto_2026"
     ],
     "require_interval_columns": true,
     "require_posterior_samples": false
