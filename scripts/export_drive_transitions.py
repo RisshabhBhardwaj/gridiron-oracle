@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Fit DriveMarkovModel and write ml/oof/transitions.csv for C++ DriveMCMC."""
+"""Fit DriveMarkovModel and write ml/oof/transitions.csv (and, when the input
+frame carries play_type/score_differential/quarter(qtr), the game-state table
+ml/oof/transitions_by_game_state.csv) for the C++ DriveMCMC engine.
+
+--from-nflverse alone is sufficient for the game-state export: nflreadpy's
+load_pbp() frames already include qtr and score_differential, so no --db is
+needed in the common case. --db (read pbp_plays via DATABASE_URL) is an
+alternative source, useful only if a --pbp file is missing those columns.
+"""
 
 from __future__ import annotations
 
@@ -34,8 +42,9 @@ def main() -> int:
         action="store_true",
         help="Load play_type/score_differential/quarter/outcome columns from "
              "pbp_plays (DATABASE_URL) instead of --pbp/--from-nflverse. "
-             "Needed for the game-state export; --pbp/--from-nflverse frames "
-             "may lack quarter/score_differential.",
+             "Not required for the game-state export in the common case: "
+             "--from-nflverse frames already include qtr/score_differential. "
+             "Use --db only when a --pbp file is missing those columns.",
     )
     args = parser.parse_args()
 

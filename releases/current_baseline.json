@@ -1,5 +1,6 @@
 {
   "artifact_digests": {
+    "ml/oof/transitions_by_game_state.csv": "4ea33ac776146235e806e16531fa7c31a447a06bf6036f621990673947483ffa",
     "releases/candidates/causal_20260821_fixed/CONSTRAINED_STACK_SELECTION.json": "15a69e72a01d6a31995e93007eaa1069ac16a91ef5ea4168f78d917154b09933",
     "releases/candidates/causal_20260821_fixed/ridge_carries_RB_coefs.json": "b6898664105c1686c5c2bb490598e8b48a8bfcfc58488c06af2c02cde437e8f1",
     "releases/candidates/causal_20260821_fixed/ridge_completions_QB_coefs.json": "e43afbd139bf95f729cf59a3f77092b98c0ae1977f724bc6b4cefee5dd297a26",
@@ -169,6 +170,9 @@
       "releases/candidates/causal_20260821_fixed/stack_targets_RB_b46299d9.csv",
       "releases/candidates/causal_20260821_fixed/stack_targets_TE_29116c09.csv",
       "releases/candidates/causal_20260821_fixed/stack_targets_WR_4cf65b43.csv"
+    ],
+    "drive_transitions": [
+      "ml/oof/transitions_by_game_state.csv"
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",

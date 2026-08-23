@@ -202,6 +202,7 @@ cython_debug/
 # (gitignore only supports full-line comments; mid-line # breaks patterns)
 # OOF CSVs (large; regenerate via training — force-add serving stacks when shipping)
 ml/oof/
+!ml/oof/transitions_by_game_state.csv
 # TFT + training progress checkpoints (resume after crash)
 ml/checkpoints/
 # MLflow experiment artifacts / stores
