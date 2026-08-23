@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "backend/Dockerfile"
+  },
+  "deploy": {
+    "//healthcheckPath": "Liveness only. /health is a *readiness* probe that requires a reachable MLflow server and a git checkout (see runtime_status._check_mlflow / _check_baseline_manifest); neither exists in this container, so /health reports 503 'blocked' here by design. / proves the app is serving.",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}
