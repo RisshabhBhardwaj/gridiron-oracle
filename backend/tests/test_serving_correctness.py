@@ -477,7 +477,16 @@ class TestSeasonBoardVolumeReconciliation:
 
         from scripts.materialize_season_simulation import materialize
 
-        season, start_week, end_week = 2026, 1, 1
+        # NOT (2026, start_week=1) — that key is real served production
+        # data. season_simulations upserts ON CONFLICT (season, start_week,
+        # player_id, stat), so a test materializing into the SAME key as an
+        # approved run overwrites its pipeline_run_id, and this fixture's
+        # own teardown (deletes by run_id) would then delete what looks
+        # like its own rows but is actually the live approved run. This bit
+        # a real approved run during this session — use the same "safe",
+        # far-future slice test_season_simulation_materializer.py and
+        # test_season_team_wins.py already use instead.
+        season, start_week, end_week = 2026, 17, 18
         try:
             n = materialize(
                 season=season, start_week=start_week, end_week=end_week,
@@ -502,7 +511,7 @@ class TestSeasonBoardVolumeReconciliation:
         finally:
             conn.close()
 
-        yield season, start_week, run_id
+        yield season, start_week, end_week, run_id
 
         conn = psycopg2.connect(_DB_URL)
         try:
@@ -515,7 +524,7 @@ class TestSeasonBoardVolumeReconciliation:
             conn.close()
 
     def test_summed_player_yards_reconcile_with_team_game_model(self, materialized_run, db_conn, monkeypatch):
-        season, start_week, run_id = materialized_run
+        season, start_week, end_week, run_id = materialized_run
         from backend.app.services import projection as projection_mod
         from backend.app.services.projection import ProjectionService
 
@@ -524,14 +533,19 @@ class TestSeasonBoardVolumeReconciliation:
         rows = svc.get_season_projections(season=season, start_week=start_week)
         assert rows
 
+        # get_season_projections's yards means are SEASON totals across
+        # [start_week, end_week] — sum team_game_predictions.yards across
+        # the same week range, not just week=start_week, or a 2-week
+        # season total gets compared against a single week's budget.
         cur = db_conn.cursor()
         cur.execute(
-            "SELECT team, yards FROM team_game_predictions WHERE season=%s AND week=%s",
-            (season, start_week),
+            "SELECT team, SUM(yards) FROM team_game_predictions "
+            "WHERE season=%s AND week BETWEEN %s AND %s GROUP BY team",
+            (season, start_week, end_week),
         )
         team_yards = dict(cur.fetchall())
         if not team_yards:
-            pytest.skip("no team_game_predictions for this (season, week)")
+            pytest.skip("no team_game_predictions for this (season, week) range")
 
         by_team: dict[str, float] = {}
         for r in rows:
@@ -556,7 +570,7 @@ class TestSeasonBoardVolumeReconciliation:
         assert checked > 0, "no teams had both served player rows and a team_game_predictions row"
 
     def test_passing_yards_equals_receiving_yards_within_team_week(self, materialized_run, monkeypatch):
-        season, start_week, run_id = materialized_run
+        season, start_week, end_week, run_id = materialized_run
         from backend.app.services import projection as projection_mod
         from backend.app.services.projection import ProjectionService
 
