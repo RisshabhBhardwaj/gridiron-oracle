@@ -170,3 +170,67 @@ class TestGlobalEnrichmentWiring:
              patch("pipeline.orchestrator._run_global_enrichment") as mock_enrich:
             Orchestrator(db_url="postgresql://unused").run(seasons=[2025], dry_run=False)
         mock_enrich.assert_called_once_with("postgresql://unused")
+
+
+class TestOrchestratorSourcesScoping:
+    """
+    Orchestrator.run(sources=...) must thread through to
+    NFLReadPyAdapter.run_full_ingest(sources=...) so a future weekly cron
+    can re-ingest only the sources that vary week-to-week instead of doing
+    a full, slow re-ingest of every source every run.
+    """
+
+    def test_sources_param_threaded_to_run_full_ingest(self) -> None:
+        from unittest.mock import MagicMock, patch
+        from pipeline.orchestrator import Orchestrator
+
+        mock_adapter = MagicMock()
+        mock_adapter.__enter__.return_value = mock_adapter
+        mock_adapter.__exit__.return_value = False
+        mock_adapter.run_full_ingest.return_value = {}
+
+        with patch("pipeline.orchestrator.NFLReadPyAdapter", return_value=mock_adapter), \
+             patch("pipeline.orchestrator.Normalizer") as mock_normalizer_cls, \
+             patch("pipeline.orchestrator.FeatureEngineer") as mock_fe_cls, \
+             patch("pipeline.orchestrator._run_global_enrichment"):
+            mock_norm = MagicMock()
+            mock_norm.__enter__.return_value = mock_norm
+            mock_norm.__exit__.return_value = False
+            mock_norm.run.return_value = MagicMock(
+                players_upserted=0, games_upserted=0, game_logs_upserted=0,
+            )
+            mock_normalizer_cls.return_value = mock_norm
+
+            mock_fe = MagicMock()
+            mock_fe.__enter__.return_value = mock_fe
+            mock_fe.__exit__.return_value = False
+            mock_fe.run.return_value = 0
+            mock_fe_cls.return_value = mock_fe
+
+            Orchestrator(db_url="postgresql://unused").run(
+                seasons=[2025],
+                sources=["player_stats", "rosters"],
+            )
+
+        mock_adapter.run_full_ingest.assert_called_once_with(
+            seasons=[2025], sources=["player_stats", "rosters"],
+        )
+
+    def test_sources_defaults_to_none_unchanged_behavior(self) -> None:
+        """
+        With no sources argument, run_full_ingest must be called with
+        sources=None — identical to pre-change behavior (full ingest).
+        """
+        from unittest.mock import patch
+        from pipeline.orchestrator import Orchestrator, SeasonResult
+
+        with patch(
+            "pipeline.orchestrator._live_season",
+            return_value=SeasonResult(season=2025, dry_run=False),
+        ) as mock_live_season, \
+             patch("pipeline.orchestrator._run_global_enrichment"):
+            Orchestrator(db_url="postgresql://unused").run(seasons=[2025])
+
+        mock_live_season.assert_called_once_with(
+            2025, "postgresql://unused", sources=None,
+        )

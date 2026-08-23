@@ -357,7 +357,11 @@ def _write_dead_letter(db_url: str, source: str, error: str, season: int) -> Non
         logger.warning("Could not write to dead_letter: %s", write_exc)
 
 
-def _live_season(season: int, db_url: str) -> SeasonResult:
+def _live_season(
+    season: int,
+    db_url: str,
+    sources: Optional[list[str]] = None,
+) -> SeasonResult:
     """Full live run for one season: writes to DB at each step."""
     result = SeasonResult(season=season, dry_run=False)
 
@@ -366,7 +370,7 @@ def _live_season(season: int, db_url: str) -> SeasonResult:
     logger.info("[season=%d] Step 1: ingest (live)…", season)
     try:
         with NFLReadPyAdapter(db_url) as adapter:
-            ingest_results = adapter.run_full_ingest(seasons=[season])
+            ingest_results = adapter.run_full_ingest(seasons=[season], sources=sources)
         total_ok   = sum(ok   for ok,   _ in ingest_results.values())
         total_fail = sum(fail for _,  fail in ingest_results.values())
         result.steps.append(StepResult(
@@ -470,6 +474,7 @@ class Orchestrator:
         self,
         seasons: list[int],
         dry_run: bool = False,
+        sources: Optional[list[str]] = None,
     ) -> OrchestratorSummary:
         """
         Run all three pipeline steps for each requested season.
@@ -481,6 +486,13 @@ class Orchestrator:
         Args:
             seasons:  List of NFL season years (e.g. [2024, 2025]).
             dry_run:  If True, validate and transform in memory only (no DB).
+            sources:  Optional subset of nflreadpy source names to ingest
+                      (e.g. ["player_stats", "rosters"]). Only used in live
+                      mode — threaded through to
+                      NFLReadPyAdapter.run_full_ingest(sources=...). If None
+                      (the default), all sources are ingested, matching prior
+                      behavior. Lets a scoped weekly cron re-ingest only the
+                      sources that actually change week-to-week.
 
         Returns:
             OrchestratorSummary with per-season results and totals.
@@ -501,7 +513,7 @@ class Orchestrator:
             if dry_run:
                 sr = _dry_run_season(season)
             else:
-                sr = _live_season(season, self._db_url)
+                sr = _live_season(season, self._db_url, sources=sources)
             season_results.append(sr)
 
         if not dry_run:
