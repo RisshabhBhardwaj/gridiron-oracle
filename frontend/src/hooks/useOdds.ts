@@ -1,9 +1,15 @@
 /**
  * useOdds — fetches NFL player prop odds from The Odds API.
- * Uses a client-side fetch to api.the-odds-api.com when an API key is configured.
- * Falls back to our mock data when key is absent (dev mode).
  *
- * The Odds API free tier: 500 req/month — we cache aggressively.
+ * Goes through /api/odds rather than calling api.the-odds-api.com directly:
+ * the previous VITE_ODDS_API_KEY was inlined into the client bundle by Vite at
+ * build time, so anyone could read it from page source and spend the account's
+ * 500 req/month quota. The key now lives only in the server function's env.
+ *
+ * Falls back to mock lines when the server reports no key configured (dev mode).
+ *
+ * The Odds API free tier: 500 req/month — we cache aggressively, and the
+ * server function adds a shared CDN cache on top.
  */
 import { useQuery } from '@tanstack/react-query'
 
@@ -75,11 +81,7 @@ export function useOdds({ playerNames, stat, enabled = true }: UseOddsOptions) {
   return useQuery<OddsResponse>({
     queryKey: ['odds', stat, playerNames.slice(0, 5).join(',')],
     queryFn: async (): Promise<OddsResponse> => {
-      // Check if user has configured an API key
-      const apiKey = import.meta.env.VITE_ODDS_API_KEY as string | undefined
-
-      if (!apiKey || playerNames.length === 0) {
-        // Return mock data — useful for dev and demos
+      const mock = async (): Promise<OddsResponse> => {
         await new Promise((r) => setTimeout(r, 200)) // simulate latency
         return {
           player_props: generateMockOdds(playerNames, stat),
@@ -90,16 +92,29 @@ export function useOdds({ playerNames, stat, enabled = true }: UseOddsOptions) {
         }
       }
 
-      // Real API call — key present
-      const sport = 'americanfootball_nfl'
-      const markets = STAT_TO_ODDS_TYPE[stat] ?? 'player_receptions'
-      const url = `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&markets=${markets}&regions=us&oddsFormat=american`
+      if (playerNames.length === 0) return mock()
 
-      const res = await fetch(url)
+      const markets = STAT_TO_ODDS_TYPE[stat] ?? 'player_receptions'
+      const res = await fetch(`/api/odds?markets=${encodeURIComponent(markets)}`)
       if (!res.ok) throw new Error(`Odds API error: ${res.status}`)
 
-      // Parse and flatten
-      const raw = (await res.json()) as Array<{
+      const payload = (await res.json()) as {
+        configured: boolean
+        events?: Array<{
+          bookmakers: Array<{
+            key: string
+            markets: Array<{
+              key: string
+              outcomes: Array<{ name: string; price: number; point: number; description: string }>
+            }>
+          }>
+        }>
+      }
+
+      // No key on the server — show mock lines, same as local dev.
+      if (!payload.configured) return mock()
+
+      const raw = payload.events ?? ([] as Array<{
         bookmakers: Array<{
           key: string
           markets: Array<{
@@ -107,7 +122,7 @@ export function useOdds({ playerNames, stat, enabled = true }: UseOddsOptions) {
             outcomes: Array<{ name: string; price: number; point: number; description: string }>
           }>
         }>
-      }>
+      }>)
 
       const props: PlayerPropOdd[] = []
       for (const game of raw) {

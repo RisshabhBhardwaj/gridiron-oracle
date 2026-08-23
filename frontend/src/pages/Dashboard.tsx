@@ -371,7 +371,7 @@ export function Dashboard() {
             {oddsData.source === 'live' ? '📡 Live' : '🧪 Demo'} lines via {oddsData.provider}
           </span>
           {oddsData.source === 'mock' && (
-            <span className="text-oracle-muted">· add `VITE_ODDS_API_KEY` for sportsbook lines</span>
+            <span className="text-oracle-muted">· set `ODDS_API_KEY` on the server for sportsbook lines</span>
           )}
           {oddsData.source === 'live' && (
             <span className="text-oracle-muted">· updated {new Date(oddsData.last_updated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>

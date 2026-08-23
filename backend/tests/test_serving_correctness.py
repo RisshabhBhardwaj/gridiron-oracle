@@ -604,3 +604,122 @@ class TestSeasonBoardVolumeReconciliation:
             )
             checked += 1
         assert checked > 0, "no teams had both passing and receiving yardage to compare"
+
+
+# ---------------------------------------------------------------------------
+# Containerised deployments: no .git in the image
+# ---------------------------------------------------------------------------
+
+def test_readiness_uses_the_platform_commit_when_there_is_no_worktree(tmp_path, monkeypatch):
+    """A container built from a pushed commit ships no .git, so `git rev-parse`
+    fails by construction. The built commit is still known, and an image built
+    from a remote ref cannot be dirty — so an exact match is still `ok`."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    manifest_commit = json.loads(manifest.read_text())["git_commit"]
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", manifest_commit)
+
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=OSError("git: command not found"),
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "ok"
+    assert result["observed"]["head"] == manifest_commit
+    assert result["observed"]["worktree_dirty"] is False
+
+
+def test_readiness_warns_rather_than_guessing_when_lineage_is_unverifiable(tmp_path, monkeypatch):
+    """Without history the evidence-only-diff rule cannot be applied. Claiming
+    `ok` would fake a check; claiming `error` would condemn a deployment that
+    may be perfectly in lineage. It must warn, and stay non-blocking."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "0" * 40)
+
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=OSError("git: command not found"),
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "warn"
+    assert "cannot be verified without a git worktree" in result["detail"]
+
+
+def test_readiness_errors_when_neither_git_nor_the_platform_names_the_commit(tmp_path, monkeypatch):
+    """No worktree and no build commit means the running code is genuinely
+    unidentified. That is a real failure, not a degraded environment."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    manifest = _clean_manifest_copy(tmp_path)
+    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
+    monkeypatch.delenv("GIT_COMMIT_SHA", raising=False)
+
+    with patch.object(settings, "baseline_manifest_path", str(manifest)), patch(
+        "backend.app.services.runtime_status.subprocess.check_output",
+        side_effect=OSError("git: command not found"),
+    ):
+        result = service._check_baseline_manifest()
+
+    assert result["status"] == "error"
+    assert "no git worktree" in result["detail"]
+
+
+def test_unreachable_mlflow_is_reported_but_does_not_block_serving():
+    """MLflow backs SHAP attribution, which already degrades per-response. A
+    serving-only deployment has no tracking server, and that must not take the
+    service out of rotation — but it must still be visible in the report."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    ok = {"status": "ok", "detail": "fine"}
+
+    with patch.object(settings, "product_mode", "artifact_backed"), \
+         patch.object(RuntimeStatusService, "_check_database", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_feature_matrix", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_baseline_manifest", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_backtest_assets", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_tracing", return_value=ok), \
+         patch.object(
+             RuntimeStatusService, "_check_mlflow",
+             return_value={"status": "error", "detail": "MLflow unreachable"},
+         ):
+        report = service.build_report()
+
+    assert report["overall_status"] != "blocked"
+    assert report["checks"]["mlflow"]["status"] == "error"
+
+
+def test_a_failed_database_still_blocks():
+    """Guard the change above: loosening MLflow must not loosen the checks that
+    genuinely gate serving."""
+    from backend.app.core.config import settings
+    from backend.app.services.runtime_status import RuntimeStatusService
+
+    service = RuntimeStatusService("postgresql://unused", "http://unused", "latest")
+    ok = {"status": "ok", "detail": "fine"}
+
+    with patch.object(settings, "product_mode", "artifact_backed"), \
+         patch.object(RuntimeStatusService, "_check_feature_matrix", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_mlflow", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_baseline_manifest", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_backtest_assets", return_value=ok), \
+         patch.object(RuntimeStatusService, "_check_tracing", return_value=ok), \
+         patch.object(
+             RuntimeStatusService, "_check_database",
+             return_value={"status": "error", "detail": "down"},
+         ):
+        report = service.build_report()
+
+    assert report["overall_status"] == "blocked"

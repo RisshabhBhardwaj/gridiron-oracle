@@ -868,15 +868,34 @@ class TestAPIKeyMiddleware:
             r = client.get("/")
         assert r.status_code == 200
 
-    def test_integrity_exempt_without_key_header(self):
+    def test_docs_surface_requires_key_header(self):
+        """The repo is public; the deployment should not hand out its own route
+        table. /docs, /redoc and /openapi.json describe every endpoint, query
+        parameter and response schema, so they sit behind the key too. Only the
+        two probe endpoints stay open."""
         with patch("backend.app.main.settings.api_key", "test-secret-key"):
-            with patch(
-                "backend.app.main.RuntimeStatusService.build_report",
-                return_value={
-                    "overall_status": "ok",
-                    "fallback_allowed": True,
-                    "artifact_mode_ready": None,
-                },
-            ):
-                r = client.get("/integrity")
-        assert r.status_code == 200
+            for path in ("/docs", "/redoc", "/openapi.json"):
+                assert client.get(path).status_code == 401, f"{path} is public"
+            for path in ("/", "/health"):
+                assert client.get(path).status_code != 401, f"{path} must stay open"
+
+    def test_integrity_requires_key_header(self):
+        """/integrity reports the deployed commit, the manifest's absolute path
+        and the database host. On a public domain that is not probe data, so it
+        must sit behind the API key like any other endpoint."""
+        report = {
+            "overall_status": "ok",
+            "fallback_allowed": True,
+            "artifact_mode_ready": None,
+            "checks": {},
+        }
+        with patch("backend.app.main.settings.api_key", "test-secret-key"), patch(
+            "backend.app.main.RuntimeStatusService.build_report", return_value=report
+        ):
+            unauthenticated = client.get("/integrity")
+            authenticated = client.get(
+                "/integrity", headers={"X-API-Key": "test-secret-key"}
+            )
+
+        assert unauthenticated.status_code == 401
+        assert authenticated.status_code == 200

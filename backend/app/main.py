@@ -48,7 +48,20 @@ from backend.app.services.runtime_status import RuntimeStatusService
 # /metrics is intentionally NOT exempt: when API_KEY is set it requires auth.
 # Configure Prometheus scrape headers (prometheus.yml) to include X-API-Key.
 # When API_KEY is unset (local dev) all endpoints are open, including /metrics.
-_AUTH_EXEMPT_PATHS = frozenset({"/", "/health", "/integrity", "/docs", "/redoc", "/openapi.json"})
+#
+# Only the two probe endpoints are exempt. Everything else that used to be open
+# describes the deployment to anyone who asks, which was harmless while the API
+# bound to localhost and is not now that it is on a public domain:
+#   /integrity   names the deployed git commit, the baseline manifest's absolute
+#                path, and the database host
+#   /openapi.json, /docs, /redoc
+#                publish the full route table, query parameters and response
+#                schemas — a map of the API for anyone probing it
+# Railway's liveness probe uses "/" and readiness uses /health, so nothing
+# operational depends on the rest being open. Reaching /docs in a browser now
+# requires a key the browser cannot attach; use a local instance (API_KEY unset)
+# to read the docs, or curl /openapi.json with X-API-Key.
+_AUTH_EXEMPT_PATHS = frozenset({"/", "/health"})
 
 # Write paths that require X-Admin-Key (falls back to X-API-Key when ADMIN_API_KEY unset).
 _ADMIN_PATHS = frozenset({"/settings"})

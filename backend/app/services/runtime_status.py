@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import subprocess
 from datetime import datetime, timezone
@@ -71,7 +72,15 @@ class RuntimeStatusService:
         fallback_allowed = settings.product_mode == "graceful_fallback"
         required = ["database", "feature_matrix"]
         if settings.product_mode == "artifact_backed":
-            required.extend(["mlflow", "baseline_manifest", "backtest_assets"])
+            # MLflow is reported but deliberately not blocking. It is a training
+            # and explainability dependency, not a serving one: projections are
+            # read from the projections table, and the only request path that
+            # touches MLflow (SHAP attribution) already degrades to
+            # "unavailable" per response rather than failing. Keeping it
+            # required took a serving-only deployment — one with no tracking
+            # server, which is the normal shape in a container — permanently out
+            # of rotation on a dependency none of its responses need.
+            required.extend(["baseline_manifest", "backtest_assets"])
 
         blocking = [name for name in required if checks[name]["status"] == "error"]
         issues = [name for name, result in checks.items() if result["status"] in {"warn", "error"}]
@@ -197,6 +206,7 @@ class RuntimeStatusService:
                 "detail": f"Baseline manifest unreadable: {exc}",
             }
 
+        have_worktree = True
         try:
             head = subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], cwd=_REPO_ROOT, text=True,
@@ -207,8 +217,28 @@ class RuntimeStatusService:
                 # frozen code commit non-reproducible.
                 ["git", "status", "--porcelain", "--untracked-files=no"], cwd=_REPO_ROOT, text=True,
             ).strip())
-        except (OSError, subprocess.CalledProcessError) as exc:
-            return {"status": "error", "detail": f"Cannot inspect release Git state: {exc}"}
+        except (OSError, subprocess.CalledProcessError):
+            # A container image is built from a pushed commit and ships no .git,
+            # so `git rev-parse` fails here by construction rather than by
+            # fault. The platform still records which commit was built, and an
+            # image built from a remote ref cannot have a dirty worktree. What
+            # is genuinely missing is *history* — so lineage below degrades to a
+            # warning instead of claiming a verification we cannot perform.
+            have_worktree = False
+            dirty = False
+            head = (
+                os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+                or os.environ.get("GIT_COMMIT_SHA")
+                or ""
+            ).strip()
+            if not head:
+                return {
+                    "status": "error",
+                    "detail": (
+                        "Cannot inspect release Git state: no git worktree, and no "
+                        "RAILWAY_GIT_COMMIT_SHA/GIT_COMMIT_SHA naming the deployed commit"
+                    ),
+                }
 
         try:
             from ml.artifact_manifest import REQUIRED_SERVING_CELLS, load_manifest
@@ -242,6 +272,21 @@ class RuntimeStatusService:
         manifest_commit = payload.get("git_commit")
         exact_match = manifest_commit == head
         if not exact_match:
+            if not have_worktree:
+                # Without history we cannot apply the evidence-only-diff rule,
+                # and guessing either way would be wrong: claiming "ok" fakes a
+                # check, claiming "error" condemns a deployment that may be
+                # perfectly in lineage. Report the gap and name both commits so
+                # an operator can settle it by re-freezing at the deployed one.
+                return {
+                    "status": "warn",
+                    "detail": (
+                        "Deployed commit differs from the baseline manifest's pinned "
+                        "commit, and lineage cannot be verified without a git worktree. "
+                        "Re-freeze the baseline at the deployed commit to clear this."
+                    ),
+                    "observed": observed,
+                }
             lineage = self._check_commit_lineage(manifest_commit, head)
             if lineage is not None:
                 return {"status": "error", "detail": lineage, "observed": observed}
