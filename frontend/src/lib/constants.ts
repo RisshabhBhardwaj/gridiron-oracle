@@ -47,10 +47,3 @@ export const STAT_LABELS: Record<string, string> = {
   sacks_taken: 'Sacks Taken',
   ppr_points: 'Fantasy Points (PPR)',
 }
-
-export const POSITION_COLORS: Record<string, string> = {
-  WR: 'text-oracle-accent',
-  RB: 'text-oracle-green',
-  TE: 'text-oracle-purple',
-  QB: 'text-oracle-yellow',
-}
