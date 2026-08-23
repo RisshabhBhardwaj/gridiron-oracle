@@ -442,6 +442,7 @@ class ProjectionService:
         skill = [p.upper() for p in (positions or ["QB", "RB", "WR", "TE"])]
         try:
             approved = load_approved_pipeline_run_ids()
+            self._require_season_floor(season)
             self._require_depth_chart_fresh(season)
             simulated = self._load_season_simulation_rows(season, start_week, skill, stats, approved)
             if simulated:
@@ -759,6 +760,47 @@ class ProjectionService:
         finally:
             conn.close()
         return rows
+
+    def _require_season_floor(self, season: int) -> None:
+        """
+        Refuse a season at or below the earliest season game_logs actually
+        has rows for.
+
+        ml/baselines.py:prev_season_mean anchors every season projection on
+        season-1 historical stats. When season-1 predates game_logs'
+        earliest row, that lookup doesn't error — it silently returns a
+        near-empty/zero baseline, and the caller has no way to distinguish
+        "legitimately low" from "no history exists". The depth-chart
+        freshness gate above doesn't catch this: a current depth-chart
+        snapshot can pass while the historical anchor is still empty (this
+        is exactly the season=2024 case — depth_charts has 2024 rows, but
+        game_logs starts at 2024, so the season-1 anchor reads nothing).
+        Fail loud here instead of serving a season total built on an empty
+        prior.
+        """
+        import psycopg2
+
+        try:
+            conn = psycopg2.connect(self._db_url)
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT MIN(season) FROM game_logs")
+                row = cur.fetchone()
+                floor = row[0] if row else None
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.debug("season-floor check failed to run: %s", exc)
+            return
+        if floor is not None and season <= floor:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"{SEASON_PROJECTIONS_UNAVAILABLE} Season floor gate failed for "
+                    f"season={season}: game_logs has no rows before season {floor}, "
+                    "so the season-1 historical baseline anchor would be empty."
+                ),
+            )
 
     def _require_depth_chart_fresh(self, season: int) -> None:
         """

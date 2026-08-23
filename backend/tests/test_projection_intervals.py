@@ -48,6 +48,76 @@ def test_season_projections_db_error_is_fail_closed() -> None:
     assert exc.value.status_code == 503
 
 
+class _FakeCursor:
+    def __init__(self, floor):
+        self._floor = floor
+
+    def execute(self, *_args, **_kwargs) -> None:
+        pass
+
+    def fetchone(self):
+        return (self._floor,)
+
+
+class _FakeConn:
+    def __init__(self, floor):
+        self._floor = floor
+
+    def cursor(self):
+        return _FakeCursor(self._floor)
+
+    def close(self) -> None:
+        pass
+
+
+def test_require_season_floor_blocks_season_at_or_below_game_logs_floor(monkeypatch) -> None:
+    """
+    game_logs' earliest row is season 2024 (verified live via Neon). A
+    season request at or below that floor must 503 with a clear reason —
+    ml/baselines.py's season-1 anchor would read nothing for it — while a
+    season above the floor must pass this gate untouched.
+    """
+    import psycopg2
+
+    from backend.app.services.projection import ProjectionService
+
+    monkeypatch.setattr(psycopg2, "connect", lambda *_a, **_k: _FakeConn(2024))
+    svc = ProjectionService("postgresql://unused")
+
+    with pytest.raises(HTTPException) as exc:
+        svc._require_season_floor(2024)
+    assert exc.value.status_code == 503
+    assert "floor" in exc.value.detail.lower()
+
+    with pytest.raises(HTTPException) as exc:
+        svc._require_season_floor(2023)
+    assert exc.value.status_code == 503
+
+    # Above the floor: no exception.
+    svc._require_season_floor(2025)
+
+
+def test_season_projections_2024_fails_closed_on_season_floor(monkeypatch) -> None:
+    """
+    End-to-end regression for the season=2024 fail-open bug: the depth-chart
+    freshness gate alone let 2024 pass (2024 has current depth-chart rows),
+    while ml/baselines.py's season-1 anchor silently returned an empty
+    baseline since game_logs starts at 2024. get_season_projections must now
+    503 for 2024 before it gets anywhere near that anchor.
+    """
+    import psycopg2
+
+    from backend.app.services.projection import ProjectionService
+
+    monkeypatch.setattr(psycopg2, "connect", lambda *_a, **_k: _FakeConn(2024))
+    svc = ProjectionService("postgresql://unused")
+
+    with pytest.raises(HTTPException) as exc:
+        svc.get_season_projections(season=2024, start_week=1)
+    assert exc.value.status_code == 503
+    assert "floor" in exc.value.detail.lower()
+
+
 def test_season_projections_rank_by_playing_time(monkeypatch) -> None:
     from backend.app.services import projection as projection_mod
     from backend.app.services.projection import ProjectionService
