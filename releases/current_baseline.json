@@ -172,15 +172,15 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-08-23T00:04:09.798736+00:00",
+  "created_at": "2026-08-23T00:05:13.059795+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
     "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
   },
   "git_branch": "main",
-  "git_commit": "5d337d999b5bc4d986cbf2cebb4e52c7ca15cd86",
-  "git_dirty": true,
+  "git_commit": "81fe1acf01f0b7a5605a0c9c397f586d01958fa9",
+  "git_dirty": false,
   "integrity": {
     "artifact_mode_ready": false,
     "checks": {
@@ -192,11 +192,11 @@
         "status": "ok"
       },
       "baseline_manifest": {
-        "detail": "Baseline manifest commit is an ancestor of HEAD, but HEAD changes non-evidence paths since that commit: ['alembic/versions/20260822_0025_season_team_wins.py', 'backend/app/api/predict.py', 'backend/app/services/projection.py', 'ml/season_simulator.py', 'ml/team_game_model.py', 'scripts/materialize_season_simulation.py']",
+        "detail": "Baseline manifest was frozen from a dirty worktree",
         "observed": {
-          "created_at": "2026-08-22T21:15:56.287512+00:00",
-          "git_commit": "7b504a3065c39afada92cbccb7418ed2fd1958a2",
-          "head": "5d337d999b5bc4d986cbf2cebb4e52c7ca15cd86",
+          "created_at": "2026-08-23T00:04:09.798736+00:00",
+          "git_commit": "5d337d999b5bc4d986cbf2cebb4e52c7ca15cd86",
+          "head": "81fe1acf01f0b7a5605a0c9c397f586d01958fa9",
           "model_version": "latest",
           "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
           "worktree_dirty": false
@@ -210,7 +210,7 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 24.14,
+          "age_hours": 24.16,
           "computed_at": "2026-08-21T23:55:45.143265+00:00",
           "season": 2026,
           "week": 1
@@ -239,7 +239,7 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-08-23T00:04:09.798693+00:00",
+    "generated_at": "2026-08-23T00:05:13.059753+00:00",
     "model_version": "latest",
     "overall_status": "blocked",
     "product_mode": "artifact_backed"
