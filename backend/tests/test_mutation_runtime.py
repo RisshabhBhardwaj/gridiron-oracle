@@ -237,12 +237,36 @@ def test_settings_respects_explicit_override_paths_and_modes(monkeypatch):
     assert settings.otel_exporter_otlp_insecure is False
 
 
-def test_rate_limiter_uses_remote_address():
-    from slowapi.util import get_remote_address
+def test_rate_limiter_keys_on_forwarded_client_ip():
+    """Behind the Vercel proxy every request arrives from a Vercel address, so
+    keying on `request.client.host` would put all callers in one shared bucket.
+    The key function must prefer the leftmost X-Forwarded-For entry."""
+    from starlette.requests import Request
 
-    from backend.app.core.rate_limit import limiter
+    from backend.app.core.rate_limit import _client_ip, limiter
 
-    assert limiter._key_func is get_remote_address
+    assert limiter._key_func is _client_ip
+
+    def _request(headers, client_host="10.0.0.1"):
+        scope = {
+            "type": "http",
+            "headers": [
+                (k.lower().encode(), v.encode()) for k, v in headers.items()
+            ],
+            "client": (client_host, 1234),
+        }
+        return Request(scope)
+
+    # Leftmost entry wins — the rest of the chain is proxy hops.
+    assert _client_ip(
+        _request({"X-Forwarded-For": "203.0.113.7, 70.41.3.18, 150.172.238.178"})
+    ) == "203.0.113.7"
+    # Single value, and surrounding whitespace is stripped.
+    assert _client_ip(_request({"X-Forwarded-For": "  198.51.100.4  "})) == "198.51.100.4"
+    # No header (direct call) falls back to the connecting address.
+    assert _client_ip(_request({})) == "10.0.0.1"
+    # An empty or whitespace-only header must not key every caller to "".
+    assert _client_ip(_request({"X-Forwarded-For": "   "})) == "10.0.0.1"
 
 
 def test_request_logging_middleware_sets_request_id_and_logs(caplog):
