@@ -396,17 +396,21 @@ void drive_mcmc_load_defaults(void *handle) {
 void drive_mcmc_simulate(void *handle, uint8_t field_pos, uint8_t down,
                          uint8_t yards_to_go, int8_t score_differential,
                          uint8_t quarter, float *out_p_td, float *out_p_fg,
-                         float *out_expected_yards, float *out_pass_rate,
-                         float *out_drive_value) {
+                         float *out_p_punt, float *out_p_turnover,
+                         float *out_expected_yards, float *out_expected_plays,
+                         float *out_pass_rate, float *out_drive_value) {
   auto *sim = static_cast<gridiron::DriveMCMC *>(handle);
   gridiron::DriveState start{field_pos, down, yards_to_go, score_differential,
                              quarter, gridiron::DriveOutcome::IN_PROGRESS};
   gridiron::DriveResult res = sim->simulate_drive(start);
-  *out_p_td = res.p_touchdown;
-  *out_p_fg = res.p_field_goal;
-  *out_expected_yards = res.expected_yards;
-  *out_pass_rate = res.expected_pass_rate;
-  *out_drive_value = res.drive_value;
+  if (out_p_td) *out_p_td = res.p_touchdown;
+  if (out_p_fg) *out_p_fg = res.p_field_goal;
+  if (out_p_punt) *out_p_punt = res.p_punt;
+  if (out_p_turnover) *out_p_turnover = res.p_turnover;
+  if (out_expected_yards) *out_expected_yards = res.expected_yards;
+  if (out_expected_plays) *out_expected_plays = res.expected_plays;
+  if (out_pass_rate) *out_pass_rate = res.expected_pass_rate;
+  if (out_drive_value) *out_drive_value = res.drive_value;
 }
 
 bool drive_mcmc_load_transitions_csv(void *handle, const char *csv_path) {

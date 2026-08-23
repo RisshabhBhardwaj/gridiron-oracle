@@ -1,29 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '../lib/api-client'
+import type { DraftBoardPlayer, DraftBoardResponse } from '../types/api'
 
-export interface DraftBoardPlayer {
-  player_name: string
-  position: string | null
-  team: string | null
-  adp: number
-  player_id: string | null
-  source: string
-  model_rank: number | null
-  model_fantasy_ppr: number | null
-  adp_rank: number | null
-  value_vs_adp: number | null
-}
-
-export interface DraftBoardResponse {
-  season: number
-  source: string
-  scoring: string
-  count: number
-  players: DraftBoardPlayer[]
-  spearman_rho: number | null
-  projection_source: string
-  as_of: string
-  note: string
-}
+export type { DraftBoardPlayer, DraftBoardResponse }
 
 interface Params {
   season: number
@@ -38,12 +17,7 @@ async function fetchDraftBoard(params: Params): Promise<DraftBoardResponse> {
   if (params.source) qs.set('source', params.source)
   qs.set('scoring', params.scoring ?? 'ppr')
   if (params.position) qs.set('position', params.position)
-  const res = await fetch(`/api/draft/board?${qs.toString()}`)
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(body || res.statusText)
-  }
-  return res.json()
+  return apiClient.get<DraftBoardResponse>(`/draft/board?${qs.toString()}`)
 }
 
 export function useDraftBoard(params: Params) {

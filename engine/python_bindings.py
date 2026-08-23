@@ -114,6 +114,9 @@ if LIB is not None:
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
         ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_float),
     ]
     LIB.drive_mcmc_simulate.restype = None
 
@@ -224,7 +227,10 @@ class CppDriveMCMC:
         """
         p_td = ctypes.c_float()
         p_fg = ctypes.c_float()
+        p_punt = ctypes.c_float()
+        p_turnover = ctypes.c_float()
         yards = ctypes.c_float()
+        expected_plays = ctypes.c_float()
         pass_rate = ctypes.c_float()
         value = ctypes.c_float()
         LIB.drive_mcmc_simulate(
@@ -236,14 +242,20 @@ class CppDriveMCMC:
             quarter,
             ctypes.byref(p_td),
             ctypes.byref(p_fg),
+            ctypes.byref(p_punt),
+            ctypes.byref(p_turnover),
             ctypes.byref(yards),
+            ctypes.byref(expected_plays),
             ctypes.byref(pass_rate),
             ctypes.byref(value),
         )
         return {
             "p_touchdown": float(p_td.value),
             "p_field_goal": float(p_fg.value),
+            "p_punt": float(p_punt.value),
+            "p_turnover": float(p_turnover.value),
             "expected_yards": float(yards.value),
+            "expected_plays": float(expected_plays.value),
             "expected_pass_rate": float(pass_rate.value),
             "drive_value": float(value.value),
         }

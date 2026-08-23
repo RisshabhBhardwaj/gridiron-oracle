@@ -131,16 +131,24 @@ TEST_CASE("DriveMCMC C API: simulate writes sane outputs",
 
     float p_td = -1.0f;
     float p_fg = -1.0f;
+    float p_punt = -1.0f;
+    float p_turnover = -1.0f;
     float expected_yards = 0.0f;
+    float expected_plays = 0.0f;
     float pass_rate = -1.0f;
     float drive_value = 0.0f;
-    drive_mcmc_simulate(handle, 25, 1, 10, 0, 1, &p_td, &p_fg, &expected_yards,
-                        &pass_rate, &drive_value);
+    drive_mcmc_simulate(handle, 25, 1, 10, 0, 1, &p_td, &p_fg, &p_punt, &p_turnover,
+                        &expected_yards, &expected_plays, &pass_rate, &drive_value);
 
     REQUIRE(p_td >= 0.0f);
     REQUIRE(p_td <= 1.0f);
     REQUIRE(p_fg >= 0.0f);
     REQUIRE(p_fg <= 1.0f);
+    REQUIRE(p_punt >= 0.0f);
+    REQUIRE(p_punt <= 1.0f);
+    REQUIRE(p_turnover >= 0.0f);
+    REQUIRE(p_turnover <= 1.0f);
+    REQUIRE(expected_plays >= 1.0f);
     REQUIRE(pass_rate >= 0.0f);
     REQUIRE(pass_rate <= 1.0f);
     REQUIRE(drive_value == Approx(7.0f * p_td + 3.0f * p_fg).margin(1e-6));

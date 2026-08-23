@@ -5,8 +5,8 @@ import { useSearch } from '@/context/SearchContext'
 import { useBetSlip } from '@/context/BetSlipContext'
 
 const NAV_LINKS = [
-  { to: '/projections', label: 'All Projections', exact: false },
-  { to: '/season', label: 'Season', exact: false },
+  { to: '/projections', label: 'Current Season', exact: false },
+  { to: '/season', label: 'Season Review', exact: false },
   { to: '/draft', label: 'Draft', exact: false },
   { to: '/backtest', label: 'Backtesting', exact: false },
   { to: '/settings', label: 'Settings', exact: false },

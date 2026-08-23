@@ -47,3 +47,12 @@ export const STAT_LABELS: Record<string, string> = {
   sacks_taken: 'Sacks Taken',
   ppr_points: 'Fantasy Points (PPR)',
 }
+
+// Exactly the 4 stats populated in season_simulation_weeks
+export const SEASON_SIM_STATS = [
+  'fantasy_ppr',
+  'receiving_yards',
+  'rushing_yards',
+  'passing_yards',
+] as const
+export type SeasonSimStat = (typeof SEASON_SIM_STATS)[number]

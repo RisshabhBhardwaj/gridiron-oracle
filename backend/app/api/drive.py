@@ -10,33 +10,37 @@ per-request, only loads pre-computed transition parameters.
 
 The DriveMCMC C++ handle is NOT thread-safe (see engine/include/drive_mcmc.hpp's
 ownership contract); FastAPI's sync routes run in a threadpool, so a module-level
-lock serializes access to the single cached handle. Each simulate() call is
-sub-millisecond, so this isn't a real bottleneck.
+lock serializes access to the cached handles across simulate() calls.
 """
 from __future__ import annotations
 
 import threading
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 router = APIRouter(prefix="", tags=["drive"])
 
-_ENGINE = None
+_ENGINE_CACHE: dict[int, Any] = {}
 _ENGINE_LOCK = threading.Lock()
+_MAX_CACHE_SIZE = 4
 
 
-def _get_engine():
-    global _ENGINE
-    if _ENGINE is not None:
-        return _ENGINE
+def _get_engine(n_simulations: int = 2000) -> Any:
     with _ENGINE_LOCK:
-        if _ENGINE is None:
-            from ml.drive_engine import load_drive_engine
+        if n_simulations in _ENGINE_CACHE:
+            return _ENGINE_CACHE[n_simulations]
+        from ml.drive_engine import load_drive_engine
 
-            _ENGINE = load_drive_engine()
-        return _ENGINE
+        if len(_ENGINE_CACHE) >= _MAX_CACHE_SIZE:
+            # Drop oldest key
+            oldest = next(iter(_ENGINE_CACHE))
+            del _ENGINE_CACHE[oldest]
+
+        eng = load_drive_engine(n_simulations=n_simulations)
+        _ENGINE_CACHE[n_simulations] = eng
+        return eng
 
 
 class DriveSimulationResponse(BaseModel):
@@ -48,7 +52,10 @@ class DriveSimulationResponse(BaseModel):
     n_simulations: int
     p_touchdown: float
     p_field_goal: float
+    p_punt: Optional[float] = None
+    p_turnover: Optional[float] = None
     expected_yards: float
+    expected_plays: Optional[float] = None
     expected_pass_rate: float
     drive_value: float
     note: str = (
@@ -68,32 +75,30 @@ def simulate_drive(
     quarter: int = Query(1, ge=1, le=5, description="1-4; 5 (OT) is clamped to 4 by the engine"),
     n_simulations: Optional[int] = Query(None, ge=100, le=50000),
 ) -> DriveSimulationResponse:
+    target_n = n_simulations or 2000
     try:
-        engine = _get_engine()
+        engine = _get_engine(target_n)
     except (FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(
             status_code=503,
             detail=f"DriveMCMC engine unavailable: {exc}",
         ) from exc
 
-    if n_simulations is not None and n_simulations != engine.n_simulations:
-        from ml.drive_engine import load_drive_engine
+    with _ENGINE_LOCK:
+        result = engine.simulate(
+            field_pos=field_pos,
+            down=down,
+            yards_to_go=yards_to_go,
+            score_differential=score_differential,
+            quarter=quarter,
+        )
 
-        engine = load_drive_engine(n_simulations=n_simulations)
-
-    result = engine.simulate(
-        field_pos=field_pos,
-        down=down,
-        yards_to_go=yards_to_go,
-        score_differential=score_differential,
-        quarter=quarter,
-    )
     return DriveSimulationResponse(
         field_pos=field_pos,
         down=down,
         yards_to_go=yards_to_go,
         score_differential=score_differential,
         quarter=quarter,
-        n_simulations=n_simulations or engine.n_simulations,
+        n_simulations=target_n,
         **result,
     )

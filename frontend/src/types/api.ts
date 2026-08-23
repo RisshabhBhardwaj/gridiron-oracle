@@ -124,6 +124,143 @@ export interface SeasonProjectionsResponse {
   data_freshness: string
 }
 
+export interface SeasonWeekProjectionsResponse {
+  season: number
+  start_week: number
+  week: number
+  count: number
+  projections: SeasonPlayerProjection[]
+  data_freshness: string
+}
+
+export interface TeamWinProjection {
+  team: string
+  wins_mean: number
+  wins_p10?: number | null
+  wins_p90?: number | null
+}
+
+export interface SeasonTeamWinsResponse {
+  season: number
+  start_week: number
+  count: number
+  teams: TeamWinProjection[]
+  data_freshness: string
+}
+
+export interface TeamGamePrediction {
+  game_id: string
+  team: string
+  opponent: string
+  season: number
+  week: number
+  is_home: boolean
+  points: number | null
+  yards: number | null
+  pass_rate: number | null
+  win_probability: number | null
+  model_run_id: string
+  note?: string
+}
+
+export interface TeamGameWeekResponse {
+  season: number
+  week: number
+  count: number
+  games: TeamGamePrediction[]
+}
+
+export interface PairedGame {
+  game_id: string
+  season: number
+  week: number
+  home_team: string
+  away_team: string
+  home_points: number | null
+  away_points: number | null
+  home_yards: number | null
+  away_yards: number | null
+  home_pass_rate: number | null
+  away_pass_rate: number | null
+  home_win_probability: number | null
+  away_win_probability: number | null
+  model_run_id: string
+  note?: string
+}
+
+export interface DraftBoardPlayer {
+  player_name: string
+  position: string | null
+  team: string | null
+  adp: number | null
+  player_id: string | null
+  source: string
+  model_rank: number | null
+  model_fantasy_ppr: number | null
+  adp_rank: number | null
+  value_vs_adp: number | null
+  board_tail?: boolean
+}
+
+export interface DraftBoardResponse {
+  season: number
+  source: string
+  scoring: string
+  count: number
+  players: DraftBoardPlayer[]
+  spearman_rho: number | null
+  projection_source: string
+  as_of: string
+  note: string
+}
+
+export interface ManagerProfile {
+  owner_id: string
+  display_name: string
+  draft_slot?: number | null
+  drafts: number
+  picks: number
+  first_qb_pick_shrunk: number
+  first_te_pick_shrunk: number
+  adp_delta_mean_shrunk: number
+  adp_delta_sd_shrunk: number
+  early_rb_share_shrunk: number
+  early_wr_share_shrunk: number
+}
+
+export interface MockDraftProfilesResponse {
+  season: number
+  count: number
+  profiles: ManagerProfile[]
+  note: string
+}
+
+export interface PickedItem {
+  pick_no: number
+  round: number
+  slot: number
+  owner_id: string
+  player: DraftBoardPlayer
+}
+
+export interface PickRequest {
+  season: number
+  draft_order: string[]
+  picks_so_far: PickedItem[]
+  user_slot?: number
+  auto_pick_user?: boolean
+  seed?: number
+}
+
+export interface PickResponse {
+  season: number
+  new_picks: PickedItem[]
+  is_user_turn: boolean
+  is_draft_complete: boolean
+  next_turn_slot: number | null
+  seed: number
+}
+
 // ── explain.py ────────────────────────────────────────────────────────────────
 
 export interface FactorItem {
@@ -276,4 +413,67 @@ export interface AlertItem {
 export interface AlertsResponse {
   alerts: AlertItem[]
   count: number
+}
+
+// ── drive-sim ─────────────────────────────────────────────────────────────────
+
+export interface GameAnchor {
+  home_points: number
+  away_points: number
+  home_yards: number
+  away_yards: number
+  home_pass_rate: number
+  away_pass_rate: number
+  home_win_probability: number
+}
+
+export interface GameSimSummary {
+  simulated_home_points: number
+  simulated_away_points: number
+  simulated_home_yards: number
+  simulated_away_yards: number
+  total_drives: number
+  simulated_winner: string
+}
+
+export interface SimulatedPlayDTO {
+  play_number: number
+  down: number
+  ytg: number
+  field_pos: number
+  play_type: string
+  yards_gained: number
+  is_turnover: boolean
+  is_first_down: boolean
+  is_touchdown: boolean
+  is_safety: boolean
+  end_field_pos: number
+}
+
+export interface SimulatedDriveDTO {
+  drive_number: number
+  possession_team: string
+  quarter: number
+  start_field_pos: number
+  end_field_pos: number
+  plays_count: number
+  yards_gained: number
+  outcome: string
+  points_scored: number
+  home_score_after: number
+  away_score_after: number
+  plays: SimulatedPlayDTO[]
+}
+
+export interface GameDriveSimResponse {
+  game_id: string
+  season: number
+  week: number
+  home_team: string
+  away_team: string
+  seed: number
+  anchor: GameAnchor
+  summary: GameSimSummary
+  drives: SimulatedDriveDTO[]
+  note: string
 }

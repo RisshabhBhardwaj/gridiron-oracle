@@ -7,6 +7,31 @@ export const handlers = [
     HttpResponse.json(factories.weekProjectionsResponse()),
   ),
 
+  // Narrower weekly route MUST be registered before broader season route
+  http.get('/api/projections/season/:season/weeks/:week', () =>
+    HttpResponse.json(factories.seasonWeekProjectionsResponse()),
+  ),
+
+  http.get('/api/projections/season/:season/team-wins', () =>
+    HttpResponse.json(factories.seasonTeamWinsResponse()),
+  ),
+
+  http.get('/api/team-games/:season/:week', () =>
+    HttpResponse.json(factories.teamGameWeekResponse()),
+  ),
+
+  http.get('/api/mock-draft/profiles', () =>
+    HttpResponse.json(factories.mockDraftProfilesResponse()),
+  ),
+
+  http.post('/api/mock-draft/pick', () =>
+    HttpResponse.json(factories.mockDraftPickResponse()),
+  ),
+
+  http.get('/api/games/:game_id/drive-sim', () =>
+    HttpResponse.json(factories.driveSimResponse()),
+  ),
+
   http.get('/api/projections/season/:season', () =>
     HttpResponse.json(factories.seasonProjectionsResponse()),
   ),

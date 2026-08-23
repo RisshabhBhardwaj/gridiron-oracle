@@ -10,8 +10,9 @@ import { SearchProvider } from './context/SearchContext'
 // Route-level chunks keep the landing experience small; analytics-heavy pages
 // (charts, backtest tables, settings) are fetched only when the user opens them.
 const Home = lazy(async () => ({ default: (await import('./pages/Home')).Home }))
-const Dashboard = lazy(async () => ({ default: (await import('./pages/Dashboard')).Dashboard }))
-const SeasonProjections = lazy(async () => ({ default: (await import('./pages/SeasonProjections')).SeasonProjections }))
+const CurrentSeason = lazy(async () => ({ default: (await import('./pages/CurrentSeason')).CurrentSeason }))
+const SeasonReview = lazy(async () => ({ default: (await import('./pages/SeasonReview')).SeasonReview }))
+const GameDetail = lazy(async () => ({ default: (await import('./pages/GameDetail')).GameDetail }))
 const DraftBoard = lazy(async () => ({ default: (await import('./pages/DraftBoard')).DraftBoard }))
 const PlayerDetail = lazy(async () => ({ default: (await import('./pages/PlayerDetail')).PlayerDetail }))
 const BacktestExplorer = lazy(async () => ({ default: (await import('./pages/BacktestExplorer')).BacktestExplorer }))
@@ -29,8 +30,9 @@ export function App() {
             <Suspense fallback={<div className="p-8 text-oracle-muted">Loading view…</div>}>
               <Routes>
                 <Route path="/"                element={<Home />} />
-                <Route path="/projections"     element={<Dashboard />} />
-                <Route path="/season"          element={<SeasonProjections />} />
+                <Route path="/projections"     element={<CurrentSeason />} />
+                <Route path="/projections/game/:gameId" element={<GameDetail />} />
+                <Route path="/season"          element={<SeasonReview />} />
                 <Route path="/draft"           element={<DraftBoard />} />
                 <Route path="/player/:player_id" element={<PlayerDetail />} />
                 <Route path="/backtest"         element={<BacktestExplorer />} />

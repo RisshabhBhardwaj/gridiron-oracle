@@ -167,6 +167,15 @@ class SeasonProjectionsResponse(BaseModel):
     data_freshness: datetime
 
 
+class SeasonWeekProjectionsResponse(BaseModel):
+    season:        int
+    start_week:    int
+    week:          int
+    count:         int
+    projections:   list[SeasonPlayerProjection]
+    data_freshness: datetime
+
+
 class TeamWinProjection(BaseModel):
     team:       str
     wins_mean:  float
@@ -380,6 +389,54 @@ def season_projections(
     return SeasonProjectionsResponse(
         season=season,
         start_week=start_week,
+        count=len(items),
+        projections=items,
+        data_freshness=datetime.now(timezone.utc),
+    )
+
+
+@router.get("/projections/season/{season}/weeks/{week}", response_model=SeasonWeekProjectionsResponse)
+@limiter.limit("20/minute")
+def season_week_projections(
+    request:        Request,
+    season:         int,
+    week:           int,
+    start_week:     int  = Query(default=1, ge=1, le=18, description="First week of simulated rest-of-season"),
+    positions:      list[str] = Query(default=["WR", "RB", "TE", "QB"]),
+    svc:            ProjectionService = Depends(_svc),
+) -> SeasonWeekProjectionsResponse:
+    """
+    Weekly projections for one forward week from a materialized SeasonSimulator run.
+    """
+    results = svc.get_season_week_projections(
+        season=season,
+        start_week=start_week,
+        week=week,
+        positions=positions,
+        stats=["passing_yards", "rushing_yards", "receiving_yards", "fantasy_ppr"],
+    )
+
+    items = []
+    for r in results:
+        kwargs = {
+            "player_id": r["player_id"],
+            "player_name": r["player_name"],
+            "position": r["position"],
+            "team": r.get("team"),
+            "degraded": bool(r.get("degraded", False)),
+            "interval_method": str(r.get("interval_method") or "unavailable"),
+            "p_active": r.get("p_active"),
+        }
+        for stat in ["passing_yards", "rushing_yards", "receiving_yards", "fantasy_ppr"]:
+            if stat in r:
+                kwargs[stat] = SeasonStatProjection(**r[stat])
+
+        items.append(SeasonPlayerProjection(**kwargs))
+
+    return SeasonWeekProjectionsResponse(
+        season=season,
+        start_week=start_week,
+        week=week,
         count=len(items),
         projections=items,
         data_freshness=datetime.now(timezone.utc),

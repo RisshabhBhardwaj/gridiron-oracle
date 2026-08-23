@@ -571,6 +571,102 @@ class ProjectionService:
         finally:
             conn.close()
 
+    def get_season_week_projections(
+        self,
+        season: int,
+        start_week: int,
+        week: int,
+        positions: list[str] | None = None,
+        stats: list[str] = ["passing_yards", "rushing_yards", "receiving_yards", "fantasy_ppr"],
+    ) -> list[dict]:
+        """
+        Weekly projections from a materialized SeasonSimulator run (season_simulation_weeks
+        joined to season_simulations). Gated by approved_pipeline_run_ids.
+        """
+        if start_week < 1 or start_week > 18:
+            raise HTTPException(status_code=400, detail="start_week must be in 1..18")
+        if week < 1 or week > 18:
+            raise HTTPException(status_code=400, detail="week must be in 1..18")
+        skill = [p.upper() for p in (positions or ["QB", "RB", "WR", "TE"])]
+        try:
+            approved = load_approved_pipeline_run_ids()
+            self._require_season_floor(season)
+            self._require_depth_chart_fresh(season)
+            simulated = self._load_season_simulation_week_rows(season, start_week, week, skill, stats, approved)
+            if simulated:
+                return self._rank_with_cold_start_guard(simulated)
+            return []
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Weekly season simulation unavailable ({exc})",
+            ) from exc
+
+    def _load_season_simulation_week_rows(
+        self,
+        season: int,
+        start_week: int,
+        week: int,
+        positions: list[str],
+        stats: list[str],
+        approved: frozenset[str],
+    ) -> list[dict]:
+        import psycopg2
+        import psycopg2.extras
+
+        conn = psycopg2.connect(self._db_url)
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT w.player_id, s.player_name, s.position, s.team, w.stat,
+                           w.mean, w.p10, w.p50, w.p90, s.p_active, s.prior_games,
+                           s.prior_active_games, s.depth_rank, s.degraded, s.interval_method
+                    FROM season_simulation_weeks w
+                    JOIN season_simulations s
+                      ON w.season = s.season
+                     AND w.start_week = s.start_week
+                     AND w.player_id = s.player_id
+                     AND w.pipeline_run_id = s.pipeline_run_id
+                    WHERE w.season = %s AND w.start_week = %s AND w.week = %s
+                      AND w.pipeline_run_id = ANY(%s)
+                      AND UPPER(COALESCE(s.position, '')) = ANY(%s)
+                    """,
+                    (season, start_week, week, list(approved), positions),
+                )
+                rows = [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+        by_player: dict[str, dict] = {}
+        for r in rows:
+            if r["stat"] not in stats:
+                continue
+            pid = str(r["player_id"])
+            item = by_player.setdefault(pid, {
+                "player_id": pid,
+                "player_name": r.get("player_name") or pid,
+                "position": r.get("position") or "",
+                "team": r.get("team"),
+                "prior_games": r.get("prior_games"),
+                "prior_active_games": r.get("prior_active_games"),
+                "depth_rank": r.get("depth_rank"),
+                "p_active": r.get("p_active"),
+                "degraded": bool(r.get("degraded", False)),
+                "interval_method": r.get("interval_method") or "season_simulator_mc",
+            })
+            item[r["stat"]] = {
+                "mean": r.get("mean"), "p10": r.get("p10"),
+                "p50": r.get("p50"), "p90": r.get("p90"),
+            }
+
+        out = list(by_player.values())
+        for item in out:
+            item["mean"] = float((item.get("fantasy_ppr") or {}).get("mean") or 0.0)
+        return out
+
     def _load_season_simulation_rows(
         self,
         season: int,
