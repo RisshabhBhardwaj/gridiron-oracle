@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
@@ -92,6 +94,70 @@ class TestPurgeStaleStagingPredicate:
         purge_stale_staging(cur, retention_days="7")
         sql = _normalized_sql(cur)
         assert "interval '7 days'" in sql
+
+    def test_default_retention_sql_matches_exact_normalized_text(self) -> None:
+        # A byte-for-byte pin (after whitespace normalization) so a mutation
+        # like swapping the final AND for OR fails a test outright, instead
+        # of merely failing to be caught by a substring check.
+        cur = _make_cursor(rowcount=0)
+        purge_stale_staging(cur)
+        sql = _normalized_sql(cur)
+        assert sql == (
+            "DELETE FROM staging_nflreadpy "
+            "WHERE processed "
+            "AND source_type <> 'rosters' "
+            "AND ingested_at < now() - interval '14 days'"
+        )
+
+
+class TestPurgeStaleStagingRetentionDaysGuard:
+    def test_negative_retention_days_raises(self) -> None:
+        # This is the core bug this guard exists to catch: interval '-1
+        # days' flips `ingested_at < now() - interval '-1 days'` into
+        # `ingested_at < now() + interval '1 days'`, which matches
+        # essentially every row instead of only stale ones.
+        cur = _make_cursor(rowcount=0)
+        with pytest.raises(ValueError):
+            purge_stale_staging(cur, retention_days=-1)
+        cur.execute.assert_not_called()
+
+    def test_zero_retention_days_raises(self) -> None:
+        cur = _make_cursor(rowcount=0)
+        with pytest.raises(ValueError):
+            purge_stale_staging(cur, retention_days=0)
+        cur.execute.assert_not_called()
+
+    def test_non_numeric_retention_days_raises(self) -> None:
+        cur = _make_cursor(rowcount=0)
+        with pytest.raises(ValueError):
+            purge_stale_staging(cur, retention_days="not-a-number")
+        cur.execute.assert_not_called()
+
+    def test_negative_numeric_string_retention_days_raises(self) -> None:
+        cur = _make_cursor(rowcount=0)
+        with pytest.raises(ValueError):
+            purge_stale_staging(cur, retention_days="-5")
+        cur.execute.assert_not_called()
+
+
+class TestPurgeStaleStagingLogging:
+    def test_string_retention_days_does_not_raise_typeerror_in_log_call(
+        self, caplog
+    ) -> None:
+        # Reproduces the bug: logger.info(..., "%d"..., retention_days) with
+        # an uncoerced string retention_days raises TypeError inside the
+        # logging call ("%d format: a real number is required, not str").
+        # Default logging error-handling swallows that TypeError silently
+        # under a plain `pytest` run, which is why a naive test wouldn't
+        # catch it — it only surfaces with --log-cli-level=INFO enabled, or
+        # by asserting caplog captured the record (as done here).
+        import logging
+
+        cur = _make_cursor(rowcount=3)
+        with caplog.at_level(logging.INFO, logger="pipeline.staging_retention"):
+            result = purge_stale_staging(cur, retention_days="7")
+        assert result == 3
+        assert any("deleted 3 row(s)" in r.message for r in caplog.records)
 
 
 class TestPurgeStaleStagingReturnValue:

@@ -58,12 +58,33 @@ def purge_stale_staging(cur, retention_days: int = DEFAULT_RETENTION_DAYS) -> in
     # days'` would still get quoted/escaped as a string, not spliced in as
     # the brief's literal `interval '14 days'`. The int() coercion is what
     # keeps this injection-safe despite the interpolation.
+    #
+    # A non-positive retention window is refused outright, same convention
+    # as scripts/prune_stale_pipeline_runs.py's load_keep_run_ids() guard
+    # against an empty keep set: `interval '-1 days'` flips the WHERE
+    # clause's `ingested_at < now() - interval '-1 days'` into
+    # `ingested_at < now() + interval '1 days'`, which matches essentially
+    # every row (including rows ingested moments ago), not just stale ones.
+    # `retention_days=0` is refused too — it purges everything already
+    # processed, which is never the intent of a "retention window".
+    try:
+        retention_days_int = int(retention_days)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"retention_days must be a positive integer; got {retention_days!r}"
+        ) from exc
+    if retention_days_int <= 0:
+        raise ValueError(
+            f"retention_days must be a positive integer; got {retention_days!r} "
+            "(a non-positive window would delete rows that aren't stale)"
+        )
+
     cur.execute(
         f"""
         DELETE FROM staging_nflreadpy
          WHERE processed
            AND source_type <> 'rosters'
-           AND ingested_at < now() - interval '{int(retention_days)} days'
+           AND ingested_at < now() - interval '{retention_days_int} days'
         """
     )
     deleted = cur.rowcount
@@ -71,6 +92,6 @@ def purge_stale_staging(cur, retention_days: int = DEFAULT_RETENTION_DAYS) -> in
         "purge_stale_staging: deleted %d row(s) from staging_nflreadpy "
         "(processed, source_type != 'rosters', older than %d day(s))",
         deleted,
-        retention_days,
+        retention_days_int,
     )
     return deleted
