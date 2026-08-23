@@ -115,6 +115,20 @@ def upsert_playerids(database_url: str) -> int:
 def _opt_str(value: object) -> str | None:
     if value is None:
         return None
+    # pandas reads numeric-ID columns (sleeper_id, espn_id, etc.) as float64
+    # whenever the source column contains NaN, so integer IDs arrive as
+    # Python floats (e.g. 13269.0) rather than ints or strings. str() on a
+    # float preserves the trailing ".0", which corrupts the id and breaks
+    # joins against tables that store the clean integer string (e.g.
+    # sleeper_league_draft_picks.player_id == "13269"). NaN itself must
+    # still map to None.
+    if isinstance(value, float):
+        if value != value:  # NaN != NaN
+            return None
+        if value.is_integer():
+            return str(int(value))
+        text = str(value).strip()
+        return text or None
     text = str(value).strip()
     return text or None
 
