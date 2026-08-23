@@ -41,10 +41,13 @@ COPY alembic.ini  /app/alembic.ini
 #   releases/candidates/…/CONSTRAINED_STACK_SELECTION.json ← ml.served_learner
 COPY releases     /app/releases
 COPY user_config.json /app/user_config.json
+COPY backend/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Build C++ engine
 RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
 
 EXPOSE 8000
-# Railway injects $PORT; fall back to 8000 for local docker-compose.
-CMD ["sh", "-c", "python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Seeds SETTINGS_FILE onto its volume when empty, then execs uvicorn.
+# Railway injects $PORT; falls back to 8000 for local docker-compose.
+CMD ["/app/entrypoint.sh"]
