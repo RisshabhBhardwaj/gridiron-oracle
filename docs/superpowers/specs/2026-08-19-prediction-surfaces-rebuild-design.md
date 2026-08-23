@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-19 · **Revision 2** (integrates `OSS_SWEEP_2026-08-19.md` + league settings)
 **Status:** design, awaiting review
-**Evidence base:** `PREDICTION_SURFACE_AUDIT_2026-08-19.md`, `OSS_SWEEP_2026-08-19.md`, both same tree `f7eb25f`
+**Evidence base:** `PREDICTION_SURFACE_AUDIT_2026-08-19.md`, `OSS_SWEEP_2026-08-19.md`, both same tree `f7eb25f` — held in the private archive (see `archive/INDEX.md`), not in this repository.
 
 ---
 

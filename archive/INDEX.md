@@ -12,6 +12,7 @@ Also stored outside the tree (local recovery only — never push):
 
 | Artifact | Location |
 |---|---|
+| Internal working docs (`remediation/`, adversarial audits) | `/Users/risshabh/Projects/Active/_gridiron_archive/internal-docs/` |
 | Private git history bundle | `/Users/risshabh/Projects/Active/_gridiron_archive/gridiron-private-history.bundle` |
 | Local `.claude/agents` backup | `/Users/risshabh/Projects/Active/_gridiron_archive/local-dotfiles/claude-agents/` |
 | Local `.vscode/settings.json` backup | `/Users/risshabh/Projects/Active/_gridiron_archive/local-dotfiles/vscode-settings.json` |
