@@ -447,10 +447,16 @@ def test_served_season_board_top200_have_recent_game_logs(db_conn):
     # real roster depth the depth-chart join already accounts for. A gap
     # back to Brady's 2022 or Roethlisberger's 2021 is what actually
     # signals a defect: a player with no recent NFL action at all.
+    #
+    # A player with NO game_logs row at all (last_season is None, not an
+    # old int) is a rookie who has never played an NFL snap — the opposite
+    # case from "stopped playing a long time ago", and a legitimate reason
+    # to be on a season board (cold-start priors, real roster spot). Only
+    # players with a REAL but old last-season are checked here.
     stale = [
         (r["player_name"], last_season.get(r["player_id"]))
         for r in top200
-        if last_season.get(r["player_id"], 0) < 2023
+        if last_season.get(r["player_id"]) is not None and last_season[r["player_id"]] < 2023
     ]
     assert not stale, f"players in top 200 with no game_logs since before 2023: {stale}"
 
