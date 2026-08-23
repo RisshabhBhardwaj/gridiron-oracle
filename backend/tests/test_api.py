@@ -816,6 +816,31 @@ class TestSeasonCurrent:
         # Must be a valid NFL week (1-22)
         assert 1 <= body["week"] <= 22
 
+    def test_season_current_queries_max_week_across_both_tables(self):
+        """
+        /season/current must take MAX(week) across `projections` AND
+        `season_simulation_weeks` — real weekly data for a season can live in
+        either table, and only unioning both avoids reporting a stale week 1
+        when `projections` alone has no rows for the current season's real
+        weeks (see task-9 brief).
+        """
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = (2026, 9)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("psycopg2.connect", return_value=mock_conn) as mock_connect:
+            r = client.get("/season/current")
+
+        assert mock_connect.called
+        executed_sql = mock_cursor.execute.call_args[0][0]
+        assert "season_simulation_weeks" in executed_sql
+        assert "UNION ALL" in executed_sql
+        assert "MAX(week)" in executed_sql
+
+        assert r.status_code == 200
+        assert r.json() == {"season": 2026, "week": 9}
+
 
 # ---------------------------------------------------------------------------
 # Z. API key middleware

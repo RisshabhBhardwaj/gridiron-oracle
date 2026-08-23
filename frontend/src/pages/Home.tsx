@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
-import { useWeekProjections } from '@/hooks/useWeekProjections'
+import { useSeasonProjections } from '@/hooks/useSeasonProjections'
 import { useSearch } from '@/context/SearchContext'
+import type { SearchablePlayer } from '@/context/SearchContext'
 import { CURRENT_SEASON, CURRENT_WEEK, POSITIONS, STAT_LABELS } from '@/lib/constants'
 
 const POS_COLORS: Record<string, string> = {
@@ -28,26 +29,36 @@ export function Home() {
     query, setQuery, results, setPlayers, setDefaults, open,
   } = useSearch()
 
-  const { data, isLoading } = useWeekProjections({
-    week,
+  const { data, isLoading } = useSeasonProjections({
     season,
-    stat: 'receiving_yards',
+    startWeek: 1,
     positions: [...POSITIONS],
   })
 
   useEffect(() => {
-    setDefaults({ week, season, stat: 'receiving_yards' })
+    setDefaults({ week, season, stat: 'fantasy_ppr' })
   }, [season, setDefaults, week])
 
   useEffect(() => {
-    if (data?.projections) setPlayers(data.projections)
+    if (!data?.projections) return
+    const searchablePlayers: SearchablePlayer[] = data.projections
+      .filter((p) => p.fantasy_ppr != null)
+      .map((p) => ({
+        player_id: p.player_id,
+        player_name: p.player_name,
+        position: p.position,
+        team: p.team,
+        stat: 'fantasy_ppr',
+        projection: p.fantasy_ppr!.mean,
+      }))
+    setPlayers(searchablePlayers)
   }, [data?.projections, setPlayers])
 
   const visibleResults = useMemo(() => results.slice(0, 6), [results])
   const showResults = focused && visibleResults.length > 0
 
   function selectPlayer(playerId: string, name: string, stat?: string) {
-    navigate(`/player/${playerId}?week=${week}&season=${season}&stat=${stat ?? 'receiving_yards'}&name=${encodeURIComponent(name)}`)
+    navigate(`/player/${playerId}?week=${week}&season=${season}&stat=${stat ?? 'fantasy_ppr'}&name=${encodeURIComponent(name)}`)
     setQuery('')
   }
 

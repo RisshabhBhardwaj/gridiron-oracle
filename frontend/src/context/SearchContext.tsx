@@ -2,7 +2,21 @@
  * SearchContext — global state for the command-palette player search overlay.
  */
 import { createContext, useCallback, useContext, useState, useEffect, type ReactNode } from 'react'
-import type { WeekPlayerProjection } from '@/types/api'
+
+/**
+ * Minimal shape the search overlay needs — deliberately narrower than any one
+ * projections response type so both week- and season-shaped data (which have
+ * different per-stat structures) can be fed in without null-padding fields
+ * the search UI never reads.
+ */
+export interface SearchablePlayer {
+  player_id: string
+  player_name: string
+  position: string
+  team: string | null
+  stat: string
+  projection: number
+}
 
 interface SearchCtx {
   isOpen: boolean
@@ -12,10 +26,10 @@ interface SearchCtx {
   query: string
   setQuery: (q: string) => void
   /** All players loaded from latest projections — set by Dashboard on load */
-  players: WeekPlayerProjection[]
-  setPlayers: (p: WeekPlayerProjection[]) => void
+  players: SearchablePlayer[]
+  setPlayers: (p: SearchablePlayer[]) => void
   /** Filtered subset matching query */
-  results: WeekPlayerProjection[]
+  results: SearchablePlayer[]
   defaultWeek: number
   defaultSeason: number
   defaultStat: string
@@ -27,7 +41,7 @@ const SearchContext = createContext<SearchCtx | null>(null)
 export function SearchProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen]   = useState(false)
   const [query, setQuery]     = useState('')
-  const [players, setPlayers] = useState<WeekPlayerProjection[]>([])
+  const [players, setPlayers] = useState<SearchablePlayer[]>([])
   const [defaults, setDefaultsState] = useState({ week: 1, season: 2025, stat: 'receiving_yards' })
 
   const setDefaults = useCallback((next: { week: number; season: number; stat: string }) => {

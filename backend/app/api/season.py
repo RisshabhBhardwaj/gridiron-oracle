@@ -34,8 +34,11 @@ def current_season() -> dict:
         conn = psycopg2.connect(settings.database_url)
         cur = conn.cursor()
         cur.execute(
-            "SELECT season, MAX(week) FROM projections "
-            "GROUP BY season ORDER BY season DESC LIMIT 1"
+            "SELECT season, MAX(week) FROM ("
+            "  SELECT season, week FROM projections"
+            "  UNION ALL"
+            "  SELECT season, week FROM season_simulation_weeks"
+            ") s GROUP BY season ORDER BY season DESC LIMIT 1"
         )
         row = cur.fetchone()
         conn.close()
