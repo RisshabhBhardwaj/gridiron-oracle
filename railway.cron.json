@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "//": "Config for the `weekly-refresh` cron service. Kept separate from railway.json because that file's healthcheckPath and ON_FAILURE restart policy belong to the long-running `api` service — a cron job serves no HTTP and must not be restarted on exit.",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "backend/Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "python3 /app/scripts/weekly_refresh.py",
+    "cronSchedule": "0 13 * * 2",
+    "restartPolicyType": "NEVER"
+  }
+}
