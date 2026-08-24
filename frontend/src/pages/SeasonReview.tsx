@@ -241,7 +241,10 @@ export function SeasonReview() {
                           }`}
                         >
                           {row.baseline_improvement_pct >= 0 ? '+' : ''}
-                          {(row.baseline_improvement_pct * 100).toFixed(1)}%
+                          {/* Already a percentage in the backtest artifact, unlike
+                              coverage_80 above, which is a fraction. Scaling it again
+                              rendered a -20.05% regression as -2005.1%. */}
+                          {row.baseline_improvement_pct.toFixed(1)}%
                         </span>
                       </td>
                     </tr>
