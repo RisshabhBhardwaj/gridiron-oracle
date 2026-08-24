@@ -14,7 +14,7 @@ import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { useSeasonProjections } from '@/hooks/useSeasonProjections'
-import { STATS, STAT_LABELS } from '@/lib/constants'
+import { STATS, STAT_LABELS, CURRENT_SEASON } from '@/lib/constants'
 import { useSearch } from '@/context/SearchContext'
 import { ApiError } from '@/lib/api-client'
 
@@ -54,7 +54,7 @@ export function PlayerDetail() {
   const { setBookLine } = useBetSlip()
 
   const week   = Number(searchParams.get('week')   ?? '1')
-  const season = Number(searchParams.get('season') ?? '2025')
+  const season = Number(searchParams.get('season') ?? String(CURRENT_SEASON))
   const stat   = searchParams.get('stat')   ?? 'receiving_yards'
   const name   = searchParams.get('name')   ?? ''
 
@@ -95,6 +95,26 @@ export function PlayerDetail() {
       setBookLine(activeSlipId, bookLine)
     }
   }, [activeSlipId, bookLine, setBookLine])
+
+  if (!name) {
+    return (
+      <div className="flex flex-col gap-4">
+        <button
+          onClick={() => navigate('/')}
+          className="self-start text-xs font-medium text-oracle-muted hover:text-oracle-white transition-colors"
+        >
+          Back to Home
+        </button>
+        <div className="rounded-xl border border-oracle-border bg-oracle-card p-6">
+          <p className="text-sm font-semibold text-oracle-white">No player selected</p>
+          <p className="mt-1 text-xs text-oracle-muted">
+            This page is opened from search, which supplies the player name in the URL.
+            Search for a player from the home page to see their projection.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6">
