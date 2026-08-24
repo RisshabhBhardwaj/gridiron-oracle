@@ -33,17 +33,39 @@ def current_season() -> dict:
 
         conn = psycopg2.connect(settings.database_url)
         cur = conn.cursor()
+        # Two different questions, deliberately answered from two sources.
+        #
+        # *Which season* is the latest one we hold data for: the union of both
+        # projection surfaces, because 2026 lives almost entirely in
+        # season_simulation_weeks and only marginally in projections.
         cur.execute(
-            "SELECT season, MAX(week) FROM ("
-            "  SELECT season, week FROM projections"
+            "SELECT season FROM ("
+            "  SELECT season FROM projections"
             "  UNION ALL"
-            "  SELECT season, week FROM season_simulation_weeks"
+            "  SELECT season FROM season_simulation_weeks"
             ") s GROUP BY season ORDER BY season DESC LIMIT 1"
         )
         row = cur.fetchone()
+        if not row:
+            conn.close()
+            return {"season": datetime.now().year, "week": 1}
+        season = int(row[0])
+
+        # *Which week* it currently is: the schedule, never MAX(week) over the
+        # projection tables. Those tables hold all 18 weeks the moment a season
+        # is materialised, so MAX(week) reported week 18 in August — which the
+        # frontend then used as every selector's default. Same derivation as
+        # scripts/weekly_refresh.py:resolve_season_and_week.
+        cur.execute(
+            "SELECT COALESCE(MAX(week), 0) FROM games "
+            "WHERE season = %s AND kickoff_at < NOW()",
+            (season,),
+        )
+        played = cur.fetchone()
         conn.close()
-        if row:
-            return {"season": int(row[0]), "week": int(row[1])}
+        completed_week = int(played[0]) if played and played[0] is not None else 0
+        week = min(max(completed_week + 1, 1), 18)
+        return {"season": season, "week": week}
     except Exception:
         pass
 

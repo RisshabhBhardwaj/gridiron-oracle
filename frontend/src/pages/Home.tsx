@@ -11,9 +11,13 @@ const POS_COLORS: Record<string, string> = {
   WR: '#59a6ff', RB: '#42d889', TE: '#b789ff', QB: '#ffb84d',
 }
 
+// Labels must track NavBar's NAV_LINKS — /projections and /season were
+// repointed at CurrentSeason and SeasonReview, and the hero kept advertising
+// the old destinations.
 const QUICK_LINKS = [
-  { to: '/projections', label: 'All Projections', meta: 'Weekly player board' },
-  { to: '/season', label: 'Season Projections', meta: 'Rest-of-season totals' },
+  { to: '/projections', label: 'Current Season', meta: 'Weekly boards, team wins, and game forecasts' },
+  { to: '/season', label: 'Season Review', meta: 'Predicted vs. actual accuracy' },
+  { to: '/draft', label: 'Draft', meta: 'VOR board and mock drafts' },
   { to: '/backtest', label: 'Backtesting', meta: 'Accuracy and calibration' },
 ]
 
@@ -21,9 +25,10 @@ export function Home() {
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const [focused, setFocused] = useState(false)
-  const { data: currentSeasonData } = useCurrentSeason()
+  const { data: currentSeasonData, isPlaceholderData } = useCurrentSeason()
   const week = currentSeasonData?.week ?? CURRENT_WEEK
   const season = currentSeasonData?.season ?? CURRENT_SEASON
+  const seasonResolved = !isPlaceholderData
 
   const {
     query, setQuery, results, setPlayers, setDefaults, open,
@@ -33,6 +38,7 @@ export function Home() {
     season,
     startWeek: 1,
     positions: [...POSITIONS],
+    enabled: seasonResolved,
   })
 
   useEffect(() => {

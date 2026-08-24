@@ -5,10 +5,12 @@ import type { SeasonTeamWinsResponse } from '../types/api'
 interface Params {
   season: number
   startWeek?: number
+  /** Hold the request until the caller has a real season (see useCurrentSeason). */
+  enabled?: boolean
 }
 
 export function useTeamWins(params: Params) {
-  const { season, startWeek = 1 } = params
+  const { season, startWeek = 1, enabled = true } = params
 
   return useQuery({
     queryKey: ['teamWins', season, startWeek],
@@ -20,6 +22,6 @@ export function useTeamWins(params: Params) {
       )
     },
     staleTime: 1000 * 60 * 5,
-    enabled: Boolean(season),
+    enabled: enabled && Boolean(season),
   })
 }

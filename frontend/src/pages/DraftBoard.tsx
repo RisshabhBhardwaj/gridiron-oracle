@@ -219,6 +219,11 @@ export function DraftBoard() {
             <h2 className="text-xs font-bold uppercase tracking-wider text-oracle-white">
               8-Team Draft Order & Leaguemate Tendencies
             </h2>
+            {!profilesLoading && draftOrder.length !== 8 && (
+              <p className="text-[11px] text-oracle-red/80">
+                Manager profiles unavailable — a mock draft needs all 8 leaguemates.
+              </p>
+            )}
             <div className="flex items-center gap-3">
               <label className="text-xs text-oracle-muted">Your Draft Slot:</label>
               <select
@@ -238,7 +243,7 @@ export function DraftBoard() {
                 <button
                   onClick={handleStartDraft}
                   disabled={profilesLoading || draftOrder.length !== 8}
-                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-oracle-green text-oracle-dark hover:brightness-110 shadow"
+                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-oracle-green text-oracle-dark hover:brightness-110 shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
                 >
                   Start Mock Draft
                 </button>

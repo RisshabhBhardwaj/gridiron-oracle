@@ -5,10 +5,12 @@ import type { PairedGame, TeamGamePrediction, TeamGameWeekResponse } from '../ty
 interface Params {
   season: number
   week: number
+  /** Hold the request until the caller has a real season (see useCurrentSeason). */
+  enabled?: boolean
 }
 
 export function useTeamGames(params: Params) {
-  const { season, week } = params
+  const { season, week, enabled = true } = params
 
   return useQuery({
     queryKey: ['teamGames', season, week],
@@ -53,6 +55,6 @@ export function useTeamGames(params: Params) {
       return pairs
     },
     staleTime: 1000 * 60 * 5,
-    enabled: Boolean(season && week),
+    enabled: enabled && Boolean(season && week),
   })
 }

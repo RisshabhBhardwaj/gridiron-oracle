@@ -40,6 +40,18 @@ function PlayerCard({ row, onClick, statKey }: PlayerCardProps) {
   const floor = statData?.p10 ?? null
   const ceiling = statData?.p90 ?? null
 
+  // The simulator's weekly distributions are zero-inflated: a player who is
+  // inactive in a minority of paths gets a point mass at 0 that drags the mean
+  // below p10 (or, for a stat he rarely records at all, above p90). That is a
+  // real property of the model, not a bug — but a headline number printed
+  // outside the interval directly beneath it reads as broken, so say why.
+  const meanOutsideBand =
+    (floor != null && projection < floor) || (ceiling != null && projection > ceiling)
+  const bandTitle = meanOutsideBand
+    ? 'The mean falls outside the middle 80% because this stat is zero-inflated: ' +
+      'some simulated paths have the player inactive or not recording the stat at all.'
+    : undefined
+
   if (!statData) return null
 
   return (
@@ -82,8 +94,13 @@ function PlayerCard({ row, onClick, statKey }: PlayerCardProps) {
             style={{ width: '100%', background: `linear-gradient(90deg, rgba(255,59,92,0.6) 0%, ${posColor}80 50%, rgba(0,255,163,0.6) 100%)` }}
           />
         </div>
-        <div className="flex justify-between font-mono text-[10px] text-oracle-muted">
+        <div className="flex justify-between font-mono text-[10px] text-oracle-muted" title={bandTitle}>
           <span>{floor != null ? `${floor.toFixed(1)} (p10)` : '—'}</span>
+          {meanOutsideBand && (
+            <span className="text-oracle-muted/70" aria-label="mean outside middle 80 percent">
+              zero-inflated
+            </span>
+          )}
           <span>{ceiling != null ? `${ceiling.toFixed(1)} (p90)` : '—'}</span>
         </div>
       </div>
@@ -93,7 +110,12 @@ function PlayerCard({ row, onClick, statKey }: PlayerCardProps) {
 
 export function CurrentSeason() {
   const navigate = useNavigate()
-  const { data: seasonMeta } = useCurrentSeason()
+  // isPlaceholderData is true while /season/current is still in flight, during
+  // which `season` is the offline fallback. Firing the child queries against it
+  // produced a full duplicate request set for the wrong season on every mount,
+  // including a /team-games 404 in the console.
+  const { data: seasonMeta, isPlaceholderData } = useCurrentSeason()
+  const seasonResolved = !isPlaceholderData
   const season = seasonMeta?.season ?? CURRENT_SEASON
   const currentWeek = seasonMeta?.week ?? 1
 
@@ -115,22 +137,26 @@ export function CurrentSeason() {
     week: selectedWeek,
     startWeek,
     positions: selectedPositions,
+    enabled: seasonResolved,
   })
 
   const seasonQuery = useSeasonProjections({
     season,
     startWeek,
     positions: selectedPositions,
+    enabled: seasonResolved,
   })
 
   const teamWinsQuery = useTeamWins({
     season,
     startWeek,
+    enabled: seasonResolved,
   })
 
   const teamGamesQuery = useTeamGames({
     season,
     week: selectedWeek,
+    enabled: seasonResolved,
   })
 
   const { setPlayers, setDefaults } = useSearch()

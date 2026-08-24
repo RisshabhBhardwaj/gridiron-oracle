@@ -8,7 +8,7 @@ import { BacktestPanel } from '@/components/BacktestPanel'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
-import { POSITIONS, STATS, STAT_LABELS } from '@/lib/constants'
+import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
 import clsx from 'clsx'
 
 const POS_COLORS: Record<string, string> = {
@@ -108,7 +108,7 @@ export function BacktestExplorer() {
         style={{ background: 'rgba(13,27,48,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}
       >
         <select value={stat} onChange={(e) => setStat(e.target.value)} className="oracle-select">
-          {STATS.map((s) => <option key={s} value={s}>{STAT_LABELS[s]}</option>)}
+          {BACKTEST_STATS.map((s) => <option key={s} value={s}>{STAT_LABELS[s]}</option>)}
         </select>
 
         <div className="flex items-center gap-1.5">

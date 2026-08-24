@@ -15,6 +15,18 @@ const OUTCOME_STYLES: Record<string, { bg: string; text: string; label: string }
   SAFETY: { bg: 'bg-purple-500/20 border-purple-500/40', text: 'text-purple-400', label: 'Safety' },
 }
 
+/**
+ * Field position is stored as yards from the possessing team's own goal line
+ * (0-100). Football notation flips at midfield, so 95 is "Opp 5", not the
+ * "Own 95" the timeline was printing.
+ */
+function formatFieldPos(yardsFromOwnGoal: number): string {
+  if (yardsFromOwnGoal >= 100) return 'Endzone'
+  if (yardsFromOwnGoal > 50) return `Opp ${100 - yardsFromOwnGoal}`
+  if (yardsFromOwnGoal === 50) return 'Midfield'
+  return `Own ${yardsFromOwnGoal}`
+}
+
 export function GameDetail() {
   const { gameId } = useParams<{ gameId: string }>()
   const [seed, setSeed] = useState<number | undefined>(undefined)
@@ -189,7 +201,7 @@ export function GameDetail() {
                           {drive.possession_team}
                         </span>
                         <span className="text-xs text-oracle-muted font-mono">
-                          Own {drive.start_field_pos} → {drive.end_field_pos >= 100 ? 'Endzone' : `Own ${drive.end_field_pos}`}
+                          {formatFieldPos(drive.start_field_pos)} → {formatFieldPos(drive.end_field_pos)}
                         </span>
                       </div>
 
@@ -230,7 +242,7 @@ export function GameDetail() {
                                 <td className="py-1.5 px-2 text-oracle-white">
                                   {play.down}&amp;{play.ytg}
                                 </td>
-                                <td className="py-1.5 px-2 text-oracle-muted">Own {play.field_pos}</td>
+                                <td className="py-1.5 px-2 text-oracle-muted">{formatFieldPos(play.field_pos)}</td>
                                 <td className="py-1.5 px-2 uppercase font-semibold text-oracle-muted">
                                   {play.play_type}
                                 </td>

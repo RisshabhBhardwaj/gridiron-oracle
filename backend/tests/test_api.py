@@ -816,16 +816,14 @@ class TestSeasonCurrent:
         # Must be a valid NFL week (1-22)
         assert 1 <= body["week"] <= 22
 
-    def test_season_current_queries_max_week_across_both_tables(self):
+    def test_season_current_takes_season_from_both_projection_tables(self):
         """
-        /season/current must take MAX(week) across `projections` AND
-        `season_simulation_weeks` — real weekly data for a season can live in
-        either table, and only unioning both avoids reporting a stale week 1
-        when `projections` alone has no rows for the current season's real
-        weeks (see task-9 brief).
+        The *season* must come from the union of `projections` and
+        `season_simulation_weeks`: real data for a season can live in either,
+        and 2026 lives almost entirely in the latter.
         """
         mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = (2026, 9)
+        mock_cursor.fetchone.side_effect = [(2026,), (8,)]
         mock_conn = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
 
@@ -833,13 +831,61 @@ class TestSeasonCurrent:
             r = client.get("/season/current")
 
         assert mock_connect.called
-        executed_sql = mock_cursor.execute.call_args[0][0]
-        assert "season_simulation_weeks" in executed_sql
-        assert "UNION ALL" in executed_sql
-        assert "MAX(week)" in executed_sql
+        season_sql = mock_cursor.execute.call_args_list[0][0][0]
+        assert "season_simulation_weeks" in season_sql
+        assert "UNION ALL" in season_sql
 
         assert r.status_code == 200
-        assert r.json() == {"season": 2026, "week": 9}
+        assert r.json()["season"] == 2026
+
+    def test_season_current_takes_week_from_the_schedule_not_the_projections(self):
+        """
+        The *week* must come from kickoffs in `games`, never MAX(week) over the
+        projection tables.
+
+        Those tables hold all 18 weeks the moment a season is materialised, so
+        MAX(week) reported week 18 in August — and the frontend used that as the
+        default for every week selector on the site.
+        """
+        mock_cursor = MagicMock()
+        # Latest season 2026; 7 weeks kicked off so far -> current week is 8.
+        mock_cursor.fetchone.side_effect = [(2026,), (7,)]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("psycopg2.connect", return_value=mock_conn):
+            r = client.get("/season/current")
+
+        week_sql = mock_cursor.execute.call_args_list[1][0][0]
+        assert "games" in week_sql
+        assert "kickoff_at" in week_sql
+        assert "season_simulation_weeks" not in week_sql
+
+        assert r.json() == {"season": 2026, "week": 8}
+
+    def test_season_current_returns_week_1_before_any_kickoff(self):
+        """Preseason: no games have kicked off, so the current week is 1."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.side_effect = [(2026,), (0,)]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("psycopg2.connect", return_value=mock_conn):
+            r = client.get("/season/current")
+
+        assert r.json() == {"season": 2026, "week": 1}
+
+    def test_season_current_clamps_week_at_18_after_the_regular_season(self):
+        """Week 18 is the last regular-season week; 19 is not a selectable week."""
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.side_effect = [(2026,), (18,)]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch("psycopg2.connect", return_value=mock_conn):
+            r = client.get("/season/current")
+
+        assert r.json() == {"season": 2026, "week": 18}
 
 
 # ---------------------------------------------------------------------------

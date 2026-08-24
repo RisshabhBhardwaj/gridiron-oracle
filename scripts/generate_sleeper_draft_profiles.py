@@ -100,7 +100,14 @@ def build_profiles(rows: list[dict[str, Any]], names: dict[str, str]) -> dict[st
         raw_profiles.append({
             "owner_id": owner_id,
             "display_name": names.get(owner_id, owner_id),
-            "draft_slot": picks[0].get("draft_slot") if picks else None,
+            # Seed the UI's draft order from the manager's slot in the most
+            # recent draft. `picks` is ordered by (draft_id, pick_no), and
+            # draft_id is an opaque Sleeper string — picks[0] was therefore an
+            # arbitrary historical slot, not the current one.
+            "draft_slot": (
+                max(picks, key=lambda pk: (pk.get("season") or 0)).get("draft_slot")
+                if picks else None
+            ),
             "drafts": len(by_draft),
             "picks": len(picks),
             "positions": dict(sorted(position_counts.items())),

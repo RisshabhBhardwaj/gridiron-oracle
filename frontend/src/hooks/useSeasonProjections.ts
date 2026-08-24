@@ -5,6 +5,8 @@ interface UseSeasonProjectionsParams {
   season: number
   startWeek: number
   positions?: string[]
+  /** Hold the request until the caller has a real season (see useCurrentSeason). */
+  enabled?: boolean
 }
 
 async function fetchSeasonProjections({
@@ -31,5 +33,6 @@ export function useSeasonProjections(params: UseSeasonProjectionsParams) {
     queryFn: () => fetchSeasonProjections(params),
     staleTime: 1000 * 60 * 5, // 5 minutes
     retry: 1,
+    enabled: params.enabled ?? true,
   })
 }

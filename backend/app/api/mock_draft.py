@@ -75,7 +75,12 @@ def get_mock_draft_profiles(
 ) -> MockDraftProfilesResponse:
     """Fetch 8 manager tendency profiles with empirical Bayes shrinkage."""
     try:
-        data = load_profiles(settings.database_url, seasons=[season])
+        # Profiles describe *historical* manager behaviour, so they must be
+        # built from the drafts that already happened — never from `season`,
+        # which is the season being mocked and has no draft yet. Passing
+        # seasons=[2026] silently produced zero profiles and left the mock
+        # draft UI with an empty manager list.
+        data = load_profiles(settings.database_url)
         profiles_raw = data.get("profiles", [])
         profiles = []
         for p in profiles_raw:

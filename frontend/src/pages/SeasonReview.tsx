@@ -3,7 +3,7 @@ import { useBacktest } from '@/hooks/useBacktest'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
-import { POSITIONS, STATS, STAT_LABELS } from '@/lib/constants'
+import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
 
 const POS_COLORS: Record<string, string> = {
   WR: '#00C2FF',
@@ -45,7 +45,10 @@ function MetricCard({
 
 export function SeasonReview() {
   const [selectedSeason, setSelectedSeason] = useState<number>(2025)
-  const [selectedStat, setSelectedStat] = useState<string>('fantasy_ppr')
+  // Must be a stat the shipped backtest artifact actually covers. fantasy_ppr
+  // is not in it, so the page's default request returned 503 and every metric
+  // rendered as an em-dash. See BACKTEST_STATS.
+  const [selectedStat, setSelectedStat] = useState<string>('receiving_yards')
   const [selectedPositions, setSelectedPositions] = useState<string[]>(['WR', 'RB', 'TE', 'QB'])
 
   const { data: backtest, isLoading, error } = useBacktest({
@@ -117,7 +120,7 @@ export function SeasonReview() {
             onChange={(e) => setSelectedStat(e.target.value)}
             className="oracle-select bg-oracle-surface border border-oracle-border text-xs rounded-lg px-2.5 py-1.5 text-oracle-white"
           >
-            {STATS.map((s) => (
+            {BACKTEST_STATS.map((s) => (
               <option key={s} value={s}>
                 {STAT_LABELS[s] || s}
               </option>

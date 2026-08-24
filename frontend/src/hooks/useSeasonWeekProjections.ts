@@ -7,10 +7,12 @@ interface Params {
   week: number
   startWeek?: number
   positions?: string[]
+  /** Hold the request until the caller has a real season (see useCurrentSeason). */
+  enabled?: boolean
 }
 
 export function useSeasonWeekProjections(params: Params) {
-  const { season, week, startWeek = 1, positions } = params
+  const { season, week, startWeek = 1, positions, enabled = true } = params
 
   return useQuery({
     queryKey: ['seasonWeekProjections', season, startWeek, week, positions],
@@ -25,6 +27,6 @@ export function useSeasonWeekProjections(params: Params) {
       )
     },
     staleTime: 1000 * 60 * 5,
-    enabled: Boolean(season && week),
+    enabled: enabled && Boolean(season && week),
   })
 }

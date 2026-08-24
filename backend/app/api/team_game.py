@@ -22,7 +22,7 @@ silently corrupt a prediction — it just loses that one feature's signal.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import psycopg2
 import psycopg2.extras
@@ -199,9 +199,84 @@ class GameDriveSimResponse(BaseModel):
     summary: GameSimSummary
     drives: list[SimulatedDriveDTO]
     note: str = (
-        "Reconciles play-by-play Markov drive paths to the fitted Ridge team-game anchor. "
-        "Drives alternate dynamically with game state (score diff, quarter) driving play calling."
+        "The score comes from the fitted Ridge team-game model, not from this drive chain: "
+        "drive outcomes are rescaled so each team's narrated points equal its forecast total "
+        "(quantised to 7s and 3s, so the narration can land a point or two off a fractional "
+        "forecast). The Markov sampler chooses only which drives moved the ball and what the "
+        "plays looked like. Invented, not fitted: drives per team (fixed at 11), possession "
+        "alternation, quarter assignment by drive index, post-outcome field position, punt "
+        "distance, and field-goal success. There is no clock model, no kickoffs or returns, "
+        "no extra points or two-point plays, and no overtime."
     )
+
+
+# ---------------------------------------------------------------------------
+# Anchor reconciliation
+# ---------------------------------------------------------------------------
+#
+# The fitted Ridge team-game model owns the score. The Markov drive sampler
+# only decides *which* drives scored and what the plays looked like getting
+# there. Without this step the chain free-runs and routinely contradicts the
+# very anchor shown beside it -- a 6-36 narration under a 23.5-19.8 forecast,
+# with a "winner" that disagrees with the win probability on the same screen.
+# Two numbers for one game, one fitted and one invented, is the worst
+# available outcome, so the narration is rescaled onto the forecast.
+
+_TD_POINTS = 7
+_FG_POINTS = 3
+
+
+def _achievable_target(anchor_points: float, n_drives: int) -> tuple[int, int]:
+    """
+    Pick (touchdowns, field_goals) summing as close as possible to the fitted
+    points, subject to fitting inside the drives this team actually had.
+
+    Scores are quantised to {7a + 3b}, so not every total is reachable -- 1, 2,
+    4 and 5 are not expressible at all. Ties break toward fewer scoring drives,
+    which stops the narration inventing extra red-zone trips.
+    """
+    best: tuple[float, int, int, int] | None = None
+    for td in range(0, n_drives + 1):
+        for fg in range(0, n_drives - td + 1):
+            total = _TD_POINTS * td + _FG_POINTS * fg
+            cand = (abs(total - anchor_points), td + fg, td, fg)
+            if best is None or cand[:2] < best[:2]:
+                best = cand
+    if best is None:
+        return 0, 0
+    return best[2], best[3]
+
+
+def _reconcile_team_drives(team_drives: list, anchor_points: float) -> None:
+    """
+    Rewrite one team's drive outcomes in place so they sum to the fitted total.
+
+    Drives that finished deepest in opposition territory are promoted first, so
+    the drives the sampler actually moved the ball on are the ones that reach
+    the scoreboard.
+    """
+    if not team_drives:
+        return
+
+    n_td, n_fg = _achievable_target(anchor_points, len(team_drives))
+    ranked = sorted(
+        team_drives,
+        key=lambda d: (d.end_field_pos, d.yards_gained),
+        reverse=True,
+    )
+
+    for idx, drive in enumerate(ranked):
+        if idx < n_td:
+            drive.outcome = "TOUCHDOWN"
+            drive.points_scored = _TD_POINTS
+        elif idx < n_td + n_fg:
+            drive.outcome = "FIELD_GOAL"
+            drive.points_scored = _FG_POINTS
+        else:
+            # Demote anything the sampler scored that the anchor cannot afford.
+            if drive.outcome in ("TOUCHDOWN", "FIELD_GOAL"):
+                drive.outcome = "PUNT"
+            drive.points_scored = 0
 
 
 @router.get("/games/{game_id}/drive-sim", response_model=GameDriveSimResponse)
@@ -268,10 +343,12 @@ def simulate_game_drives(
     total_drives = n_drives_per_team * 2
     drives_dtos: list[SimulatedDriveDTO] = []
 
-    home_score = 0
-    away_score = 0
     home_yards = 0.0
     away_yards = 0.0
+    # (possession_team, SimulatedDrive) in play order. The scoreboard is not
+    # accumulated here -- outcomes are reconciled to the fitted anchor first
+    # (see _reconcile_team_drives), then the running score is derived.
+    sim_drives: list[tuple[str, int, Any]] = []
 
     curr_possession = away_team  # Away receives opening kickoff
     curr_start_fp = 25
@@ -292,7 +369,13 @@ def simulate_game_drives(
             curr_possession = home_team
             curr_start_fp = 25
 
-        score_diff = (home_score - away_score) if curr_possession == home_team else (away_score - home_score)
+        # The running score is not known until reconciliation, so condition the
+        # transition table on the fitted expected margin, ramped in by game
+        # progress. This is a proxy and is named as such in the response note.
+        progress = d_num / max(total_drives, 1)
+        expected_margin = anchor.home_points - anchor.away_points
+        signed = expected_margin if curr_possession == home_team else -expected_margin
+        score_diff = int(round(signed * progress))
 
         drive_sim = simulate_drive_path(
             start_fp=curr_start_fp,
@@ -304,13 +387,46 @@ def simulate_game_drives(
         )
 
         if curr_possession == home_team:
-            home_score += drive_sim.points_scored
             home_yards += drive_sim.yards_gained
         else:
-            away_score += drive_sim.points_scored
             away_yards += drive_sim.yards_gained
 
-        # Convert plays to DTOs
+        sim_drives.append((curr_possession, qtr, drive_sim))
+
+        # Switch possession & determine next start field position
+        if drive_sim.outcome in ("TOUCHDOWN", "FIELD_GOAL", "SAFETY"):
+            curr_start_fp = 25  # Touchback after kickoff
+        elif drive_sim.outcome == "PUNT":
+            # Punt distance approx 40 yards
+            punt_landing = drive_sim.end_field_pos + int(rng.normal(42, 5))
+            if punt_landing >= 100:
+                curr_start_fp = 20  # Touchback
+            else:
+                curr_start_fp = max(10, 100 - punt_landing)
+        else:
+            # Turnover on downs or fumble/INT
+            curr_start_fp = max(10, min(90, 100 - drive_sim.end_field_pos))
+
+        curr_possession = home_team if curr_possession == away_team else away_team
+
+    # Reconcile the narration to the fitted anchor, then derive the scoreboard
+    # from the reconciled outcomes. The drive sampler chose which drives moved
+    # the ball; the Ridge model decides what that was worth.
+    _reconcile_team_drives(
+        [d for team, _, d in sim_drives if team == home_team], anchor.home_points
+    )
+    _reconcile_team_drives(
+        [d for team, _, d in sim_drives if team == away_team], anchor.away_points
+    )
+
+    home_score = 0
+    away_score = 0
+    for d_num, (team, qtr, drive_sim) in enumerate(sim_drives, start=1):
+        if team == home_team:
+            home_score += drive_sim.points_scored
+        else:
+            away_score += drive_sim.points_scored
+
         play_dtos = [
             SimulatedPlayDTO(
                 play_number=p.play_number,
@@ -331,7 +447,7 @@ def simulate_game_drives(
         drives_dtos.append(
             SimulatedDriveDTO(
                 drive_number=d_num,
-                possession_team=curr_possession,
+                possession_team=team,
                 quarter=qtr,
                 start_field_pos=drive_sim.start_field_pos,
                 end_field_pos=drive_sim.end_field_pos,
@@ -344,22 +460,6 @@ def simulate_game_drives(
                 plays=play_dtos,
             )
         )
-
-        # Switch possession & determine next start field position
-        if drive_sim.outcome in ("TOUCHDOWN", "FIELD_GOAL", "SAFETY"):
-            curr_start_fp = 25  # Touchback after kickoff
-        elif drive_sim.outcome == "PUNT":
-            # Punt distance approx 40 yards
-            punt_landing = drive_sim.end_field_pos + int(rng.normal(42, 5))
-            if punt_landing >= 100:
-                curr_start_fp = 20  # Touchback
-            else:
-                curr_start_fp = max(10, 100 - punt_landing)
-        else:
-            # Turnover on downs or fumble/INT
-            curr_start_fp = max(10, min(90, 100 - drive_sim.end_field_pos))
-
-        curr_possession = home_team if curr_possession == away_team else away_team
 
     winner = home_team if home_score > away_score else (away_team if away_score > home_score else "TIE")
 
