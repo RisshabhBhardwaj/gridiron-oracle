@@ -31,7 +31,7 @@ if str(ROOT) not in sys.path:
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.orchestrator import Orchestrator, _write_dead_letter
 from pipeline.schema import normalize_dsn
-from pipeline.staging_retention import purge_stale_staging
+from pipeline.staging_retention import purge_processed_staging, purge_stale_staging
 from scraper.adapters.ff_playerids import upsert_playerids
 from scripts.prune_stale_pipeline_runs import (
     SEASON_START_WEEK_TABLES,
@@ -318,6 +318,14 @@ def run_weekly_refresh(
         logger.info("Step 9: Running staging retention and pipeline run pruning...")
         with psycopg2.connect(dsn) as conn:
             with conn.cursor() as cur:
+                # Two sweeps, deliberately. purge_processed_staging clears
+                # the high-volume capture payloads as soon as normalize has
+                # consumed them: one depth-chart capture stages ~469k rows /
+                # 242 MB against a 512 MB database, all ingested the same
+                # day, so the age-gated sweep below can never reach them and
+                # the next capture would run the database out of space.
+                n_immediate = purge_processed_staging(cur)
+                logger.info("Staging purge (processed, high-volume) removed %d rows.", n_immediate)
                 n_purged = purge_stale_staging(cur)
                 logger.info("Staging retention purged %d processed rows.", n_purged)
                 keep_ids = load_keep_run_ids()

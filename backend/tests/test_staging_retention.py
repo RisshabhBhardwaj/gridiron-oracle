@@ -178,3 +178,64 @@ class TestPurgeStaleStagingUsesGivenCursor(object):
         result = purge_stale_staging(cur)
         assert result == 5
         cur.execute.assert_called_once()
+
+
+class TestPurgeProcessedStaging:
+    """
+    The age-gated sweep above cannot reclaim a same-day capture, and on the
+    512 MB serving database one depth-chart capture is 469k rows / 242 MB.
+    purge_processed_staging is the sweep that can, so the two invariants
+    that keep it safe -- `processed` still required, `rosters` never
+    touched -- are asserted here rather than left to review.
+    """
+
+    def test_requires_processed_true_not_negated(self) -> None:
+        from pipeline.staging_retention import purge_processed_staging
+
+        cur = _make_cursor(rowcount=0)
+        purge_processed_staging(cur)
+        sql = _normalized_sql(cur)
+        assert "WHERE processed AND" in sql
+        assert "NOT processed" not in sql
+
+    def test_has_no_age_gate(self) -> None:
+        from pipeline.staging_retention import purge_processed_staging
+
+        cur = _make_cursor(rowcount=0)
+        purge_processed_staging(cur)
+        assert "ingested_at" not in _normalized_sql(cur)
+
+    def test_default_source_types_exclude_rosters(self) -> None:
+        # pipeline/provenance.py reads roster payloads back with no
+        # `processed` filter, so a roster row is never safe to purge by
+        # source type -- see purge_stale_staging's carve-out.
+        from pipeline.staging_retention import (
+            HIGH_VOLUME_SOURCE_TYPES,
+            purge_processed_staging,
+        )
+
+        assert "rosters" not in HIGH_VOLUME_SOURCE_TYPES
+        cur = _make_cursor(rowcount=0)
+        purge_processed_staging(cur)
+        assert "rosters" not in cur.execute.call_args[0][1][0]
+
+    def test_rosters_cannot_be_requested_explicitly(self) -> None:
+        from pipeline.staging_retention import purge_processed_staging
+
+        cur = _make_cursor(rowcount=0)
+        with pytest.raises(ValueError, match="rosters"):
+            purge_processed_staging(cur, source_types=("depth_charts", "rosters"))
+        cur.execute.assert_not_called()
+
+    def test_empty_source_types_is_a_no_op(self) -> None:
+        from pipeline.staging_retention import purge_processed_staging
+
+        cur = _make_cursor(rowcount=0)
+        assert purge_processed_staging(cur, source_types=()) == 0
+        cur.execute.assert_not_called()
+
+    def test_returns_rowcount(self) -> None:
+        from pipeline.staging_retention import purge_processed_staging
+
+        cur = _make_cursor(rowcount=469064)
+        assert purge_processed_staging(cur) == 469064

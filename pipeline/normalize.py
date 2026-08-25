@@ -104,6 +104,7 @@ from scraper.adapters.nflreadpy_adapter import (
     _coerce_row,
     _psycopg2_dsn,
 )
+from pipeline.staging_retention import HIGH_VOLUME_SOURCE_TYPES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -510,9 +511,37 @@ class Normalizer:
             summary.log()
     """
 
+    # Source types whose staging rows are DELETED once consumed rather than
+    # flagged processed. Marking a row processed is an UPDATE, and an UPDATE
+    # writes a whole new row version — for a 242 MB depth-chart capture that
+    # is 242 MB of new heap before a single byte comes back, which is how a
+    # normalize run put the 512 MB serving database over its hard limit
+    # ("could not extend file because project size limit has been
+    # exceeded"). Deleting instead marks the tuple dead in place and costs
+    # essentially nothing, and the payload has no reader left once the
+    # production table holds it.
+    #
+    # `rosters` is deliberately excluded: pipeline/provenance.py reads those
+    # payloads back out of staging with no `processed` filter. Same carve-out
+    # pipeline/staging_retention.py documents.
+    PURGE_ON_CONSUME: frozenset[str] = frozenset(HIGH_VOLUME_SOURCE_TYPES)
+
+    # How many staging rows one _process_* call handles at a time. The old
+    # code fetched every unprocessed row of a source type in one go: 469,064
+    # depth-chart rows / 242 MB of JSONB into a Python list, then one
+    # transaction to match.
+    STAGING_BATCH_SIZE = 20_000
+
     def __init__(self, db_url: str) -> None:
         self._db_url = db_url
         self._conn: Optional[psycopg2.extensions.connection] = None
+        # Set by run() around each dispatch so _mark_processed knows which
+        # source type the ids it was handed belong to. run() is the only
+        # thing that dispatches to a _process_* method, and every one of
+        # those calls _mark_processed on the rows it was given, so the
+        # attribute is always current at the point it is read. None means
+        # "caller outside run()" and keeps the old UPDATE behaviour.
+        self._current_source_type: Optional[str] = None
 
     def connect(self) -> None:
         dsn = _psycopg2_dsn(self._db_url)
@@ -538,39 +567,66 @@ class Normalizer:
     # ── Staging reader ────────────────────────────────────────────────────
 
     def _fetch_unprocessed(
-        self, source_type: str, seasons: Optional[list[int]] = None
+        self,
+        source_type: str,
+        seasons: Optional[list[int]] = None,
+        limit: Optional[int] = None,
     ) -> list[dict[str, Any]]:
-        """Return raw_data dicts for unprocessed staging rows of a given source."""
+        """Return raw_data dicts for unprocessed staging rows of a given source.
+
+        `limit` caps one batch — see STAGING_BATCH_SIZE. Callers that pass a
+        limit must loop until they get a short batch back, and must consume
+        (mark processed or delete) each batch before asking for the next, or
+        the same rows come back forever.
+        """
         assert self._conn
+        clauses = ["source_type = %s", "NOT processed"]
+        params: list[Any] = [source_type]
+        if seasons:
+            clauses.append("season = ANY(%s)")
+            params.append(seasons)
+        sql = (
+            "SELECT id, raw_data, ingested_at FROM staging_nflreadpy "
+            f"WHERE {' AND '.join(clauses)} ORDER BY id"
+        )
+        if limit is not None:
+            sql += " LIMIT %s"
+            params.append(int(limit))
         with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if seasons:
-                cur.execute(
-                    """
-                    SELECT id, raw_data, ingested_at FROM staging_nflreadpy
-                    WHERE source_type = %s AND NOT processed AND season = ANY(%s)
-                    ORDER BY id
-                    """,
-                    (source_type, seasons),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT id, raw_data, ingested_at FROM staging_nflreadpy
-                    WHERE source_type = %s AND NOT processed
-                    ORDER BY id
-                    """,
-                    (source_type,),
-                )
+            cur.execute(sql, tuple(params))
             return [dict(r) for r in cur.fetchall()]
 
     def _mark_processed(self, staging_ids: list[int]) -> None:
+        """Retire staging rows this run has consumed.
+
+        For source types in PURGE_ON_CONSUME this DELETES them instead of
+        setting processed = TRUE — see that constant for why an UPDATE is
+        the expensive option on a size-capped database. Same name and same
+        contract for every caller: after this returns, _fetch_unprocessed
+        will not hand the row back.
+        """
         assert self._conn
+        if not staging_ids:
+            return
+        purge = self._current_source_type in self.PURGE_ON_CONSUME
         with self._conn.cursor() as cur:
-            cur.execute(
-                "UPDATE staging_nflreadpy SET processed = TRUE WHERE id = ANY(%s)",
-                (staging_ids,),
-            )
+            if purge:
+                cur.execute(
+                    "DELETE FROM staging_nflreadpy WHERE id = ANY(%s)",
+                    (staging_ids,),
+                )
+            else:
+                cur.execute(
+                    "UPDATE staging_nflreadpy SET processed = TRUE WHERE id = ANY(%s)",
+                    (staging_ids,),
+                )
         self._conn.commit()
+        logger.debug(
+            "%s %d staging row(s) for source_type=%s",
+            "Deleted" if purge else "Marked processed",
+            len(staging_ids),
+            self._current_source_type,
+        )
 
     # ── Upsert helpers ────────────────────────────────────────────────────
 
@@ -1494,37 +1550,50 @@ class Normalizer:
             SOURCE_PARTICIPATION,
             SOURCE_COMBINE,
         ]:
-            staging_rows = self._fetch_unprocessed(source_type, seasons)
-            if not staging_rows:
-                logger.info("No unprocessed rows for source_type=%s", source_type)
-                continue
-
-            logger.info(
-                "Processing %d staging rows for source_type=%s",
-                len(staging_rows), source_type,
-            )
-            if source_type == SOURCE_SCHEDULES:
-                self._process_schedules(staging_rows, summary)
-            elif source_type == SOURCE_ROSTERS:
-                self._process_rosters(staging_rows, summary)
-            elif source_type == SOURCE_PLAYER_STATS:
-                self._process_player_stats(staging_rows, summary)
-            elif source_type == SOURCE_SNAP_COUNTS:
-                self._process_snap_counts(staging_rows, summary)
-            elif source_type == SOURCE_DEPTH_CHARTS:
-                self._process_depth_charts(staging_rows, summary)
-            elif source_type == SOURCE_NEXTGEN_STATS:
-                self._process_nextgen_stats(staging_rows, summary)
-            elif source_type == SOURCE_TEAM_STATS:
-                self._process_team_stats(staging_rows, summary)
-            elif source_type == SOURCE_FTN_CHARTING:
-                self._process_ftn_charting(staging_rows, summary)
-            elif source_type == SOURCE_PARTICIPATION:
-                self._process_participation(staging_rows, summary)
-            elif source_type == SOURCE_COMBINE:
-                self._process_combine(staging_rows, summary)
+            self._current_source_type = source_type
+            batch_idx = 0
+            while True:
+                staging_rows = self._fetch_unprocessed(
+                    source_type, seasons, limit=self.STAGING_BATCH_SIZE
+                )
+                if not staging_rows:
+                    if batch_idx == 0:
+                        logger.info("No unprocessed rows for source_type=%s", source_type)
+                    break
+                batch_idx += 1
+                logger.info(
+                    "Processing %d staging rows for source_type=%s (batch %d)",
+                    len(staging_rows), source_type, batch_idx,
+                )
+                self._dispatch(source_type, staging_rows, summary)
+            self._current_source_type = None
 
         return summary
+
+    def _dispatch(
+        self, source_type: str, staging_rows: list[dict], summary: NormalizeSummary
+    ) -> None:
+        """Route one batch to the transform for its source type."""
+        if source_type == SOURCE_SCHEDULES:
+            self._process_schedules(staging_rows, summary)
+        elif source_type == SOURCE_ROSTERS:
+            self._process_rosters(staging_rows, summary)
+        elif source_type == SOURCE_PLAYER_STATS:
+            self._process_player_stats(staging_rows, summary)
+        elif source_type == SOURCE_SNAP_COUNTS:
+            self._process_snap_counts(staging_rows, summary)
+        elif source_type == SOURCE_DEPTH_CHARTS:
+            self._process_depth_charts(staging_rows, summary)
+        elif source_type == SOURCE_NEXTGEN_STATS:
+            self._process_nextgen_stats(staging_rows, summary)
+        elif source_type == SOURCE_TEAM_STATS:
+            self._process_team_stats(staging_rows, summary)
+        elif source_type == SOURCE_FTN_CHARTING:
+            self._process_ftn_charting(staging_rows, summary)
+        elif source_type == SOURCE_PARTICIPATION:
+            self._process_participation(staging_rows, summary)
+        elif source_type == SOURCE_COMBINE:
+            self._process_combine(staging_rows, summary)
 
     def _process_ftn_charting(
         self, staging_rows: list[dict], summary: NormalizeSummary

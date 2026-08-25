@@ -95,3 +95,73 @@ def purge_stale_staging(cur, retention_days: int = DEFAULT_RETENTION_DAYS) -> in
         retention_days_int,
     )
     return deleted
+
+
+# Source types whose staged payloads are pure capture volume: once
+# normalize has consumed them the production table holds everything of
+# value, and nothing in this codebase reads them back. `rosters` is
+# deliberately absent — see the carve-out comment in purge_stale_staging.
+HIGH_VOLUME_SOURCE_TYPES: tuple[str, ...] = (
+    "depth_charts",
+    "player_stats",
+    "snap_counts",
+    "nextgen_stats",
+    "team_stats",
+    "schedules",
+    "participation",
+    "ftn_charting",
+    "combine",
+)
+
+
+def purge_processed_staging(
+    cur, source_types: "tuple[str, ...]" = HIGH_VOLUME_SOURCE_TYPES
+) -> int:
+    """Delete ALREADY-PROCESSED staging rows for high-volume source types
+    without waiting out a retention window. Returns rows deleted.
+
+    purge_stale_staging's 14-day age gate assumes the staging table is
+    small enough that two weeks of captures can sit around for debugging.
+    On the 512 MB serving database that assumption is false: nflreadpy's
+    depth-chart feed returns every published snapshot of the season, so one
+    weekly capture staged 469,064 rows / 242 MB — 55% of the entire
+    database — which normalize collapses to about 3,000 production rows.
+    Every one of those was ingested the same day, so the age gate made the
+    sweep a no-op and the next week's capture would have run the database
+    out of space.
+
+    `processed` is still the hard precondition: a row normalize has not yet
+    consumed is never touched, whatever its source type. `rosters` is
+    excluded by construction (it is absent from HIGH_VOLUME_SOURCE_TYPES)
+    because pipeline/provenance.py reads roster payloads back with no
+    `processed` filter — the same call site purge_stale_staging carves out.
+
+    Callers own the transaction, same convention as purge_stale_staging.
+    Follow this with a VACUUM (scripts/weekly_refresh.py step 10 already
+    runs one) — DELETE leaves the pages as reusable free space rather than
+    returning them, which is what stops the table growing week over week.
+    """
+    if not source_types:
+        return 0
+    if "rosters" in source_types:
+        raise ValueError(
+            "'rosters' cannot be purged by source type: pipeline/provenance.py "
+            "reads those payloads back with no `processed` filter. See the "
+            "carve-out comment in purge_stale_staging."
+        )
+    cur.execute(
+        """
+        DELETE FROM staging_nflreadpy
+         WHERE processed
+           AND source_type = ANY(%s)
+        """,
+        (list(source_types),),
+    )
+    deleted = cur.rowcount
+    logger.info(
+        "purge_processed_staging: deleted %d processed row(s) from "
+        "staging_nflreadpy for source_type in %s",
+        deleted,
+        source_types,
+    )
+    return deleted
