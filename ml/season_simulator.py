@@ -287,6 +287,7 @@ class SeasonSimulator:
         self.stats          = stats or _DEFAULT_STATS
         self.use_copula     = use_copula
         self.use_cpp        = use_cpp
+        self._training_seasons_cache: Optional[list[int]] = None
         self.store_raw      = store_raw
         self._database_url  = database_url
         self._sim_elo       = None  # TeamEloSystem carried forward across simulated weeks
@@ -1093,6 +1094,75 @@ class SeasonSimulator:
         from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
         return DEFAULT_HOST_DATABASE_URL
 
+    # Earliest season the Phase 4 models will train on when the database has
+    # the history for it, and the fewest seasons that is still worth fitting.
+    _TRAINING_START_SEASON = 2019
+    _MIN_TRAINING_SEASONS = 2
+
+    def _training_seasons(self) -> list[int]:
+        """
+        Seasons to fit the Phase 4 points/yards models on: every season from
+        _TRAINING_START_SEASON up to self.season that this DATABASE actually
+        carries, rather than a hardcoded range.
+
+        The deployed Neon database is sized to a 512 MB cap, so it holds only
+        recent seasons — feature_matrix (the Elo source) and pbp_plays (the
+        coach-tendency source) start at 2024. Hardcoding range(2019, season)
+        meant the simulator could only ever run where the full history lived,
+        which in turn meant the weekly-refresh cron could never regenerate the
+        season board in place. Deriving the window from the data lets the same
+        code fit 7 seasons locally and 2 in production.
+
+        Fewer seasons is a real accuracy cost, not a free win: the team-yards
+        Ridge is already over-regularized (team-to-team spread is ~48% of the
+        real NFL spread, which is what caps the top projected passer well
+        below a realistic league leader), and a shorter window can only make
+        that worse. Raising _MIN_TRAINING_SEASONS, or backfilling more
+        seasons into the serving database, is the lever if that matters more
+        than in-place refresh.
+        """
+        if self._training_seasons_cache is not None:
+            return self._training_seasons_cache
+        import psycopg2
+
+        wanted = list(range(self._TRAINING_START_SEASON, self.season))
+        conn = psycopg2.connect(self._db_url())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT season FROM feature_matrix
+                    WHERE season = ANY(%s) AND team_off_elo IS NOT NULL
+                    GROUP BY season
+                    """,
+                    (wanted,),
+                )
+                have_elo = {int(r[0]) for r in cur.fetchall()}
+                cur.execute(
+                    "SELECT season FROM pbp_plays WHERE season = ANY(%s) GROUP BY season",
+                    (wanted,),
+                )
+                have_pbp = {int(r[0]) for r in cur.fetchall()}
+        finally:
+            conn.close()
+
+        usable = sorted(have_elo & have_pbp)
+        if len(usable) < self._MIN_TRAINING_SEASONS:
+            raise RuntimeError(
+                f"Only {len(usable)} season(s) {usable} have both Elo "
+                f"(feature_matrix.team_off_elo) and pbp_plays coverage; "
+                f"need at least {self._MIN_TRAINING_SEASONS} to fit the Phase 4 "
+                f"models. Point this at a database carrying more history."
+            )
+        if usable != wanted:
+            logger.warning(
+                "Training window narrowed to %s (requested %d-%d): this database "
+                "does not carry the earlier seasons.",
+                usable, wanted[0], wanted[-1],
+            )
+        self._training_seasons_cache = usable
+        return usable
+
     def _ensure_points_model(self) -> None:
         """
         Lazily fit the Phase 4 points Ridge model on every season strictly
@@ -1108,7 +1178,7 @@ class SeasonSimulator:
         from ml.team_game_model import FEATURE_COLS, _prepare_x, compute_oof_residual_std
         from pipeline.team_game_features import build_team_game_frame
 
-        train_df = build_team_game_frame(self._db_url(), list(range(2019, self.season)))
+        train_df = build_team_game_frame(self._db_url(), self._training_seasons())
         points_df = train_df[train_df["points"].notna()] if not train_df.empty else train_df
         if points_df.empty:
             raise RuntimeError(
@@ -1140,7 +1210,7 @@ class SeasonSimulator:
         from ml.team_game_model import FEATURE_COLS, _prepare_x, compute_oof_residual_std
         from pipeline.team_game_features import build_team_game_frame
 
-        train_df = build_team_game_frame(self._db_url(), list(range(2019, self.season)))
+        train_df = build_team_game_frame(self._db_url(), self._training_seasons())
         yards_df = train_df[train_df["total_yards"].notna()] if not train_df.empty else train_df
         if yards_df.empty:
             raise RuntimeError(
@@ -1168,7 +1238,14 @@ class SeasonSimulator:
         if self._sim_elo is not None:
             return
         from ml.team_elo import load_elo_from_db
-        self._sim_elo = load_elo_from_db(self._db_url(), seasons=list(range(2019, self.season + 1)))
+        self._sim_elo = load_elo_from_db(
+            self._db_url(),
+            # Elo comes from feature_matrix and has no pbp_plays dependency, so
+            # it deliberately does NOT go through _training_seasons() (which is
+            # gated on coach-tendency coverage). load_elo_from_db returns what
+            # the database actually has for the range.
+            seasons=list(range(self._TRAINING_START_SEASON, self.season + 1)),
+        )
 
     def _resolve_week_games(self, week: int) -> pd.DataFrame:
         """

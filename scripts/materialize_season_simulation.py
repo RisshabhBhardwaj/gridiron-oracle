@@ -130,64 +130,53 @@ def _load_schedule_gate(db_url: str, season: int, start_week: int, end_week: int
     return pd.DataFrame(rows, columns=["week", "home_team", "away_team"])
 
 
-_TRAINING_START_SEASON = 2019
-
 
 def assert_training_window_present(db_url: str, season: int) -> None:
     """
-    Fail fast, and say which database to use, when `db_url` cannot fit the
-    Phase 4 points model.
+    Fail fast, and say what is missing, when `db_url` cannot fit the Phase 4
+    points model.
 
-    SeasonSimulator._ensure_points_model trains on every season in
-    [_TRAINING_START_SEASON, season), and pipeline.team_game_features
-    .build_team_game_frame sources Elo from feature_matrix and the coach
-    tendency from pbp_plays. The deployed Neon database is a SERVING cut
-    sized to a 512 MB cap: feature_matrix and game_logs start at 2024 and
-    pbp_plays is empty, so it holds none of that training window and cannot
-    be made to -- the missing history is ~330 MB against ~115 MB of headroom.
-
-    Materialization is therefore an offline step run where the full history
-    lives, with only its three output tables pushed to the serving database
-    (the same discipline as every other approved artifact here). Without this
-    check the run got ~60s in and died on a bare KeyError from pandas.
+    SeasonSimulator._training_seasons derives its training window from what
+    the database actually carries (feature_matrix Elo + pbp_plays), so this
+    only has to enforce the floor: at least _MIN_TRAINING_SEASONS usable
+    seasons. Without it the run got ~60s in and died on a bare pandas
+    KeyError with nothing pointing at the cause.
     """
-    seasons = list(range(_TRAINING_START_SEASON, season))
+    from ml.season_simulator import SeasonSimulator
+
+    wanted = list(range(SeasonSimulator._TRAINING_START_SEASON, season))
     conn = psycopg2.connect(db_url)
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT season FROM feature_matrix
-                WHERE season = ANY(%s) AND team_off_elo IS NOT NULL
-                GROUP BY season
+                WHERE season = ANY(%s) AND team_off_elo IS NOT NULL GROUP BY season
                 """,
-                (seasons,),
+                (wanted,),
             )
-            have = {int(r[0]) for r in cur.fetchall()}
-            cur.execute("SELECT count(*) FROM pbp_plays WHERE season = ANY(%s)", (seasons,))
-            n_pbp = int(cur.fetchone()[0])
+            elo = {int(r[0]) for r in cur.fetchall()}
+            cur.execute(
+                "SELECT season FROM pbp_plays WHERE season = ANY(%s) GROUP BY season",
+                (wanted,),
+            )
+            pbp = {int(r[0]) for r in cur.fetchall()}
     finally:
         conn.close()
 
-    missing = sorted(set(seasons) - have)
-    problems = []
-    if missing:
-        problems.append(f"feature_matrix has no Elo for season(s) {missing}")
-    if n_pbp == 0:
-        problems.append("pbp_plays is empty (coach tendency cannot be built)")
-    if problems:
+    usable = sorted(elo & pbp)
+    if len(usable) < SeasonSimulator._MIN_TRAINING_SEASONS:
         raise SystemExit(
             "Refusing to materialize: this database cannot fit the Phase 4 "
-            f"points model, which trains on {_TRAINING_START_SEASON}-{season - 1}.\n  "
-            + "\n  ".join(problems)
-            + "\n\nThis is expected against the deployed Neon database -- it is a "
-            "serving-only cut and does not carry the training window. Run this "
-            "script against the full local database instead:\n"
+            f"points model.\n  seasons with Elo (feature_matrix): {sorted(elo) or 'none'}"
+            f"\n  seasons with pbp_plays:            {sorted(pbp) or 'none'}"
+            f"\n  usable (need both, >= {SeasonSimulator._MIN_TRAINING_SEASONS}): {usable or 'none'}"
+            "\n\nEither point this at a database carrying more history:\n"
             "  docker compose -f infra/docker-compose.yml up -d db\n"
             "  --database-url postgresql://oracle:oracle@localhost:15439/oracle\n"
-            "then push season_simulations / season_simulation_weeks / "
-            "season_team_wins to the serving database."
+            "or backfill the missing seasons into this one."
         )
+    logger.info("Training window: %s", usable)
 
 
 def materialize(
