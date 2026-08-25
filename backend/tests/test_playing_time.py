@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from ml.playing_time import (
     PlayingTimeModel,
@@ -129,3 +130,33 @@ def test_fitted_availability_and_role_are_bounded() -> None:
     assert not table.empty
     mae = float(np.mean(np.abs(frame["snap_share"].to_numpy(dtype=float) - role)))
     assert mae <= 0.25
+
+
+# ── Rest-of-season paths for a stat the player has no role in ───────────────
+
+def test_simulate_season_paths_zero_rate_returns_exact_zeros():
+    """
+    A zero weekly rate must project to exact zeros with a zero interval, not a
+    spread around zero. The residual scales the season board passes in are
+    per-stat, not per-player (55.0 for passing_yards), so a WR whose passing
+    rate is 0.0 was drawing N(0, 55) x 17 weeks and rendering an +/-230-yard
+    80% interval straddling zero on the card — a real-looking forecast for a
+    stat he has never recorded. This is the flat-rate fallback's version of
+    the season-simulator bug fixed by SeasonSimulator._ZERO_RATE_EPS; it is
+    the path that serves any (season, start_week) with no materialized run.
+    """
+    paths = simulate_season_paths(0.0, 0.9, 17, residual_scale=55.0, n_sims=500, rng=0)
+    assert paths["mean"] == 0.0
+    assert paths["p10"] == 0.0
+    assert paths["p50"] == 0.0
+    assert paths["p90"] == 0.0
+    # Availability metadata is still reported — the player is available, he
+    # just does not do this.
+    assert paths["expected_games"] == pytest.approx(0.9 * 17)
+
+
+def test_simulate_season_paths_positive_rate_is_unaffected():
+    """The zero-rate guard must not disturb a real projection."""
+    paths = simulate_season_paths(80.0, 0.9, 17, residual_scale=28.0, n_sims=2000, rng=0)
+    assert paths["mean"] == pytest.approx(0.9 * 17 * 80.0, rel=0.05)
+    assert paths["p10"] < paths["p50"] < paths["p90"]

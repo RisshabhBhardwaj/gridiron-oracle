@@ -222,10 +222,46 @@ class BacktestService:
             if col not in df.columns:
                 df[col] = float("nan")
 
+        # ── Position filter ─────────────────────────────────────────────
+        # `positions` used to be echoed back in the response and applied to
+        # nothing. _load_csv filters on `stat` only, and there is no
+        # backtest_results table in production, so the CSV path always ran and
+        # the Season Review position chips were inert: selecting WR returned
+        # WR + RB + TE rows, and the "Evaluated Sample Count" card summed all
+        # of them. That is the reported inconsistency — WR alone and WR+TE
+        # could not be reconciled because neither was actually a WR figure.
+        # (The DB path did filter, so the two loaders disagreed as well.)
+        if "position" in df.columns and positions:
+            wanted = {str(p).upper() for p in positions}
+            df = df[df["position"].astype(str).str.upper().isin(wanted)]
+            rows = df.to_dict("records")
+            if df.empty:
+                logger.warning(
+                    "No backtest rows for stat=%s positions=%s", stat, sorted(wanted)
+                )
+
         # ── Overall metrics ─────────────────────────────────────────────
-        overall_mae  = float(df["stack_mae"].mean())
-        overall_rmse = float(df["stack_rmse"].mean())
-        overall_crps = float(df["stack_crps"].mean()) if "stack_crps" in df else overall_mae
+        # Weighted by n_games, not a flat mean over (season, position) rows.
+        # An unweighted mean gave a TE season with 1,301 evaluated player-games
+        # the same say as a WR season with 2,500, so the headline MAE was not
+        # the error over the selected sample.
+        def _weighted(col: str) -> float:
+            if df.empty or col not in df.columns:
+                return float("nan")
+            values = df[col].astype(float)
+            weights = df["n_games"].astype(float) if "n_games" in df.columns else None
+            valid = values.notna() & (weights.notna() & (weights > 0) if weights is not None else True)
+            if not valid.any():
+                return float("nan")
+            if weights is None:
+                return float(values[valid].mean())
+            return float(np.average(values[valid], weights=weights[valid]))
+
+        overall_mae  = _weighted("stack_mae")
+        overall_rmse = _weighted("stack_rmse")
+        overall_crps = _weighted("stack_crps")
+        if not np.isfinite(overall_crps):
+            overall_crps = overall_mae
 
         # ── Calibration reliability diagram (derived from coverage stats) ──
         calibration = _real_calibration(df)

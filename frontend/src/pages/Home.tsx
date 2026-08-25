@@ -17,7 +17,6 @@ const POS_COLORS: Record<string, string> = {
 const QUICK_LINKS = [
   { to: '/projections', label: 'Current Season', meta: 'Weekly boards, team wins, and game forecasts' },
   { to: '/season', label: 'Season Review', meta: 'Predicted vs. actual accuracy' },
-  { to: '/draft', label: 'Draft', meta: 'VOR board and mock drafts' },
   { to: '/backtest', label: 'Backtesting', meta: 'Accuracy and calibration' },
 ]
 

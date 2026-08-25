@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import clsx from 'clsx'
 import { useSearch } from '@/context/SearchContext'
-import { useBetSlip } from '@/context/BetSlipContext'
 
 const NAV_LINKS = [
   { to: '/projections', label: 'Current Season', exact: false },
@@ -15,8 +14,6 @@ const NAV_LINKS = [
 export function NavBar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { open: openSearch } = useSearch()
-  const { state: slipState, toggleOpen: toggleSlip } = useBetSlip()
-  const legCount = slipState.legs.length
 
   return (
     <nav className="sticky top-0 z-50 border-b border-oracle-border bg-oracle-dark/95 backdrop-blur-xl">
@@ -78,26 +75,6 @@ export function NavBar() {
               <kbd className="rounded border border-oracle-border bg-oracle-dark px-1.5 py-0.5 font-mono text-[9px]">
                 ⌘K
               </kbd>
-            </button>
-
-            <button
-              onClick={toggleSlip}
-              id="nav-bet-slip-btn"
-              className={clsx(
-                'relative flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors',
-                slipState.isOpen
-                  ? 'border-oracle-green/50 bg-oracle-green/10 text-oracle-green'
-                  : 'border-oracle-border bg-oracle-card text-oracle-muted hover:border-oracle-green/40 hover:text-oracle-green',
-              )}
-              title="Bet Slip / Parlay Builder"
-              aria-label="Toggle bet slip"
-            >
-              <span>Slip</span>
-              {legCount > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-oracle-green px-1 font-mono text-[9px] font-bold text-oracle-dark">
-                  {legCount}
-                </span>
-              )}
             </button>
 
             <div className="hidden lg:flex items-center gap-2 px-2 py-1">

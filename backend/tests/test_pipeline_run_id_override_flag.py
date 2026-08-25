@@ -114,6 +114,11 @@ class TestMintedIdOverrideBehavior:
              "team_games_played": 3, "depth_rank": 1, "prior_active_games": 3,
              "player_name": "Player One"},
         ]
+        # materialize() preflights the training window before touching the
+        # roster (a serving-only DB cannot fit the Phase 4 points model); this
+        # test is about the run-id override, so stub it out alongside every
+        # other DB dependency below.
+        monkeypatch.setattr(mod, "assert_training_window_present", lambda *a, **k: None)
         monkeypatch.setattr(mod, "_load_roster", lambda *a, **k: roster_rows)
         monkeypatch.setattr(mod, "_load_prior_game_rows", lambda *a, **k: [])
         monkeypatch.setattr(mod, "_load_schedule_gate", lambda *a, **k: object())

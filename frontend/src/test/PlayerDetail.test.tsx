@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BetSlipProvider } from '../context/BetSlipContext'
 import { SearchProvider } from '../context/SearchContext'
 import { PlayerDetail } from '../pages/PlayerDetail'
 
@@ -12,15 +11,13 @@ function renderPlayer(path = '/player/test-001?week=5&season=2025&stat=receiving
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <BetSlipProvider>
-        <SearchProvider>
-          <MemoryRouter initialEntries={[path]}>
-            <Routes>
-              <Route path="/player/:player_id" element={<PlayerDetail />} />
-            </Routes>
-          </MemoryRouter>
-        </SearchProvider>
-      </BetSlipProvider>
+      <SearchProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/player/:player_id" element={<PlayerDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </SearchProvider>
     </QueryClientProvider>,
   )
 }

@@ -6,9 +6,8 @@ import { ProjectionCard } from '@/components/ProjectionCard'
 import { SHAPChart } from '@/components/SHAPChart'
 import { PercentileFan } from '@/components/PercentileFan'
 import { WhatIfStudio } from '@/components/WhatIfStudio'
-import { AddToBetSlipButton } from '@/components/AddToBetSlipButton'
 import { useOdds, findPlayerLine } from '@/hooks/useOdds'
-import { calcEdge, useBetSlip } from '@/context/BetSlipContext'
+import { calcEdge } from '@/lib/edge'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
@@ -51,7 +50,6 @@ export function PlayerDetail() {
   const { player_id } = useParams<{ player_id: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const { setDefaults } = useSearch()
-  const { setBookLine } = useBetSlip()
 
   const week   = Number(searchParams.get('week')   ?? '1')
   const season = Number(searchParams.get('season') ?? String(CURRENT_SEASON))
@@ -84,17 +82,10 @@ export function PlayerDetail() {
   const bookLine   = oddsData ? findPlayerLine(oddsData.player_props, name) : null
   const edge       = bookLine != null ? calcEdge(projection, bookLine) : null
   const edgePos    = edge !== null && edge > 0
-  const activeSlipId = player_id ? `${player_id}-${stat}-${week}` : null
 
   useEffect(() => {
     setDefaults({ week, season, stat })
   }, [season, setDefaults, stat, week])
-
-  useEffect(() => {
-    if (activeSlipId && bookLine != null) {
-      setBookLine(activeSlipId, bookLine)
-    }
-  }, [activeSlipId, bookLine, setBookLine])
 
   if (!name) {
     return (
@@ -165,28 +156,6 @@ export function PlayerDetail() {
                 </p>
               )}
             </div>
-            {predictData && (
-              <AddToBetSlipButton
-                size="md"
-                leg={{
-                  player_id: predictData.player_id,
-                  player_name: name,
-                  position: predictData.position,
-                  team: null,
-                  stat,
-                  stat_label: STAT_LABELS[stat] ?? stat,
-                  week,
-                  season,
-                  our_projection: projection,
-                  floor,
-                  ceiling,
-                  book_line: bookLine,
-                  boom_probability: predictData.boom_probability ?? null,
-                  bust_probability: predictData.bust_probability ?? null,
-                  fantasy_projection: predictData.projection.ppr_points ?? null,
-                }}
-              />
-            )}
           </div>
 
           {/* Stat selector */}

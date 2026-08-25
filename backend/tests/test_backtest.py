@@ -748,3 +748,63 @@ class TestSaveResults:
             path = os.path.join(tmpdir, "a", "b", "c", "results.csv")
             BacktestRunner().save_results(df, path)
             assert Path(path).exists()
+
+
+# ── Season Review position filter ───────────────────────────────────────────
+
+class TestPositionFilterIsApplied:
+    """
+    `positions` used to be echoed into the response and applied to nothing:
+    _load_csv filters on `stat` only, and with no backtest_results table in
+    production the CSV path always ran. The Season Review chips were inert and
+    the "Evaluated Sample Count" card summed every position regardless of the
+    selection, so WR alone and WR+TE could not be reconciled.
+    """
+
+    @staticmethod
+    def _svc():
+        from backend.app.services.backtest import BacktestService
+
+        svc = BacktestService.__new__(BacktestService)
+        svc._model_version = "test"
+        svc._db_url = ""
+        return svc
+
+    @staticmethod
+    def _sample(summary, season: int = 2025) -> int:
+        return sum(m.n_games for m in summary.by_season if m.season == season)
+
+    def test_only_selected_positions_are_returned(self):
+        summary = self._svc().get_summary(stat="receiving_yards", positions=["WR"])
+        assert {m.position for m in summary.by_season} == {"WR"}
+
+    def test_sample_counts_are_additive_across_positions(self):
+        svc = self._svc()
+        wr = self._sample(svc.get_summary(stat="receiving_yards", positions=["WR"]))
+        te = self._sample(svc.get_summary(stat="receiving_yards", positions=["TE"]))
+        both = self._sample(
+            svc.get_summary(stat="receiving_yards", positions=["WR", "TE"])
+        )
+        assert wr > 0 and te > 0
+        assert both == wr + te
+
+    def test_overall_mae_responds_to_the_selection(self):
+        svc = self._svc()
+        wr = svc.get_summary(stat="receiving_yards", positions=["WR"]).overall_mae
+        te = svc.get_summary(stat="receiving_yards", positions=["TE"]).overall_mae
+        assert wr != te
+
+    def test_overall_mae_is_weighted_by_sample_size(self):
+        """
+        A flat mean over (season, position) rows gave a 1,301-game TE season
+        the same weight as a 2,500-game WR season. The combined figure must sit
+        between the two single-position figures and nearer the larger sample.
+        """
+        svc = self._svc()
+        wr = svc.get_summary(stat="receiving_yards", positions=["WR"]).overall_mae
+        te = svc.get_summary(stat="receiving_yards", positions=["TE"]).overall_mae
+        both = svc.get_summary(
+            stat="receiving_yards", positions=["WR", "TE"]
+        ).overall_mae
+        assert min(wr, te) < both < max(wr, te)
+        assert abs(both - wr) < abs(both - te)

@@ -438,11 +438,7 @@ export function CurrentSeason() {
         /* Player Projections Grid */
         <div>
           {(activeTab === 'weekly' ? weeklyQuery.isLoading : seasonQuery.isLoading) ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))}
-            </div>
+            <SkeletonCard count={8} />
           ) : (activeTab === 'weekly' ? weeklyQuery.error : seasonQuery.error) ? (
             <ErrorBanner error={(activeTab === 'weekly' ? weeklyQuery.error : seasonQuery.error)!} />
           ) : playersList.length === 0 ? (

@@ -202,6 +202,18 @@ def simulate_season_paths(
     generator = rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
     if weeks == 0 or n_sims <= 0:
         return {"mean": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0, "expected_games": 0.0}
+    if float(weekly_rate) <= 0.0:
+        # No role in this stat: the projection is exactly zero, not a spread
+        # around zero. Drawing N(0, residual_scale) here left a WR's
+        # passing_yards with a +/-230-yard 80% interval straddling zero (the
+        # residual scales in ProjectionService.get_season_projections are
+        # per-stat, not per-player), which reads as a real forecast on the
+        # card. The mean was already ~0 because the negative half is not
+        # clipped -- deliberately, since clipping a zero-mean Gaussian is what
+        # manufactured phantom yardage in the season-simulator path (see
+        # SeasonSimulator._ZERO_RATE_EPS).
+        return {"mean": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0,
+                "expected_games": expected_games}
     active = generator.random((int(n_sims), weeks)) < float(np.clip(p_active, 0.0, 1.0))
     outcomes = generator.normal(float(weekly_rate), float(residual_scale), size=(int(n_sims), weeks))
     totals = (active * outcomes).sum(axis=1)

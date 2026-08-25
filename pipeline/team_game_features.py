@@ -116,6 +116,15 @@ def _load_coach_plays(conn, seasons: list[int]) -> pd.DataFrame:
             (seasons, _NEUTRAL_SCORE_MARGIN, _NEUTRAL_MIN_SECONDS_REMAINING),
         )
         rows = [dict(r) for r in cur.fetchall()]
+    if not rows:
+        # No pbp_plays rows for this window. An empty DataFrame has no columns
+        # at all, so df["coach"] used to raise a bare KeyError from deep inside
+        # pandas, ~60s into a materialization run, with nothing pointing at the
+        # actual cause (a serving-only database whose pbp_plays was dropped for
+        # the storage cap). _build_coach_tendency already handles an empty frame
+        # and the downstream merge is a LEFT join, so return the right SHAPE and
+        # let the caller's own training-window guard decide whether to proceed.
+        return pd.DataFrame(columns=["season", "week", "play_type", "coach"])
     df = pd.DataFrame(rows)
     return df[df["coach"].notna()].copy()
 

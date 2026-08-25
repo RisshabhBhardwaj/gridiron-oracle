@@ -67,10 +67,8 @@ export function GameDetail() {
       {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
 
       {isLoading && (
-        <div className="grid gap-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+        <div>
+          <SkeletonCard count={3} />
         </div>
       )}
 

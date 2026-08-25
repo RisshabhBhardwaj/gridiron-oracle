@@ -148,6 +148,13 @@ _DEFAULT_TEAM_SCRIPT_COUPLING = 0.0
 # agree by construction rather than converging only in expectation.
 _VOLUME_BUDGET_STATS = frozenset({"passing_yards", "rushing_yards", "receiving_yards"})
 _PASS_YARDS_SHARE = 0.6640356828998991
+# Ceiling on _apply_volume_budget's per-path budget/group_sum rescale. Set
+# well clear of ordinary operation (a healthy group's rescale sits near 1-3x,
+# reaching ~5x in the tails) so the exact group-sum identity still holds on
+# every normal path; this only bites the degenerate case where essentially
+# nobody with a claim to the stat is available and a sliver of leftover signal
+# would otherwise be multiplied ~150x into a full team's yardage.
+_MAX_BUDGET_SCALE = 25.0
 
 
 # ── Data Structures ───────────────────────────────────────────────────────────
@@ -393,6 +400,17 @@ class SeasonSimulator:
             except Exception as e:
                 logger.warning("C++ Engine failed (%s). Falling back to Python simulator.", e)
 
+        # Season-level role multiplier: one draw per player per PATH, held for
+        # the whole season (see _SEASON_ROLE_LOG_SD). Mean-1 by construction,
+        # so this widens season totals without shifting them.
+        role_paths: dict[str, np.ndarray] = {}
+        if self._SEASON_ROLE_LOG_SD > 0:
+            sd = float(self._SEASON_ROLE_LOG_SD)
+            for pid in initial_kalman_df["player_id"].astype(str).unique():
+                role_paths[pid] = np.exp(
+                    rng.normal(-0.5 * sd * sd, sd, self.n_simulations)
+                )
+
         # ── Main simulation loop: iterate per WEEK ──────────────────────────
         for week in weeks:
             week_injury_report = injury_projections.get(week, {})
@@ -428,6 +446,7 @@ class SeasonSimulator:
                     playing_teams = set(resolved["team"].astype(str))
 
             # Draw weekly samples: shape (n_simulations, n_players, n_stats)
+            week_raw: dict[tuple[str, str], np.ndarray] = {}
             week_paths = self._simulate_week(
                 kalman_df=initial_kalman_df,
                 week=week,
@@ -437,6 +456,8 @@ class SeasonSimulator:
                 team_score_paths=team_score_paths,
                 player_active_prob=player_active_prob,
                 playing_teams=playing_teams,
+                raw_out=week_raw,
+                role_paths=role_paths,
             )
             # week_paths: dict[(player_id, stat)] → np.ndarray(n_simulations,)
 
@@ -452,7 +473,9 @@ class SeasonSimulator:
                     initial_kalman_df["team"] if "team" in initial_kalman_df.columns
                     else [None] * len(initial_kalman_df),
                 ))
-                self._apply_volume_budget(week_paths, team_by_pid, team_yards_paths)
+                self._apply_volume_budget(
+                    week_paths, team_by_pid, team_yards_paths, raw_unmasked=week_raw
+                )
 
             # Accumulate season totals
             for key, sims in week_paths.items():
@@ -479,16 +502,38 @@ class SeasonSimulator:
                 self._accumulate_week_wins(resolved, team_score_paths, team_win_accum, self.n_simulations)
                 self._update_elo_from_week(resolved, week)
 
-            # Update Kalman priors with simulated week medians (for next week's prior).
-            # Using median instead of mean reduces sensitivity to outlier simulations.
-            # Note: ideally each simulation path should maintain its own Kalman state,
-            # but that requires O(n_sims * n_players * n_stats) memory. Using shared
-            # medians is a practical approximation that preserves the central tendency
-            # while acknowledging that inter-path Kalman variance is approximated.
-            initial_kalman_df = self._advance_kalman(
-                kalman_df=initial_kalman_df,
-                week_means={(k[0], k[1]): float(np.median(v)) for k, v in week_paths.items()},
-            )
+            # The Kalman state is deliberately NOT advanced from this week's
+            # simulated output. It used to be: each week fed
+            # np.median(week_paths) back in as if it were an observation
+            # (gain 0.30), which is autoregressive feedback on the model's
+            # own draws, not filtering — no new information arrives during a
+            # forward simulation, so there is nothing to update on. Three
+            # things went wrong at once:
+            #
+            #   1. week_paths has already been multiplied by the per-path
+            #      Bernoulli(p_active) availability mask. For any player with
+            #      p_active < 0.5 the median across paths is EXACTLY 0, so
+            #      every week did new_est = 0.70 * prior_est. Over 18 weeks
+            #      that is 0.70^18 ~= 0.0016 — total annihilation of the rate.
+            #      72% of the production roster (581 of 808 players) sits at
+            #      p_active <= 0.4, which is what collapsed fantasy_ppr (league
+            #      weekly mean fell 3.74 -> 1.31 across the simulated season).
+            #   2. week_paths has ALSO already been rescaled in place by
+            #      _apply_volume_budget, so the team-total renormalization
+            #      compounded week over week instead of applying once.
+            #   3. Because the budget pins each team's yardage total, the volume
+            #      vacated by (1) was handed to whoever still had signal —
+            #      the rich-get-richer drift behind WR receiving_yards peaking
+            #      at 83.8/wk in W1 and 158.9/wk in W18, and behind a team whose
+            #      whole QB room had decayed to ~0 spraying its passing budget
+            #      over 25 WR/TE noise draws.
+            #
+            # A rest-of-season projection is stationary by construction: every
+            # simulated week is an i.i.d. draw from the same per-game
+            # distribution, and horizon uncertainty emerges from summing those
+            # independent weeks rather than from inflating the per-week
+            # variance. _advance_kalman is retained for callers that have a
+            # REAL observation to fold in; it must not be fed simulator output.
 
             logger.debug(
                 "SeasonSimulator: completed W%d (%d player-stat pairs simulated).",
@@ -602,6 +647,71 @@ class SeasonSimulator:
 
     # ── Per-Week Simulation ──────────────────────────────────────────────────
 
+    # Below this per-game rate a player has no role in the stat at all, so the
+    # correct simulated value is exactly zero rather than a draw. Drawing
+    # N(0, std) and then clipping at zero — which is what every draw site used
+    # to do — is not a harmless no-op: the clipped half-normal has mean
+    # 0.4*std, so a WR whose passing_yards prior is exactly 0.0 (see
+    # ml.kalman_tracker.POSITION_PRIORS) still manufactured ~2 passing yards a
+    # week out of pure noise. Multiply that by ~25 non-QBs per roster and
+    # _apply_volume_budget, which splits the team's passing budget in
+    # proportion to these raw draws, hands a real slice of every team's
+    # passing yards to players who have never thrown a pass.
+    _ZERO_RATE_EPS = 1e-6
+
+    # Weekly coefficient of variation assumed for a player with no usable
+    # history, used only when observation variance cannot be measured.
+    _COLD_START_CV = 0.5
+
+    # Season-level (role) dispersion: log-sd of a per-path, per-player
+    # multiplier drawn ONCE and held across every simulated week.
+    #
+    # Without it the 18 weeks are i.i.d., so a season total's relative spread
+    # shrinks by sqrt(n_games) and lands near p90/mean = 1.09 no matter how
+    # volatile the player is. Real rest-of-season uncertainty does not shrink
+    # that way, because the thing you are unsure about is not this Sunday's
+    # bounce -- it is the player's ROLE for the year (target share, snap count,
+    # scheme, committee split), which persists week to week. That is a
+    # season-level random effect, and it is what the interval was missing.
+    #
+    # HAND-SET, not fitted: 0.13 log-sd puts a full-season starter's 80% band
+    # near p90/mean ~ 1.20, matching how wide published rest-of-season ranges
+    # actually are. It should be calibrated against realized season-total
+    # coverage once a season of held-out outcomes exists -- the same caveat
+    # that already applies to ProjectionService's hand-set residual scales.
+    _SEASON_ROLE_LOG_SD = 0.13
+
+    @classmethod
+    def _draw_stat_samples(
+        cls,
+        row,
+        stat: str,
+        size: int,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """
+        One player's raw (pre-availability-mask, pre-volume-budget) draws for
+        `stat`, from their Kalman posterior. Returns exact zeros when the
+        posterior mean is zero — see _ZERO_RATE_EPS.
+        """
+        est = float(row.get(f"kalman_est_{stat}") or 0.0)
+        if est <= cls._ZERO_RATE_EPS:
+            return np.zeros(size)
+        # Predictive variance = uncertainty in the RATE (Kalman posterior)
+        #                     + week-to-week spread of the stat itself.
+        # Only the first term used to be applied, so a player with a long,
+        # consistent history drew almost the same number every week.
+        variance = float(row.get(f"kalman_variance_{stat}") or max(est * 0.5, 5.0) ** 2)
+        obs_var = row.get(f"kalman_obs_var_{stat}")
+        if obs_var is None or not np.isfinite(obs_var):
+            # No usable history: fall back to a typical weekly coefficient of
+            # variation for NFL box-score stats rather than asserting a
+            # confident forecast for a player we know nothing about.
+            obs_var = (est * cls._COLD_START_CV) ** 2
+        variance += max(float(obs_var), 0.0)
+        std = max(float(np.sqrt(variance)), 0.1)
+        return np.maximum(rng.normal(est, std, size=size), 0.0)
+
     def _simulate_week(
         self,
         kalman_df: pd.DataFrame,
@@ -612,6 +722,8 @@ class SeasonSimulator:
         team_score_paths: Optional[dict[str, np.ndarray]] = None,
         player_active_prob: Optional[dict[str, float]] = None,
         playing_teams: Optional[set[str]] = None,
+        raw_out: Optional[dict[tuple[str, str], np.ndarray]] = None,
+        role_paths: Optional[dict[str, np.ndarray]] = None,
     ) -> dict[tuple[str, str], np.ndarray]:
         """
         Simulate one week's stats for all players across n_simulations paths.
@@ -633,6 +745,11 @@ class SeasonSimulator:
             paths where they didn't play. Drawn fresh here since this method
             runs once per week, so a path where a player sits out week 6 can
             still have them active in week 7.
+          - raw_out (if given): populated with each player's PRE-availability
+            draws. _apply_volume_budget needs these: a team's yardage budget
+            is a property of the team playing the game, not of which
+            individuals dressed, so when availability zeroes a whole stat
+            group the budget must still be allocated by who would have played.
           - playing_teams (if given): teams with NO game this week (a bye)
             are zeroed deterministically on every path — this is a schedule
             fact, not a probability, unlike player_active_prob. None means
@@ -701,6 +818,10 @@ class SeasonSimulator:
                             team_results, team_score_paths[team], coupling
                         )
                     for key, samples in team_results.items():
+                        if role_paths is not None and key[0] in role_paths:
+                            samples = samples * role_paths[key[0]]
+                        if raw_out is not None:
+                            raw_out[key] = samples.copy()
                         mask = active_masks.get(key[0])
                         if mask is not None:
                             samples = samples * mask
@@ -710,18 +831,16 @@ class SeasonSimulator:
                 # Independent draws per player
                 for _, row in kalman_with_injury.iterrows():
                     pid = str(row["player_id"])
-                    est      = float(row.get(f"kalman_est_{stat}") or 0.0)
-                    variance = float(row.get(f"kalman_variance_{stat}") or max(est * 0.5, 5.0) ** 2)
-                    std      = max(np.sqrt(variance), 0.1)
-
-                    # Sample from truncated normal (non-negative stats)
-                    samples  = rng.normal(est, std, size=n_simulations)
+                    samples = self._draw_stat_samples(row, stat, n_simulations, rng)
                     team = row.get("team")
-                    if coupling and team in team_score_paths:
+                    if coupling and team in team_score_paths and samples.any():
                         samples = self._apply_team_script_coupling(
                             {(pid, stat): samples}, team_score_paths[team], coupling
                         )[(pid, stat)]
-                    samples  = np.maximum(samples, 0.0)
+                    if role_paths is not None and pid in role_paths:
+                        samples = samples * role_paths[pid]
+                    if raw_out is not None:
+                        raw_out[(pid, stat)] = samples.copy()
                     mask = active_masks.get(pid)
                     if mask is not None:
                         samples = samples * mask
@@ -752,13 +871,12 @@ class SeasonSimulator:
         # Build marginal distributions (normal approximation from Kalman)
         marginal_samples: dict[str, np.ndarray] = {}
         for _, row in team_df.iterrows():
-            pid      = str(row["player_id"])
-            est      = float(row.get(f"kalman_est_{stat}") or 0.0)
-            variance = float(row.get(f"kalman_variance_{stat}") or max(est * 0.5, 5.0) ** 2)
-            std      = max(np.sqrt(variance), 0.1)
-            # Generate reference marginal (we use more draws here for quantile accuracy)
-            marginal_samples[pid] = np.maximum(
-                rng.normal(est, std, size=_WEEK_SAMPLES * 5), 0.0
+            pid = str(row["player_id"])
+            # Reference marginal (more draws here for quantile accuracy).
+            # All-zero for a player with no role in this stat, which
+            # _quantile_transform then maps back to zeros.
+            marginal_samples[pid] = self._draw_stat_samples(
+                row, stat, _WEEK_SAMPLES * 5, rng
             )
 
         copula = get_copula()
@@ -790,11 +908,8 @@ class SeasonSimulator:
         """Fallback: independent normal draws per player."""
         results = {}
         for _, row in team_df.iterrows():
-            pid      = str(row["player_id"])
-            est      = float(row.get(f"kalman_est_{stat}") or 0.0)
-            variance = float(row.get(f"kalman_variance_{stat}") or max(est * 0.5, 5.0) ** 2)
-            std      = max(np.sqrt(variance), 0.1)
-            results[(pid, stat)] = np.maximum(rng.normal(est, std, n_simulations), 0.0)
+            pid = str(row["player_id"])
+            results[(pid, stat)] = self._draw_stat_samples(row, stat, n_simulations, rng)
         return results
 
     @staticmethod
@@ -840,6 +955,8 @@ class SeasonSimulator:
         """
         try:
             from ml.kalman_tracker import KalmanFeatureEngineer
+            from ml.kalman_tracker import STAT_SOURCE_COL
+
             kfe = KalmanFeatureEngineer()
             augmented_rows = []
             for _, row in players_df.iterrows():
@@ -847,6 +964,27 @@ class SeasonSimulator:
                 pos = str(row.get("position", ""))
                 prior = prior_game_rows.get(pid, [])
                 kalman_feats = kfe.compute_kalman_form(prior, position=pos or None)
+                # Game-to-game (observation) variance, per stat, from the same
+                # prior rows. compute_kalman_form returns only the posterior
+                # variance of the RATE, which shrinks as evidence accumulates —
+                # a consistent starter converges toward ~0 spread. Drawing a
+                # week from that alone is the wrong distribution: it answers
+                # "how sure are we of his average?" when the question is "what
+                # might he do on Sunday?". That is why 80% season intervals
+                # came out at p90/mean ~= 1.08 when a real rest-of-season band
+                # is nearer 1.20. Attached here rather than in
+                # compute_kalman_form so the shared feature contract that
+                # feature_engineer.py and the served models depend on is
+                # untouched. See _draw_stat_samples for how the two combine.
+                for stat in self.stats:
+                    col = STAT_SOURCE_COL.get(stat, stat)
+                    vals = [
+                        float(r[col]) for r in prior
+                        if isinstance(r, dict) and r.get(col) is not None
+                    ]
+                    kalman_feats[f"kalman_obs_var_{stat}"] = (
+                        float(np.var(vals, ddof=1)) if len(vals) >= 2 else None
+                    )
                 augmented_rows.append({**row.to_dict(), **kalman_feats})
             return pd.DataFrame(augmented_rows)
         except Exception as exc:
@@ -866,6 +1004,12 @@ class SeasonSimulator:
 
         In production, the full KalmanFeatureEngineer.update() would be called.
         This approximation is fast enough for 500+ season simulations.
+
+        IMPORTANT: `week_means` must come from REAL observations. run() no
+        longer calls this, because feeding the simulator's own draws back in
+        as observations is autoregressive feedback, not filtering — see the
+        block comment at run()'s former call site for the three failure modes
+        it produced in production.
         """
         KALMAN_GAIN = 0.30   # How much we trust the new observation vs. prior
 
@@ -1115,6 +1259,7 @@ class SeasonSimulator:
         results: dict[tuple[str, str], np.ndarray],
         team_by_pid: dict[str, str],
         team_yards_paths: dict[str, np.ndarray],
+        raw_unmasked: Optional[dict[tuple[str, str], np.ndarray]] = None,
     ) -> None:
         """
         Rescale passing_yards/rushing_yards/receiving_yards in place so
@@ -1141,20 +1286,70 @@ class SeasonSimulator:
                 continue
             pass_budget = budget_path * _PASS_YARDS_SHARE
             rush_budget = budget_path * (1.0 - _PASS_YARDS_SHARE)
+            # passing_yards is allocated FIRST and receiving_yards is then
+            # pinned to whatever the passing group actually realized, rather
+            # than to the raw budget. Every passing yard is by definition a
+            # receiving yard, so the two group totals must agree per path.
+            # Handing both groups the same *budget* only preserves that
+            # identity while both groups can absorb it: the zero-rate gate and
+            # _MAX_BUDGET_SCALE mean a team whose passers are unavailable
+            # legitimately falls short on passing, while its much larger
+            # receiver group still soaks up the full budget. That split the
+            # league's season totals by ~11% (110.8k passing vs 122.8k
+            # receiving) — invisible per-player, but every team's passing and
+            # receiving surfaces disagreed.
+            realized_pass: Optional[np.ndarray] = None
             for stat, budget in (
                 ("passing_yards", pass_budget),
                 ("receiving_yards", pass_budget),
                 ("rushing_yards", rush_budget),
             ):
+                if stat == "receiving_yards" and realized_pass is not None:
+                    budget = realized_pass
                 group_pids = [pid for pid in pids if (pid, stat) in results]
                 if not group_pids:
                     continue
                 raw = np.vstack([np.maximum(results[(pid, stat)], 0.0) for pid in group_pids])
                 group_sum = raw.sum(axis=0)
+                # On paths where availability zeroed EVERY player who owns this
+                # stat, fall back to the pre-availability draws for the split.
+                # A team's yardage budget belongs to the team playing the game;
+                # availability decides WHO produces it, not WHETHER it happens.
+                # Because each player's Bernoulli(p_active) is drawn
+                # independently, 10.1% of simulated team-weeks league-wide had
+                # NO quarterback available at all (MIA: 41%), and that team's
+                # entire passing budget silently evaporated on those paths.
+                # That is a pure downward bias on every passing and receiving
+                # total -- it is why no QB reached 4,000 passing yards and no
+                # receiver reached 1,400, both of which happen every real NFL
+                # season. The fallback keeps the group sum honest AND lets an
+                # available backup absorb the starter's share, which is what
+                # actually happens when a starter sits.
+                if raw_unmasked is not None:
+                    dead = group_sum <= 1e-6
+                    if dead.any():
+                        fallback = np.vstack([
+                            np.maximum(raw_unmasked.get((pid, stat), results[(pid, stat)]), 0.0)
+                            for pid in group_pids
+                        ])
+                        raw = np.where(dead, fallback, raw)
+                        group_sum = raw.sum(axis=0)
                 has_signal = group_sum > 1e-6
                 scale = np.where(has_signal, budget / np.where(has_signal, group_sum, 1.0), 0.0)
+                # Defence in depth against the failure this budget can amplify:
+                # when the players who actually own a stat are all inactive on
+                # a path, the group's surviving raw signal is whatever marginal
+                # contributor is left, and an uncapped budget/group_sum would
+                # multiply that sliver up to a full team's yardage. Falling
+                # short of the budget on such a path is the honest outcome —
+                # if nobody who throws is available, the team does not throw
+                # for 230 yards — so the scale is capped rather than the
+                # group-sum identity being preserved at any cost.
+                scale = np.minimum(scale, _MAX_BUDGET_SCALE)
                 for i, pid in enumerate(group_pids):
                     results[(pid, stat)] = raw[i] * scale
+                if stat == "passing_yards":
+                    realized_pass = group_sum * scale
 
     # ── Team wins / playoffs ─────────────────────────────────────────────────
 

@@ -4,8 +4,7 @@ import { useWeekProjections } from '@/hooks/useWeekProjections'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { useOdds, findPlayerLine } from '@/hooks/useOdds'
 import { useSearch } from '@/context/SearchContext'
-import { calcEdge, useBetSlip } from '@/context/BetSlipContext'
-import { AddToBetSlipButton } from '@/components/AddToBetSlipButton'
+import { calcEdge } from '@/lib/edge'
 import { SkeletonCard } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
@@ -36,13 +35,10 @@ interface PlayerCardProps {
   row: WeekPlayerProjection
   onClick: () => void
   bookLine: number | null
-  week: number
-  season: number
-  stat: string
   style?: React.CSSProperties
 }
 
-function PlayerCard({ row, onClick, bookLine, week, season, stat, style }: PlayerCardProps) {
+function PlayerCard({ row, onClick, bookLine, style }: PlayerCardProps) {
   const posColor   = POS_COLORS[row.position] ?? '#607B9B'
   const boomHigh   = (row.boom_probability ?? 0) >= 0.25
   const bustHigh   = (row.bust_probability ?? 0) >= 0.35
@@ -77,32 +73,8 @@ function PlayerCard({ row, onClick, bookLine, week, season, stat, style }: Playe
         el.style.borderColor = 'rgba(255,255,255,0.06)'
       }}
     >
-      {/* Add to bet slip — top right */}
-      <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
-        <AddToBetSlipButton
-          size="sm"
-          leg={{
-            player_id: row.player_id,
-            player_name: row.player_name,
-            position: row.position,
-            team: row.team ?? null,
-            stat,
-            stat_label: STAT_LABELS[stat] ?? stat,
-            week,
-            season,
-            our_projection: row.projection,
-            floor: row.floor,
-            ceiling: row.ceiling,
-            book_line: bookLine,
-            boom_probability: row.boom_probability ?? null,
-            bust_probability: row.bust_probability ?? null,
-            fantasy_projection: row.fantasy_projection ?? null,
-          }}
-        />
-      </div>
-
       {/* Name + position */}
-      <div className="flex items-start justify-between gap-2 pr-10">
+      <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-oracle-white truncate leading-tight">{row.player_name}</p>
           <p className="text-[11px] text-oracle-muted mt-0.5">{row.team ?? 'UNK'}</p>
@@ -201,7 +173,6 @@ export function Dashboard() {
   const [sortKey, setSortKey] = useState<SortKey>('projection')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const { setPlayers, setDefaults } = useSearch()
-  const { state: slipState, setBookLine } = useBetSlip()
 
   const { data: currentSeasonData } = useCurrentSeason()
   useEffect(() => {
@@ -225,17 +196,6 @@ export function Dashboard() {
   // Odds
   const playerNames = data?.projections.map((p) => p.player_name) ?? []
   const { data: oddsData } = useOdds({ playerNames, stat, enabled: playerNames.length > 0 })
-
-  useEffect(() => {
-    if (!oddsData?.player_props?.length || slipState.legs.length === 0) return
-    for (const leg of slipState.legs) {
-      if (leg.week !== week || leg.season !== season || leg.stat !== stat) continue
-      const line = findPlayerLine(oddsData.player_props, leg.player_name)
-      if (line != null && line !== leg.book_line) {
-        setBookLine(leg.id, line)
-      }
-    }
-  }, [oddsData?.player_props, season, setBookLine, slipState.legs, stat, week])
 
   function togglePosition(pos: string) {
     setPositions((prev) => prev.includes(pos) ? prev.filter((p) => p !== pos) : [...prev, pos])
@@ -410,9 +370,6 @@ export function Dashboard() {
                     row={row}
                     onClick={() => handleRowClick(row)}
                     bookLine={bookLine}
-                    week={week}
-                    season={season}
-                    stat={stat}
                     style={{ animationDelay: `${Math.min(idx * 0.04, 0.6)}s`, opacity: 0 }}
                   />
                 )

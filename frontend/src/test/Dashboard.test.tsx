@@ -6,7 +6,6 @@ import { http, HttpResponse } from 'msw'
 import { server } from './handlers'
 import { factories } from './factories'
 import { SearchProvider } from '../context/SearchContext'
-import { BetSlipProvider } from '../context/BetSlipContext'
 import { Dashboard } from '../pages/Dashboard'
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -16,13 +15,11 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(
     <QueryClientProvider client={queryClient}>
       <SearchProvider>
-        <BetSlipProvider>
-          <MemoryRouter initialEntries={['/']}>
-            <Routes>
-              <Route path="/" element={ui} />
-            </Routes>
-          </MemoryRouter>
-        </BetSlipProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={ui} />
+          </Routes>
+        </MemoryRouter>
       </SearchProvider>
     </QueryClientProvider>,
   )

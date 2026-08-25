@@ -409,10 +409,8 @@ export function DraftBoard() {
       {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
 
       {isLoading && (
-        <div className="grid gap-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
+        <div>
+          <SkeletonCard count={8} />
         </div>
       )}
 
