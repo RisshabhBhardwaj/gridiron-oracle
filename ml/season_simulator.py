@@ -76,7 +76,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -302,7 +302,11 @@ class SeasonSimulator:
         # _apply_volume_budget, not a second independent guess.
         self._yards_model         = None
         self._yards_fill          = None
-        self._yards_residual_std  = None
+        # Residual split into a persistent team-season slice and a weekly
+        # slice (compute_oof_residual_components) — a single iid std would
+        # shrink by sqrt(17) over a season. See _draw_team_yards_paths.
+        self._yards_persistent_std = None
+        self._yards_weekly_std     = None
         # Per-week build_team_game_forward_frame cache — _resolve_week_games
         # is normally called once per week by run(), but callers that probe
         # a week more than once (retries, tests) shouldn't pay for a second
@@ -412,6 +416,18 @@ class SeasonSimulator:
                     rng.normal(-0.5 * sd * sd, sd, self.n_simulations)
                 )
 
+        # Season-level team-yards offset: one draw per team per PATH, held
+        # for the whole season (see _draw_team_season_yards_offsets). Only
+        # meaningful when a schedule was supplied, since that is the only
+        # case where a team yards budget is drawn at all.
+        team_season_yards_offsets: dict[str, np.ndarray] = {}
+        if schedule_df is not None and not schedule_df.empty and "team" in initial_kalman_df.columns:
+            team_season_yards_offsets = self._draw_team_season_yards_offsets(
+                initial_kalman_df["team"].dropna().astype(str).unique(),
+                self.n_simulations,
+                rng,
+            )
+
         # ── Main simulation loop: iterate per WEEK ──────────────────────────
         for week in weeks:
             week_injury_report = injury_projections.get(week, {})
@@ -443,7 +459,12 @@ class SeasonSimulator:
                 resolved = self._resolve_week_games(week)
                 if not resolved.empty:
                     team_score_paths = self._draw_team_score_paths(resolved, self.n_simulations, rng)
-                    team_yards_paths = self._draw_team_yards_paths(resolved, self.n_simulations, rng)
+                    team_yards_paths = self._draw_team_yards_paths(
+                        resolved,
+                        self.n_simulations,
+                        rng,
+                        season_offsets=team_season_yards_offsets,
+                    )
                     playing_teams = set(resolved["team"].astype(str))
 
             # Draw weekly samples: shape (n_simulations, n_players, n_stats)
@@ -1207,7 +1228,11 @@ class SeasonSimulator:
             return
         from sklearn.linear_model import Ridge
 
-        from ml.team_game_model import FEATURE_COLS, _prepare_x, compute_oof_residual_std
+        from ml.team_game_model import (
+            FEATURE_COLS,
+            _prepare_x,
+            compute_oof_residual_components,
+        )
         from pipeline.team_game_features import build_team_game_frame
 
         train_df = build_team_game_frame(self._db_url(), self._training_seasons())
@@ -1222,7 +1247,16 @@ class SeasonSimulator:
         y = yards_df["total_yards"].astype(float).values
         self._yards_model = Ridge(alpha=_TEAM_GAME_MODEL_ALPHA).fit(X, y)
         self._yards_fill = fill_values
-        self._yards_residual_std = compute_oof_residual_std(
+        # Two numbers, not one: see compute_oof_residual_components. The
+        # persistent slice is held for the whole season per team per path
+        # (_draw_team_season_yards_offsets); only the weekly slice is
+        # redrawn each week in _draw_team_yards_paths. Their squares sum to
+        # the same total residual variance the single-std version used, so
+        # per-GAME spread is untouched and only the SEASON total widens.
+        (
+            self._yards_persistent_std,
+            self._yards_weekly_std,
+        ) = compute_oof_residual_components(
             yards_df, _TEAM_GAME_MODEL_ALPHA, target_col="total_yards"
         )
 
@@ -1314,22 +1348,61 @@ class SeasonSimulator:
         resolved: pd.DataFrame,
         n_simulations: int,
         rng: np.random.Generator,
+        season_offsets: Optional[dict[str, np.ndarray]] = None,
     ) -> dict[str, np.ndarray]:
         """
         One total-offensive-yards path per team per simulation, drawn from
-        the Phase 4 yards model's prediction ± its out-of-fold residual std
-        — the real per-path volume budget _apply_volume_budget allocates
+        the Phase 4 yards model's prediction ± its out-of-fold residual —
+        the real per-path volume budget _apply_volume_budget allocates
         among that team's players (Phase 7 fix). Floored at 0: the Gaussian
         residual can occasionally go negative for a low-yardage prediction,
         and a negative budget has no meaning to allocate.
+
+        The residual arrives in two pieces. `season_offsets` carries the
+        team-season component drawn ONCE for the whole simulation (see
+        _draw_team_season_yards_offsets) and is added unchanged every week,
+        so a path where a team is a better offense than the model thinks
+        stays that way all season. Only self._yards_weekly_std is redrawn
+        here. Drawing the whole residual weekly — what this did before —
+        let 17 independent draws cancel to sqrt(17) of one week's spread,
+        which collapsed every team's SEASON total toward the model's own
+        prediction and capped the best player lines well under any real
+        league-leading total.
         """
         paths: dict[str, np.ndarray] = {}
         for _, row in resolved.iterrows():
-            paths[str(row["team"])] = np.maximum(
-                rng.normal(float(row["yards_mean"]), self._yards_residual_std, n_simulations),
+            team = str(row["team"])
+            mean = float(row["yards_mean"])
+            if season_offsets is not None and team in season_offsets:
+                mean = mean + season_offsets[team]
+            paths[team] = np.maximum(
+                rng.normal(mean, self._yards_weekly_std, n_simulations),
                 0.0,
             )
         return paths
+
+    def _draw_team_season_yards_offsets(
+        self, teams: Iterable[str], n_simulations: int, rng: np.random.Generator
+    ) -> dict[str, np.ndarray]:
+        """
+        One team-season yards offset per team per PATH, drawn once before
+        the week loop and held for the whole season — the persistent slice
+        of the yards residual (see compute_oof_residual_components).
+
+        Mean-zero by construction, so this widens season totals without
+        shifting any team's expected total. Exactly the same device as the
+        per-player _SEASON_ROLE_LOG_SD role multiplier, one level up: a
+        good team-season path and a good player-season path compound, which
+        is how a real league-leading line gets produced at all.
+        """
+        self._ensure_yards_model()
+        std = float(self._yards_persistent_std or 0.0)
+        if std <= 0.0:
+            return {}
+        return {
+            str(team): rng.normal(0.0, std, n_simulations)
+            for team in dict.fromkeys(str(t) for t in teams)
+        }
 
     def _apply_volume_budget(
         self,

@@ -282,3 +282,114 @@ def test_season_intervals_are_not_artificially_tight():
         ratio = d["p90"] / d["mean"]
         assert 1.12 <= ratio <= 1.35, f"{player_id}/{stat} p90/mean = {ratio:.3f}"
         assert d["p10"] < d["p50"] < d["p90"]
+
+
+# ── 7. The team-yards residual is split, not redrawn independently each week ─
+
+def test_oof_residual_components_partition_the_total_variance():
+    """
+    compute_oof_residual_components must SPLIT the residual, not inflate it:
+    persistent^2 + weekly^2 has to reproduce compute_oof_residual_std's total.
+    That identity is what makes the season-persistence fix free of any
+    per-game calibration cost -- per-game spread is unchanged, only the
+    season aggregate widens.
+    """
+    from ml.team_game_model import (
+        compute_oof_residual_components,
+        compute_oof_residual_std,
+    )
+
+    rng = np.random.default_rng(11)
+    rows = []
+    for season in (2019, 2020, 2021, 2022):
+        for team_idx in range(8):
+            team = f"T{team_idx}"
+            # A real per-team-season effect on top of weekly noise, so the
+            # decomposition has something to find.
+            team_effect = rng.normal(0.0, 25.0)
+            for week in range(1, 18):
+                elo = 1500 + 40 * team_idx
+                rows.append({
+                    "season": season, "week": week, "team": team,
+                    "is_home": week % 2, "rest": 7.0, "opp_rest": 7.0,
+                    "team_off_elo": elo, "team_def_elo": 1500.0,
+                    "opp_off_elo": 1500.0, "opp_def_elo": 1500.0,
+                    "prior_coach_pass_rate": 0.55, "is_dome": 0, "is_turf": 0,
+                    "total_yards": 330 + 0.1 * (elo - 1500) + team_effect
+                    + rng.normal(0.0, 70.0),
+                })
+    df = pd.DataFrame(rows)
+
+    total = compute_oof_residual_std(df, alpha=10.0, target_col="total_yards")
+    persistent, weekly = compute_oof_residual_components(
+        df, alpha=10.0, target_col="total_yards"
+    )
+    assert persistent > 0.0, "a real team-season effect should be detected"
+    assert weekly > persistent, "weekly noise dominates in this construction"
+    assert persistent**2 + weekly**2 == pytest.approx(total**2, rel=1e-9)
+
+
+def test_season_yards_offsets_are_mean_zero_and_held_all_season():
+    """
+    The persistent slice is drawn ONCE per team per path and added to every
+    week. Redrawing it weekly is the bug this fixes: 17 independent draws
+    cancel to sqrt(17) of one week's spread, collapsing each team's season
+    total toward the model's own prediction.
+    """
+    sim = SeasonSimulator(season=2026, start_week=1, end_week=18, n_simulations=4000)
+    sim._yards_model = object()          # short-circuit _ensure_yards_model
+    sim._yards_persistent_std = 20.0
+    sim._yards_weekly_std = 75.0
+    rng = np.random.default_rng(3)
+
+    offsets = sim._draw_team_season_yards_offsets(["SEA", "BUF", "SEA"], 4000, rng)
+    assert set(offsets) == {"SEA", "BUF"}, "teams must be de-duplicated"
+    for team, path in offsets.items():
+        assert path.shape == (4000,)
+        assert abs(path.mean()) < 2.0, f"{team} offset must be mean-zero"
+
+    resolved = pd.DataFrame([
+        {"team": "SEA", "yards_mean": 350.0}, {"team": "BUF", "yards_mean": 350.0}
+    ])
+    # 17 weeks of budget, with and without the season offset held constant.
+    def season_totals(season_offsets):
+        draw_rng = np.random.default_rng(9)
+        total = np.zeros(4000)
+        for _ in range(17):
+            paths = sim._draw_team_yards_paths(
+                resolved, 4000, draw_rng, season_offsets=season_offsets
+            )
+            total += paths["SEA"]
+        return total
+
+    without = season_totals(None).std()
+    with_offset = season_totals(offsets).std()
+    # Held all season, a 20 yd/game offset adds 17 * 20 = 340 in quadrature.
+    expected = float(np.hypot(without, 17 * 20.0))
+    assert with_offset == pytest.approx(expected, rel=0.08), (
+        f"season sd {with_offset:.0f} should be ~{expected:.0f}, was {without:.0f} without"
+    )
+
+
+def test_forward_frame_infers_roof_for_retractable_stadiums():
+    """
+    The schedule feed ships future games at retractable-roof stadiums with
+    roof = NULL (the state isn't decided until game day). Reading that as
+    "outdoors" projected those teams as if they played their home schedule
+    outside; is_dome carries a real +19.5 yd/game coefficient.
+    """
+    from pipeline.team_game_features import _fill_missing_roof
+
+    games = pd.DataFrame([
+        {"home_team": "ATL", "roof": None},
+        {"home_team": "DAL", "roof": None},
+        {"home_team": "GB", "roof": None},
+        {"home_team": "ATL", "roof": "open"},
+    ])
+    filled = _fill_missing_roof(games, {"ATL": "closed", "DAL": "closed"})
+    assert filled["roof"].fillna("<null>").tolist() == [
+        "closed", "closed", "<null>", "open"
+    ], (
+        "nulls fill from the home team's usual roof; an unknown stadium stays "
+        "null and a real value is never overwritten"
+    )

@@ -177,6 +177,75 @@ def _build_coach_tendency(coach_plays: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out_rows)
 
 
+def _is_turf(surface: pd.Series) -> pd.Series:
+    """
+    1 for any artificial surface, 0 for grass (and for an unknown surface,
+    grass being the majority).
+
+    This used to test `surface == "turf"`, a value that never appears: the
+    source spells it fieldturf / matrixturf / sportturf / astroturf /
+    a_turf / grass, so is_turf was 0 on every row of every frame and the
+    Ridge learned a coefficient of exactly 0.0 for it. Fitting the real
+    flag is measurably neutral on held-out MAE (61.73/62.19/62.44 vs
+    61.76/62.18/62.47 for total_yards on 2023-25), so this is a
+    correctness fix — the model now sees the feature it was always
+    declared to have — not an accuracy claim.
+    """
+    normalized = surface.fillna("").astype(str).str.strip().str.lower()
+    return (~normalized.isin(["grass", ""])).astype(int)
+
+
+def _load_home_team_roof(conn) -> dict[str, str]:
+    """
+    Each home team's usual roof value, taken as the mode over every game
+    that HAS one. Used to fill `games.roof` when the schedule feed leaves it
+    null, which it does for the whole future slate at retractable-roof
+    stadiums: the roof state isn't decided until game day, so nflreadpy
+    ships those rows with roof = NULL rather than "closed".
+
+    Without this fill, `roof.isin(["dome", "closed"])` reads every one of
+    those games as outdoors. In this database's 2026 schedule that is 43
+    games — the same count as 2024's 45 and 2025's 42 "closed" games, i.e.
+    ALL of them — so a retractable-roof team was projected as if it played
+    its home schedule outside, and is_dome carries a real +19.5 yd/game
+    coefficient. It also drags each team's forward dome-game count down to
+    3.2 from the 5.8 the played seasons show.
+
+    The mode (not the most recent value) is deliberate: a single game moved
+    to a neutral outdoor site shouldn't redefine a dome team's stadium.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT home_team, roof, COUNT(*) AS n
+              FROM games
+             WHERE roof IS NOT NULL
+             GROUP BY home_team, roof
+            """
+        )
+        rows = cur.fetchall()
+    best: dict[str, tuple[int, str]] = {}
+    for home_team, roof, n in rows:
+        key = normalize_team_abbr(home_team)
+        if key is None:
+            continue
+        if key not in best or n > best[key][0]:
+            best[key] = (int(n), roof)
+    return {team: roof for team, (_, roof) in best.items()}
+
+
+def _fill_missing_roof(games: pd.DataFrame, roof_by_home_team: dict[str, str]) -> pd.DataFrame:
+    """Fill null `roof` from the home team's usual stadium (see
+    _load_home_team_roof). Applied to the raw games frame, before the
+    home/away split, because `home_team` is what identifies the stadium."""
+    if games.empty or "roof" not in games.columns:
+        return games
+    games = games.copy()
+    inferred = games["home_team"].map(normalize_team_abbr).map(roof_by_home_team)
+    games["roof"] = games["roof"].where(games["roof"].notna(), inferred)
+    return games
+
+
 def _load_forward_games(conn, season: int, week: int) -> pd.DataFrame:
     """Games for a specific (season, week) regardless of whether they've been played."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -226,11 +295,14 @@ def build_team_game_forward_frame(db_url: str, season: int, week: int) -> pd.Dat
         games = _load_forward_games(conn, season, week)
         elo = _load_latest_team_elo(conn, season, week)
         coach_plays = _load_coach_plays(conn, list(range(2019, season + 1)))
+        roof_by_home_team = _load_home_team_roof(conn)
     finally:
         conn.close()
 
     if games.empty:
         return pd.DataFrame()
+
+    games = _fill_missing_roof(games, roof_by_home_team)
 
     games["home_team_n"] = games["home_team"].map(normalize_team_abbr)
     games["away_team_n"] = games["away_team"].map(normalize_team_abbr)
@@ -278,7 +350,7 @@ def build_team_game_forward_frame(db_url: str, season: int, week: int) -> pd.Dat
     frame = frame.merge(latest_tendency, on="coach", how="left")
 
     frame["is_dome"] = frame["roof"].isin(["dome", "closed"]).astype(int)
-    frame["is_turf"] = (frame["surface"].fillna("").str.lower() == "turf").astype(int)
+    frame["is_turf"] = _is_turf(frame["surface"])
     frame = frame.rename(columns={"team_n": "team", "opponent_n": "opponent"})
     return frame.sort_values(["team"]).reset_index(drop=True)
 
@@ -299,11 +371,18 @@ def build_team_game_frame(db_url: str, seasons: list[int]) -> pd.DataFrame:
         tgs = _load_team_game_stats(conn, seasons)
         elo = _load_team_elo(conn, seasons)
         coach_plays = _load_coach_plays(conn, seasons)
+        roof_by_home_team = _load_home_team_roof(conn)
     finally:
         conn.close()
 
     if games.empty or tgs.empty:
         return pd.DataFrame()
+
+    # Same fill as the forward path, so training and serving read is_dome
+    # off identical rules (see _load_home_team_roof). Historical rows almost
+    # always carry a real roof, so this is close to a no-op here — it exists
+    # to keep the two frames from diverging.
+    games = _fill_missing_roof(games, roof_by_home_team)
 
     games["home_team_n"] = games["home_team"].map(normalize_team_abbr)
     games["away_team_n"] = games["away_team"].map(normalize_team_abbr)
@@ -352,7 +431,7 @@ def build_team_game_frame(db_url: str, seasons: list[int]) -> pd.DataFrame:
     frame = frame.merge(tendency, on=["coach", "season", "week"], how="left")
 
     frame["is_dome"] = frame["roof"].isin(["dome", "closed"]).astype(int)
-    frame["is_turf"] = (frame["surface"].fillna("").str.lower() == "turf").astype(int)
+    frame["is_turf"] = _is_turf(frame["surface"])
     frame["pass_rate"] = np.where(
         frame["total_plays"] > 0, frame["pass_attempts"] / frame["total_plays"], np.nan
     )

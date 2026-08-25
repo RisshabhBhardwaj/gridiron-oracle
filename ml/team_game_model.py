@@ -300,6 +300,99 @@ def compute_oof_residual_std(train_df: pd.DataFrame, alpha: float, target_col: s
     ))
 
 
+def compute_oof_residual_components(
+    train_df: pd.DataFrame, alpha: float, target_col: str = "total_yards"
+) -> tuple[float, float]:
+    """
+    Split the pooled out-of-fold residual into the two components a
+    SEASON-length simulation needs to keep apart:
+
+        (persistent_std, weekly_std)
+
+    compute_oof_residual_std returns only the TOTAL residual spread, which
+    is the right number for a single game. Treating that total as pure
+    week-to-week noise is wrong once you sum 17 of them: independent draws
+    shrink by sqrt(17), so a team's season total collapses toward the
+    model's own predicted season total and no team is ever projected far
+    enough above the league to carry a league-leading player line.
+
+    Part of that residual is not weekly noise at all — it's a team-season
+    effect the pre-kickoff features can't see (a scheme change, an offensive
+    line that holds up all year) which pushes every one of that team's games
+    the same direction. Measured on this database's 2019-2025 walk-forward
+    residuals for total_yards it is a small but real slice: ICC ~0.05,
+    persistent_std ~17.6 yd/game against weekly_std ~74 — which is
+    sqrt(17) * 17.6 = 73 yards of season-level spread that the iid model
+    throws away.
+
+    This is a PARTITION, not an addition: persistent_std^2 + weekly_std^2
+    reproduces the same total per-game variance compute_oof_residual_std
+    reports, so per-game calibration is unchanged and only the season
+    aggregate moves.
+
+    The persistent variance is recovered with the standard
+    random-effects estimator. The observed spread of a team-season's MEAN
+    residual is inflated by the weekly noise that averaged into it:
+
+        var(team_season_mean_resid) = tau^2 + sigma_w^2 / n
+
+    so tau^2 is that spread minus the sampling term. Floored at 0 — a
+    negative variance estimate means the data shows no persistent effect,
+    and the honest response is "none", not a complex number.
+    """
+    fold_frames: list[pd.DataFrame] = []
+    seasons = sorted(train_df["season"].unique().tolist())
+    for fold_train_seasons, fold_val_season in _make_walk_forward_folds(seasons):
+        fold_train_df = train_df[train_df["season"].isin(fold_train_seasons)]
+        fold_val_df = train_df[train_df["season"] == fold_val_season]
+        if fold_train_df.empty or fold_val_df.empty:
+            continue
+        fold_fill = fold_train_df[FEATURE_COLS].median(numeric_only=True)
+        fold_model = Ridge(alpha=alpha).fit(
+            _prepare_x(fold_train_df, fold_fill),
+            fold_train_df[target_col].astype(float).values,
+        )
+        fold_pred = fold_model.predict(_prepare_x(fold_val_df, fold_fill))
+        frame = fold_val_df[["season", "team"]].copy()
+        frame["resid"] = fold_val_df[target_col].astype(float).values - fold_pred
+        fold_frames.append(frame)
+
+    total_std = compute_oof_residual_std(train_df, alpha, target_col=target_col)
+    if not fold_frames:
+        # compute_oof_residual_std already logged its own in-sample warning
+        # for this case. With no folds there is nothing to decompose, so
+        # attribute the whole residual to the weekly term: that reproduces
+        # the previous (iid) behaviour rather than inventing a persistent
+        # component out of a single in-sample fit.
+        return 0.0, total_std
+
+    resid = pd.concat(fold_frames)
+    grouped = resid.groupby(["season", "team"])["resid"]
+    counts = grouped.count()
+    # Team-seasons with a single observation carry no within-team
+    # information and make the sampling correction below undefined.
+    usable = counts[counts >= 2].index
+    if len(usable) < 2:
+        return 0.0, total_std
+    resid = resid.set_index(["season", "team"]).loc[usable].reset_index()
+    grouped = resid.groupby(["season", "team"])["resid"]
+
+    within_var = float((grouped.std(ddof=1) ** 2).mean())
+    between_var = float(grouped.mean().var(ddof=1))
+    mean_n = float(grouped.count().mean())
+
+    tau_sq = max(between_var - within_var / mean_n, 0.0)
+    weekly_var = max(total_std**2 - tau_sq, 0.0)
+    persistent_std = float(np.sqrt(tau_sq))
+    weekly_std = float(np.sqrt(weekly_var))
+    logger.info(
+        "%s residual split: persistent=%.2f weekly=%.2f (total=%.2f, ICC=%.3f)",
+        target_col, persistent_std, weekly_std, total_std,
+        tau_sq / (tau_sq + weekly_var) if (tau_sq + weekly_var) > 0 else 0.0,
+    )
+    return persistent_std, weekly_std
+
+
 def derive_win_probability(
     holdout_season: int,
     alpha: float = 10.0,
