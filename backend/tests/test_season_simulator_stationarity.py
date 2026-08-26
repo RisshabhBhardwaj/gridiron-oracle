@@ -393,3 +393,82 @@ def test_forward_frame_infers_roof_for_retractable_stadiums():
         "nulls fill from the home team's usual roof; an unknown stadium stays "
         "null and a real value is never overwritten"
     )
+
+
+# ── 8. Volume is concentrated on starters, not sprayed down the depth chart ──
+
+def test_only_one_quarterback_throws_per_path():
+    """
+    Availability is an independent Bernoulli per player, so on 51% of the
+    weeks a starter is available at least one backup is "available" too. A
+    proportional split then hands that backup part of a game he would never
+    have played: QB1 held 0.647 of his team's passing against a real 0.803,
+    and teams fielded 3.9 passers against a real 2.3.
+    """
+    priority = {"qb1": 1.0, "qb2": 2.0, "qb3": 3.0}
+    pids = ["qb1", "qb2", "qb3", "wr1"]
+    #             path0  path1  path2  path3
+    raw = np.array([
+        [200.0,   0.0,   0.0,   0.0],   # qb1 starter, out on paths 1-3
+        [150.0, 140.0,   0.0,   0.0],   # qb2
+        [100.0,  90.0,  80.0,   0.0],   # qb3
+        [  7.0,   7.0,   7.0,   7.0],   # wr1 trick play -- never collapsed
+    ])
+    out = SeasonSimulator._collapse_to_one_passer(raw, pids, priority)
+
+    qb_block = out[:3]
+    assert (np.count_nonzero(qb_block, axis=0) <= 1).all(), "at most one passer per path"
+    assert qb_block[0, 0] > 0, "the starter takes the game when available"
+    assert qb_block[1, 1] > 0 and qb_block[0, 1] == 0, "next man up when the starter is out"
+    assert qb_block[2, 2] > 0, "third string when both ahead of him are out"
+    assert qb_block[:, 3].sum() == 0, "nobody available -> nobody throws"
+
+    # The losing draws are TRANSFERRED, not discarded: the caller rescales the
+    # whole group to the team budget, so shrinking the group sum here would
+    # inflate that rescale and multiply the trick-play passer up with it.
+    np.testing.assert_allclose(out.sum(axis=0), raw.sum(axis=0), rtol=1e-9)
+    np.testing.assert_allclose(out[3], raw[3], rtol=1e-9), "non-QB row untouched"
+
+
+def test_collapse_is_a_no_op_below_two_quarterbacks():
+    raw = np.array([[100.0, 0.0], [7.0, 7.0]])
+    for priority in ({}, {"qb1": 1.0}):
+        np.testing.assert_allclose(
+            SeasonSimulator._collapse_to_one_passer(raw, ["qb1", "wr1"], priority), raw
+        )
+
+
+def test_cold_start_priors_are_not_starter_grade():
+    """
+    POSITION_PRIORS is the Kalman x_0 for a player with NO history, and
+    _apply_volume_budget splits a FIXED team budget in proportion to those
+    rates -- so every yard seeded onto a player who has never taken a snap is
+    subtracted from that team's actual starter. 294 of the 808 players on the
+    2026 board had zero prior game rows. These used to be per-game averages
+    over every game a position played, which is dominated by starters, and ran
+    1.5-2.3x the realized debut-season rate. Bands are the debut-season means
+    from scripts/compute_position_priors.py with room to move.
+    """
+    from ml.kalman_tracker import POSITION_PRIORS
+
+    for position, stat, low, high in (
+        ("QB", "passing_yards", 100.0, 200.0),
+        ("WR", "receiving_yards", 15.0, 35.0),
+        ("TE", "receiving_yards", 10.0, 28.0),
+        ("RB", "rushing_yards", 15.0, 38.0),
+    ):
+        value = POSITION_PRIORS[position][stat]
+        assert low <= value <= high, f"{position}/{stat} prior {value} outside [{low}, {high}]"
+
+    # Exact zeros are load-bearing, not cosmetic: _draw_stat_samples gates on
+    # `est <= _ZERO_RATE_EPS` to keep a player out of a stat's pool entirely.
+    # A 0.1 yd/game passing prior does not stay worth 0.1 yards -- it admits
+    # every cold-start receiver to the passing pool and the budget rescale
+    # multiplies them, which took non-QB passing from 0.9% to 6.9% of the
+    # league when a derivation left the lateral noise in.
+    for position, stat in (("WR", "passing_yards"), ("TE", "passing_yards"),
+                           ("RB", "passing_yards"), ("WR", "pass_attempts"),
+                           ("QB", "targets"), ("TE", "carries")):
+        assert POSITION_PRIORS[position][stat] == 0.0, (
+            f"{position}/{stat} must be exactly 0 -- see _zero_cross_position_noise"
+        )

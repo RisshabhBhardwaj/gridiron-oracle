@@ -428,6 +428,26 @@ class SeasonSimulator:
                 rng,
             )
 
+        # Depth order among quarterbacks, for _collapse_to_one_passer. Only
+        # QBs go in: a receiver with a trick-play passing rate must keep his
+        # proportional slice rather than compete for the whole game.
+        passer_priority: dict[str, float] = {}
+        if "position" in initial_kalman_df.columns:
+            for _, prow in initial_kalman_df.iterrows():
+                if str(prow.get("position", "")).upper() != "QB":
+                    continue
+                rank = prow.get("depth_rank")
+                try:
+                    rank = float(rank)
+                except (TypeError, ValueError):
+                    rank = float("nan")
+                # No published depth chart: sort him behind everyone who has
+                # one rather than dropping him, so he can still take a game
+                # when the ranked quarterbacks are all unavailable.
+                passer_priority[str(prow["player_id"])] = (
+                    rank if np.isfinite(rank) else 99.0
+                )
+
         # ── Main simulation loop: iterate per WEEK ──────────────────────────
         for week in weeks:
             week_injury_report = injury_projections.get(week, {})
@@ -496,7 +516,8 @@ class SeasonSimulator:
                     else [None] * len(initial_kalman_df),
                 ))
                 self._apply_volume_budget(
-                    week_paths, team_by_pid, team_yards_paths, raw_unmasked=week_raw
+                    week_paths, team_by_pid, team_yards_paths,
+                    raw_unmasked=week_raw, passer_priority=passer_priority,
                 )
 
             # Accumulate season totals
@@ -1410,6 +1431,7 @@ class SeasonSimulator:
         team_by_pid: dict[str, str],
         team_yards_paths: dict[str, np.ndarray],
         raw_unmasked: Optional[dict[tuple[str, str], np.ndarray]] = None,
+        passer_priority: Optional[dict[str, float]] = None,
     ) -> None:
         """
         Rescale passing_yards/rushing_yards/receiving_yards in place so
@@ -1484,6 +1506,18 @@ class SeasonSimulator:
                         ])
                         raw = np.where(dead, fallback, raw)
                         group_sum = raw.sum(axis=0)
+                # Exactly one quarterback throws in a real game. Availability
+                # is drawn per player as an independent Bernoulli, so on 51% of
+                # the weeks a starter is available at least one backup is
+                # "available" too, and a proportional split then hands that
+                # backup a slice of a game he would never have played. It is
+                # the last surviving form of the "26 players passing the ball"
+                # problem: measured on the board, QB1 held 0.647 of his team's
+                # passing yards against a real 0.803, and teams fielded 3.9
+                # passers against a real 2.3.
+                if stat == "passing_yards" and passer_priority:
+                    raw = self._collapse_to_one_passer(raw, group_pids, passer_priority)
+                    group_sum = raw.sum(axis=0)
                 has_signal = group_sum > 1e-6
                 scale = np.where(has_signal, budget / np.where(has_signal, group_sum, 1.0), 0.0)
                 # Defence in depth against the failure this budget can amplify:
@@ -1500,6 +1534,57 @@ class SeasonSimulator:
                     results[(pid, stat)] = raw[i] * scale
                 if stat == "passing_yards":
                     realized_pass = group_sum * scale
+
+    @staticmethod
+    def _collapse_to_one_passer(
+        raw: np.ndarray, group_pids: list[str], passer_priority: dict[str, float]
+    ) -> np.ndarray:
+        """
+        Zero every quarterback except the one who takes the game, per path.
+
+        `passer_priority` holds ONLY quarterbacks (pid -> depth rank, lower is
+        the starter). Anyone absent from it -- a receiver with a trick-play
+        passing rate -- is left untouched, so the handful of real non-QB
+        passing yards survive; they are ~0.9% of the league total and belong
+        in the split.
+
+        The starter takes the game whenever he is available, otherwise the
+        next man down. "Available" is `raw > 0`, which is already the
+        availability mask multiplied through, so this needs no second draw and
+        stays consistent with the mask every other stat used on that path.
+
+        The losing quarterbacks' draws are TRANSFERRED to the winner, not
+        discarded. Only relative weights matter downstream -- the caller
+        rescales the whole group to the team's passing budget -- so zeroing
+        them instead would shrink the group sum and inflate the rescale, which
+        multiplies the non-QB trick-play passers up along with the starter.
+        Measured: discarding took non-QB passing from 0.9% of the league to
+        8.9%, trading one distortion for another. Transferring leaves the
+        QB-group-to-trick-play ratio exactly where the draws put it and only
+        concentrates WITHIN the quarterbacks.
+
+        Deliberately one passer, not a probability of two: a mid-game injury
+        that puts a second quarterback on the field is roughly 2 of 17 team
+        games, and modelling it would cost the concentration this exists to
+        restore.
+        """
+        qb_rows = [i for i, pid in enumerate(group_pids) if pid in passer_priority]
+        if len(qb_rows) < 2:
+            return raw
+        qb_rows.sort(key=lambda i: passer_priority[group_pids[i]])
+        sub_raw = raw[qb_rows]
+        available = sub_raw > 1e-6
+        # argmax returns the FIRST True, and qb_rows is sorted starter-first,
+        # so this is "the highest quarterback on the depth chart who is
+        # available". It returns 0 for a path with nobody available, which
+        # `any_available` then masks back out.
+        winner = np.argmax(available, axis=0)
+        any_available = available.any(axis=0)
+        keep = np.zeros_like(sub_raw, dtype=bool)
+        keep[winner, np.arange(sub_raw.shape[1])] = any_available
+        out = raw.copy()
+        out[qb_rows] = np.where(keep, sub_raw.sum(axis=0), 0.0)
+        return out
 
     # ── Team wins / playoffs ─────────────────────────────────────────────────
 

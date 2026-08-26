@@ -186,17 +186,29 @@ class TestSeasonSimulatorAvailabilityGating:
 
     def test_unlisted_players_are_unaffected(self):
         """Players absent from player_active_prob simulate at full availability."""
-        # 4 simulated weeks (15-18); p2's kalman prior is 30 receiving yards/week
-        # (see _make_roster) — an ungated p2 should land near 4 * 30 = 120,
-        # nowhere near what gating p1 to zero would do if it leaked onto p2.
+        # Asserted against p2's OWN ungated run, not an absolute yardage.
+        # _make_roster's explicit kalman_est values do not survive
+        # _compute_initial_kalman: with prior_game_rows={} every player is a
+        # cold start, so compute_kalman_form overwrites them with
+        # POSITION_PRIORS. This test used to hardcode "~120" from the RB
+        # receiving prior and broke the moment that prior was corrected --
+        # a real dependency on a number this test is not about.
         roster = _make_roster(2)
+        baseline = _small_sim(n_simulations=200).run(
+            players_df=roster, prior_game_rows={},
+            player_active_prob={}, rng_seed=22,
+        ).player_season_totals["p2"]["receiving_yards"]["mean"]
+
         sim_partial = _small_sim(n_simulations=200)
         result_partial = sim_partial.run(
             players_df=roster, prior_game_rows={},
             player_active_prob={"p1": 0.0}, rng_seed=22,
         )
         p2_mean = result_partial.player_season_totals["p2"]["receiving_yards"]["mean"]
-        assert p2_mean > 90, f"p2 should be near its full 4-week rate (~120), got {p2_mean:.1f}"
+        assert baseline > 0, "the fixture must give p2 a non-zero rate to compare against"
+        assert p2_mean == pytest.approx(baseline, rel=0.15), (
+            f"gating p1 to zero must not move p2: {p2_mean:.1f} vs an ungated {baseline:.1f}"
+        )
 
     def test_stats_zero_together_not_independently(self):
         """A player marked inactive on a path zeroes ALL their stats on that path together."""

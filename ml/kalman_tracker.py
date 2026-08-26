@@ -109,85 +109,101 @@ STAT_MULTI_SOURCE_COLS: dict[str, list[str]] = {
     ],
 }
 
-# Position-average priors for cold-start (zero prior games).
-# Values are 2019-2025 season averages per game for each position,
-# derived from nflreadpy player_stats via scripts/compute_position_priors.py.
+# Cold-start priors: the expected box score for ONE game played by a player
+# with no history at all (the Kalman x_0). DERIVED, not hand-set --
+# regenerate with `python -m scripts.compute_position_priors`, which is also
+# what `--check` guards in CI.
+#
+# The population is a player's DEBUT season, and the denominator is games
+# actually played. These used to be per-game averages over EVERY game a
+# position played, which is dominated by starters because starters play most
+# of the games -- so a rostered fourth-string tight end was seeded with a
+# starting tight end's line. Every value was 1.5-2.3x too high (WR
+# receiving_yards 55.0 vs a realized 24.9, QB passing_yards 240.0 vs 156.9).
+#
+# It mattered far more than a cold-start estimate normally would.
+# SeasonSimulator._apply_volume_budget splits a team's yardage budget in
+# proportion to these rates, and that budget is FIXED -- so every yard seeded
+# onto a player who has never taken a snap was subtracted from that team's
+# actual starter. 294 of the 808 players on the 2026 board (36%) had zero
+# prior game rows, 137 of them WRs, which is what flattened the board until
+# no player stood out from any other.
 POSITION_PRIORS: dict[str, dict[str, float]] = {
-    "WR": {
-        "receiving_yards":    55.0,
-        "receiving_tds":       0.40,
-        "targets":             5.5,
-        "receptions":          3.5,
-        "target_share":        0.15,
-        "red_zone_target_share": 0.15,
-        "air_yards_share":     0.12,
-        "fantasy_ppr":        10.0,
-        "carries":             0.3,
-        "rushing_yards":       2.0,
-        "rushing_tds":         0.02,
-        "pass_attempts":       0.0,
-        "completions":         0.0,
-        "passing_yards":       0.0,
-        "passing_tds":         0.0,
-        "interceptions":       0.0,
-        "fumbles":             0.01,   # WRs average ~0.01 fumbles/game
+    "QB": {
+        "receiving_yards":       0.0,
+        "receiving_tds":         0.0,
+        "targets":               0.0,
+        "receptions":            0.0,
+        "target_share":          0.0,
+        "red_zone_target_share": 0.0,
+        "air_yards_share":       0.0,
+        "fantasy_ppr":           10.6,
+        "carries":               3.22,
+        "rushing_yards":         14.8,
+        "rushing_tds":           0.15,
+        "pass_attempts":         23.8,
+        "completions":           14.89,
+        "passing_yards":         156.9,
+        "passing_tds":           0.84,
+        "interceptions":         0.58,
+        "fumbles":               0.4,
     },
     "RB": {
-        "receiving_yards":    20.0,
-        "receiving_tds":       0.20,
-        "targets":             3.0,
-        "receptions":          2.5,
-        "target_share":        0.07,
+        "receiving_yards":       8.9,
+        "receiving_tds":         0.05,
+        "targets":               1.57,
+        "receptions":            1.21,
+        "target_share":          0.05,
         "red_zone_target_share": 0.05,
-        "air_yards_share":     0.03,
-        "fantasy_ppr":        12.0,
-        "carries":            14.0,
-        "rushing_yards":      60.0,
-        "rushing_tds":         0.50,
-        "pass_attempts":       0.0,
-        "completions":         0.0,
-        "passing_yards":       0.0,
-        "passing_tds":         0.0,
-        "interceptions":       0.0,
-        "fumbles":             0.04,   # RBs average ~0.04 fumbles/game (highest)
+        "air_yards_share":       0.0,
+        "fantasy_ppr":           6.1,
+        "carries":               6.22,
+        "rushing_yards":         26.9,
+        "rushing_tds":           0.18,
+        "pass_attempts":         0.0,
+        "completions":           0.0,
+        "passing_yards":         0.0,
+        "passing_tds":           0.0,
+        "interceptions":         0.0,
+        "fumbles":               0.06,
+    },
+    "WR": {
+        "receiving_yards":       24.9,
+        "receiving_tds":         0.15,
+        "targets":               3.26,
+        "receptions":            1.99,
+        "target_share":          0.1,
+        "red_zone_target_share": 0.15,
+        "air_yards_share":       0.14,
+        "fantasy_ppr":           5.6,
+        "carries":               0.2,
+        "rushing_yards":         1.2,
+        "rushing_tds":           0.01,
+        "pass_attempts":         0.0,
+        "completions":           0.0,
+        "passing_yards":         0.0,
+        "passing_tds":           0.0,
+        "interceptions":         0.0,
+        "fumbles":               0.02,
     },
     "TE": {
-        "receiving_yards":    35.0,
-        "receiving_tds":       0.30,
-        "targets":             4.0,
-        "receptions":          3.0,
-        "target_share":        0.10,
+        "receiving_yards":       19.1,
+        "receiving_tds":         0.14,
+        "targets":               2.64,
+        "receptions":            1.81,
+        "target_share":          0.08,
         "red_zone_target_share": 0.12,
-        "air_yards_share":     0.07,
-        "fantasy_ppr":          8.0,
-        "carries":             0.05,
-        "rushing_yards":       0.3,
-        "rushing_tds":         0.01,
-        "pass_attempts":       0.0,
-        "completions":         0.0,
-        "passing_yards":       0.0,
-        "passing_tds":         0.0,
-        "interceptions":       0.0,
-        "fumbles":             0.01,   # TEs average ~0.01 fumbles/game
-    },
-    "QB": {
-        "receiving_yards":     0.0,
-        "receiving_tds":       0.0,
-        "targets":             0.0,
-        "receptions":          0.0,
-        "target_share":        0.0,
-        "red_zone_target_share": 0.0,
-        "air_yards_share":     0.0,
-        "fantasy_ppr":        20.0,
-        "carries":             5.0,
-        "rushing_yards":      25.0,
-        "rushing_tds":         0.25,
-        "pass_attempts":      35.0,   # NFL avg starter ~35 att/game 2019-2025
-        "completions":        22.0,   # NFL avg ~22 comp/game (comp% ~63%)
-        "passing_yards":     240.0,
-        "passing_tds":         1.60,
-        "interceptions":       0.90,  # NFL avg ~0.9 INTs/game per QB
-        "fumbles":             0.30,  # QBs fumble most (scrambles + sack fumbles)
+        "air_yards_share":       0.07,
+        "fantasy_ppr":           4.6,
+        "carries":               0.0,
+        "rushing_yards":         0.0,
+        "rushing_tds":           0.0,
+        "pass_attempts":         0.0,
+        "completions":           0.0,
+        "passing_yards":         0.0,
+        "passing_tds":           0.0,
+        "interceptions":         0.0,
+        "fumbles":               0.02,
     },
 }
 
