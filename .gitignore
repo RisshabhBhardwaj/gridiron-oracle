@@ -238,6 +238,11 @@ frontend/node_modules/
 /.vite/
 
 # Database
+
+# Local course documents and sensitive agent reports
+/MA (WL) 26500 911 Linear Algebra - Simple Syllabus.pdf
+/MA (WL) 41600 157 Probability - Simple Syllabus.pdf
+/.superpowers/sdd/task-1-report.md
 *.db
 pgdata/
 

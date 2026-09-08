@@ -265,6 +265,7 @@ pytest backend/tests/test_kalman_tracker.py::TestKalmanProperty -v
 ### C++ engine tests
 
 ```bash
-make bench                           # Catch2 ring buffer + Kelly benchmarks
+make bench                           # Catch2 ring buffer microbench
+make latency-bench                   # open-loop SPSC vs mutex+queue (BENCHMARKS.md)
 cd engine/build && ./ws_integration_tests   # WebSocket integration tests
 ```

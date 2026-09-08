@@ -132,7 +132,28 @@ engine:
 .PHONY: bench
 bench:
 	$(MAKE) engine
-	./engine/build/ring_buffer_test --benchmark-samples 100
+	./engine/build/run_tests "[!benchmark]" --benchmark-samples 100
+
+.PHONY: latency-bench
+latency-bench:
+	cmake -B engine/build engine/ -DCMAKE_BUILD_TYPE=Release
+	cmake --build engine/build --target spsc_latency_bench -j$(NPROC)
+	@echo "=== saturation throughput (queue is the bottleneck) ==="
+	caffeinate -i ./engine/build/spsc_latency_bench --mode throughput \
+	  --reps 9 --throughput-msgs 20000000 --cooldown-s 1
+	@echo "=== open-loop latency, 10s window, 3 interleaved reps ==="
+	caffeinate -i ./engine/build/spsc_latency_bench --mode latency \
+	  --reps 3 --warmup-s 2 --duration-s 10 --cooldown-s 1 \
+	  --rates 100000,500000,1000000
+
+# Sustained 60s window. ~30 min of two pegged cores -- run it deliberately,
+# ideally with `sudo powermetrics --samplers smc -i 1000` alongside.
+.PHONY: latency-bench-sustained
+latency-bench-sustained:
+	cmake --build engine/build --target spsc_latency_bench -j$(NPROC)
+	caffeinate -i ./engine/build/spsc_latency_bench --mode latency \
+	  --reps 3 --warmup-s 10 --duration-s 60 --cooldown-s 30 \
+	  --rates 100000,500000,1000000
 
 # ── MLflow ────────────────────────────────────────────────────────────────────
 .PHONY: mlflow-backup

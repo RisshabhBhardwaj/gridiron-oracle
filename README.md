@@ -186,7 +186,8 @@ reports/               Evaluation diagnostics
 ```bash
 make test              # pytest + Catch2
 make ci                # test + typecheck + lint
-make bench             # C++ benchmarks — ring buffer target < 200 ns/op
+make bench             # Catch2 ring-buffer microbench
+make latency-bench     # open-loop SPSC vs mutex+queue (see BENCHMARKS.md)
 make mutmut            # mutation testing
 ```
 

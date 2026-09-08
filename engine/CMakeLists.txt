@@ -126,6 +126,17 @@ if(Boost_FOUND)
   catch_discover_tests(ws_integration_tests)
 endif()
 
+# ── Open-loop SPSC vs mutex+queue latency bench (see BENCHMARKS.md) ───────────
+add_executable(spsc_latency_bench
+  ${CMAKE_CURRENT_SOURCE_DIR}/../bench/spsc_latency_bench.cpp
+)
+target_include_directories(spsc_latency_bench PRIVATE include)
+target_link_libraries(spsc_latency_bench PRIVATE Threads::Threads)
+target_compile_options(spsc_latency_bench PRIVATE -O3 -DNDEBUG)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|x86_64|AMD64")
+  target_compile_options(spsc_latency_bench PRIVATE -march=native)
+endif()
+
 # ── libFuzzer target (Clang only — enable with -DFUZZING=ON) ──────────────────
 # Requires: clang + compiler-rt (ships with Xcode on macOS; apt install clang on Ubuntu)
 # Usage:
