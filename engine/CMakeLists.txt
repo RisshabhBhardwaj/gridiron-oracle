@@ -126,7 +126,7 @@ if(Boost_FOUND)
   catch_discover_tests(ws_integration_tests)
 endif()
 
-# ── Open-loop SPSC vs mutex+queue latency bench (see docs/BENCHMARKS.md) ───────────
+# ── Open-loop SPSC vs mutex+queue latency bench (see docs/plans/2026-09-08-spsc-latency-benchmarks.md) ───────────
 add_executable(spsc_latency_bench
   ${CMAKE_CURRENT_SOURCE_DIR}/../bench/spsc_latency_bench.cpp
 )

@@ -1,6 +1,6 @@
 Type: Decision
+Status: Proposed (no migration done)
 Last verified against code: 2026-10-07 (frontend read; library status from a secondary web source, confirm before adopting)
-Status: Proposed. No migration done.
 
 # Frontend design system
 

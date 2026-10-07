@@ -1,6 +1,6 @@
 Type: Design
+Status: Proposed (user types are inferred from routes and copy, not from known customers)
 Last verified against code: 2026-10-07 (routes and copy read; no user research exists in the repo)
-Status: Proposed. User types are inferred from routes and copy, not from known customers.
 
 # Users
 

@@ -42,5 +42,5 @@ PolyForm Noncommercial 1.0.0 ([LICENSE](LICENSE)). Commercial use needs a separa
 ## More
 
 - Current status and next steps: [docs/status/CURRENT.md](docs/status/CURRENT.md)
-- Setup, run, test, and architecture notes: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- Setup, run, test, and architecture notes: [docs/runbooks/DEVELOPMENT.md](docs/runbooks/DEVELOPMENT.md)
 - All docs: [docs/README.md](docs/README.md)

@@ -1,6 +1,6 @@
 Type: Architecture
+Status: Accepted
 Last verified against code: 2026-10-07 (spot-check only: the PFR statements, which are enforced by `backend/tests/test_repo_invariants.py`; other rows not re-verified)
-Status: Current
 
 # Data sources
 

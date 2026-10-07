@@ -2,7 +2,7 @@
 
 Type: Runbook
 Status: Accepted
-Last verified against code: 2026-10-07 (moved from README; verify commands before relying on them)
+Last verified against code: 2026-10-07 (commands in AGENTS.md were run; `make bootstrap-local` and `make up` were not)
 
 ## Run it
 
@@ -12,9 +12,9 @@ make up                         # docker stack: Postgres, MLflow, API, frontend
 cd frontend && npm run dev      # or use .claude/launch.json
 ```
 
-Tests and commands are listed in [AGENTS.md](AGENTS.md). On Apple Silicon set `KMP_DUPLICATE_LIB_OK=TRUE` and `OMP_NUM_THREADS=1` before ML code.
+Tests and commands are listed in [AGENTS.md](../../AGENTS.md). On Apple Silicon set `KMP_DUPLICATE_LIB_OK=TRUE` and `OMP_NUM_THREADS=1` before ML code.
 
-Releases: `releases/README.md`. Evidence policy: `releases/artifacts/README.md`.
+Releases: [releases/README.md](../../releases/README.md). Evidence policy: `releases/artifacts/README.md`.
 
 ## Layout
 

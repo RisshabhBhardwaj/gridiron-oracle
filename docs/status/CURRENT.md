@@ -15,8 +15,6 @@ Checked on 2026-10-07 by running the tests, not by trusting older documents.
 | Lint (`ruff` 0.15.12) | clean |
 | Evidence manifest check | passes; every entry is marked "provisional" |
 
-Re-run on 2026-10-07 after fixing the earlier failures: backend 1305 passed, 27 skipped, 0 failed; `ruff check .` clean; frontend typecheck, 34 tests and build pass; engine 72/72; evidence manifest OK.
-
 **Model quality.**
 - Owner-verified claim: on causal out-of-fold evaluation (15 stat/position cells, seasons 2021 to 2025), the model beat both the naive (last season) and trailing-3-games baselines in 74 of 75 cell-seasons. **Reproduction artifact not committed.** A per-cell eval CSV set for the current candidate is not in the repo.
 - How to reproduce: for each cell, run `python -m ml.eval_causal --oof <pinned stack CSV from releases/current_baseline.json> --stat <stat> --position <pos> --out <csv>` (needs the database for baselines), then count rows where `beats_naive` and `beats_trailing3` are both true per cell-season. `scripts/summarize_causal_evals.py` does that aggregation but is hard-coded to older file names.
@@ -35,18 +33,31 @@ Re-run on 2026-10-07 after fixing the earlier failures: backend 1305 passed, 27 
 
 None recorded.
 
-## Next steps
+## Next steps (priority order)
 
-TODO(owner): add priorities.
+1. Commit a reproducer for the owner-verified 74/75 baseline-beating count: generate per-cell eval CSVs for the current candidate with `ml.eval_causal` and aggregate them. Update `scripts/summarize_causal_evals.py`, which is hard-coded to old `*_20260809.csv` file names and to `reports/eval_causal_stack_*.csv` files that no longer exist.
+2. Decide the fate of the prediction-surfaces rebuild plan (SP0/SP2 labels still appear in code; the plan itself is archived). Season/rest-of-season endpoints were described as fail-closed until playing-time (SP2); current behaviour not re-checked.
+3. Betting is in scope (decision 0003): verify the engine's live odds connection, show a real book line in the UI (it shows "Book Line 0" when none exists), and check that projection ranges are calibrated (an earlier note says season ranges were too narrow).
+4. Replace the hard-coded "2026 in-season projections are not yet available" banner (`frontend/src/components/shared/NoForecastBanner.tsx`) with year and state from the API.
+5. Wire or remove the Settings weights (`user_config.json`): no consumer was found in projection code.
+6. Rewrite jargon UI copy (list in `docs/USERS.md`).
+7. Adopt the UI stack in `docs/DESIGN_SYSTEM.md` once the owner approves it.
 
 ## To-dos and reminders
 
-TODO(owner): add.
+- Keep `docs/DATA_SOURCES.md` documenting `load_pfr_advstats` (a test enforces it).
+- Evidence entries in `releases/artifacts/MANIFEST.json` are all "provisional"; flip to frozen after a clean rebuild reproduces them.
+- `ml/experiments/team_game_model/win_probability_2025_*.json` are unlisted in the manifest (non-blocking note).
+- Unrouted pages `Dashboard.tsx` and `SeasonProjections.tsx`: route or remove.
 
 ## Open questions
 
-TODO(owner): add.
+- Is the SP0/SP2 prediction-surfaces rebuild plan still active? (Archived copy: `_internal-docs/gridiron_oracle/archive-2026-10-07/docs/superpowers/specs/`.)
+- Is `verify_db.py` wanted? It was tracked and archived on 2026-10-07 as unreferenced; restore it from the archive if so.
+- Which fantasy league format is the target? Draft ranks assume 8-team PPR.
 
 ## Decisions made
 
-See `docs/decisions/` (none recorded yet).
+- [0001 Causal walk-forward evaluation](../decisions/0001-causal-walk-forward-evaluation.md)
+- [0002 Artifact-backed, fail-closed serving](../decisions/0002-artifact-backed-fail-closed-serving.md)
+- [0003 Betting and Kelly sizing stay in scope](../decisions/0003-betting-and-kelly-sizing-in-scope.md)

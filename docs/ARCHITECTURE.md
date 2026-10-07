@@ -1,6 +1,6 @@
 Type: Architecture
+Status: Accepted
 Last verified against code: 2026-10-07 (module existence and constants checked; model quality not re-measured)
-Status: Current
 
 # Architecture
 
@@ -16,7 +16,7 @@ Status: Current
 
 ## C++ engine (`engine/`)
 
-Lock-free single-producer single-consumer ring buffer, fractional Kelly sizing (0.25x, 5% cap per bet), exposure limits (5% per player, 20% per game, 20% total), WebSocket consumer, Unix-socket bridge to Python. 72 Catch2 tests pass locally. Connection to a live odds feed was not verified. Measurements: [BENCHMARKS.md](BENCHMARKS.md).
+Lock-free single-producer single-consumer ring buffer, fractional Kelly sizing (0.25x, 5% cap per bet), exposure limits (5% per player, 20% per game, 20% total), WebSocket consumer, Unix-socket bridge to Python. 72 Catch2 tests pass locally. Connection to a live odds feed was not verified. Measurements: [the benchmark log](plans/2026-09-08-spsc-latency-benchmarks.md).
 
 ## Release gating
 
