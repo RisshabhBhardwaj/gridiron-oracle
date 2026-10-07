@@ -79,7 +79,7 @@ ALL_SOURCES = [
 ]
 
 BATCH_SIZE = 500
-MIN_DELAY_BETWEEN_SOURCES = 1.0  # seconds — CLAUDE.md §3 data rules
+MIN_DELAY_BETWEEN_SOURCES = 1.0  # seconds — minimum delay between external requests
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -580,7 +580,7 @@ class NFLReadPyAdapter:
     def _write_dead_letter(self, source: str, error: str, raw: dict) -> None:
         """
         Insert one failed-validation row into dead_letter.
-        CLAUDE.md §3: failed rows go to dead_letter — never silently dropped.
+        failed rows go to dead_letter — never silently dropped.
 
         Uses _safe_pg_json() to handle date/datetime objects in raw dicts
         (coerced Polars rows may contain Python date objects).
@@ -621,7 +621,7 @@ class NFLReadPyAdapter:
         """
         Wrap a nflreadpy load_* call with exponential backoff.
         Retries 3 times: waits 2s → 4s → 8s (capped at 60s).
-        CLAUDE.md §3: exponential back-off on 429s / network failures.
+        exponential back-off on 429s / network failures.
         """
         return loader_fn(**kwargs)
 
@@ -1000,7 +1000,7 @@ class NFLReadPyAdapter:
     ) -> dict[str, tuple[int, int]]:
         """
         Orchestrate all four sources sequentially with a 1-second gap between each.
-        CLAUDE.md §3: minimum 1-second delay between external requests.
+        minimum 1-second delay between external requests.
 
         Returns: {source_type: (success_count, failure_count)}
         """

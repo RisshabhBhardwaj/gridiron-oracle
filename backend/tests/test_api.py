@@ -8,7 +8,7 @@ Strategy:
   - Tests verify: routing, response schema, Pydantic validation, HTTP codes.
   - data_freshness presence is asserted on every /predict response.
   - /settings weight validation (must sum to 100) is tested.
-  - /backtest response contains all CLAUDE.md required fields.
+  - /backtest response contains all required fields.
 
 Run with:
     pytest backend/tests/test_api.py -v
@@ -179,7 +179,7 @@ class TestPredict:
         assert r.status_code == 200
 
     def test_predict_response_has_data_freshness(self):
-        """CLAUDE.md §3: data_freshness required on every /predict response."""
+        """data_freshness required on every /predict response."""
         with patch(
             "backend.app.api.predict.ProjectionService.get_projection",
             return_value=_mock_projection_result(),
@@ -329,7 +329,7 @@ class TestExplain:
             assert field in body, f"Missing field: {field}"
 
     def test_explain_top_factors_have_label(self):
-        """All SHAP factors must have plain-English labels (CLAUDE.md §3)."""
+        """All SHAP factors must have plain-English labels."""
         with patch(
             "backend.app.api.explain.ProjectionService.get_feature_dict",
             return_value={"kalman_est_receiving_yards": 74.2, "seas_targets_avg": 8.0},
@@ -472,7 +472,7 @@ class TestBacktest:
         assert r.status_code == 200
 
     def test_backtest_has_all_required_fields(self):
-        """CLAUDE.md §3: /backtest must include all these fields."""
+        """/backtest must include all these fields."""
         with patch(
             "backend.app.api.backtest.BacktestService.get_summary",
             return_value=self._mock_summary(),
@@ -491,7 +491,7 @@ class TestBacktest:
             "metric_notes",
         ]
         for field in required:
-            assert field in body, f"Missing CLAUDE.md required field: {field}"
+            assert field in body, f"Missing required field: {field}"
 
     def test_backtest_calibration_is_list(self):
         with patch(
@@ -650,7 +650,7 @@ class TestAlerts:
 
 
 # ---------------------------------------------------------------------------
-# I. SHAP label quality (CLAUDE.md requirement)
+# I. SHAP label quality (requirement)
 # ---------------------------------------------------------------------------
 
 class TestSHAPLabels:

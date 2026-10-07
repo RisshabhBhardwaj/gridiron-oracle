@@ -11,12 +11,12 @@ Does NOT touch ml/draft_sim.py:snake_draft (the walk-forward evaluator depends o
 from __future__ import annotations
 
 import logging
-from typing import Any, Sequence
+from typing import Any
 import numpy as np
 import psycopg2
 import psycopg2.extras
 
-from ml.vor import FLEX_ELIGIBLE, LEAGUE_TEAMS, SKILL_POSITIONS, STARTING_SLOTS, attach_vor
+from ml.vor import FLEX_ELIGIBLE, STARTING_SLOTS, attach_vor
 from pipeline.schema import normalize_dsn
 
 logger = logging.getLogger(__name__)

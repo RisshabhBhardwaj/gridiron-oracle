@@ -58,7 +58,6 @@ def main() -> int:
     from ml.draft_projection import build_preseason_projections
     from ml.draft_sim import evaluate_board
     from ml.multiplicity import effective_n_trials
-    from ml.playing_time import expected_games_from_history
     from ml.vor import attach_vor
     from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
     from pipeline.schema import normalize_dsn

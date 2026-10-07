@@ -10,7 +10,7 @@ For outdoor games: fetches current/forecast weather by stadium coords.
 Standalone usage:
   python scraper/adapters/weather_adapter.py --db-url $DATABASE_URL
 
-CLAUDE.md §6: OPENWEATHER_API_KEY in .env. Rate limit: 1s between requests.
+OPENWEATHER_API_KEY in .env. Rate limit: 1s between requests.
 """
 
 from __future__ import annotations

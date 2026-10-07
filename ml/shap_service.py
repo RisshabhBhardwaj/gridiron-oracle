@@ -6,7 +6,7 @@ SHAP feature attribution service.
 Computes SHAP values for XGBoost / LightGBM model predictions and
 maps raw feature column names to plain-English labels for the UI.
 
-CLAUDE.md §3 (API Rules) requires:
+The API requires:
   "SHAP factor labels served by the backend must be plain English strings,
    not raw feature names. A FEATURE_LABELS dict must exist in shap_service.py."
 
@@ -396,7 +396,7 @@ class SHAPService:
         scaled by feature values. Returns approximate SHAP-style attributions
         for UI display, clearly marked as estimates.
         """
-        # Bucket weights from CLAUDE.md §5.1
+        # Default bucket weights (see user_config.json)
         # Prefix → bucket weight (bucket names match _FM_COLS column prefixes).
         _BUCKET_WEIGHTS: dict[str, float] = {
             "kalman_est_":  0.35,

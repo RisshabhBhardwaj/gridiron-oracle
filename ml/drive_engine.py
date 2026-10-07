@@ -56,6 +56,5 @@ def copula_preferred_for_correlation(oof: Any) -> bool:
     corr = pairwise_residual_correlation(oof, player_a=players[0], player_b=players[1])
     if corr != corr:  # NaN
         return False
-    independent = 0.25
     empirical = max(0.0, min(1.0, 0.25 + 0.5 * abs(float(corr))))
     return independence_overstates_joint(0.5, 0.5, empirical)

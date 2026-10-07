@@ -3,7 +3,7 @@ backend/app/api/scenario.py
 
 POST /scenario — what-if re-projection with custom feature overrides.
 
-CLAUDE.md Frontend Rules:
+Frontend rules:
   "What-If sliders must debounce 300ms before calling /scenario."
   (debounce is implemented client-side; this endpoint is stateless)
 """

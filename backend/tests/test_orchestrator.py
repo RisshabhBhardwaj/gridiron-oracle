@@ -164,7 +164,7 @@ class TestGlobalEnrichmentWiring:
 
     def test_live_run_calls_global_enrichment_after_the_season_loop(self) -> None:
         from unittest.mock import patch
-        from pipeline.orchestrator import Orchestrator, SeasonResult
+        from pipeline.orchestrator import Orchestrator
 
         with patch("pipeline.orchestrator._live_season", return_value=SeasonResult(season=2025, dry_run=False)), \
              patch("pipeline.orchestrator._run_global_enrichment") as mock_enrich:
@@ -222,7 +222,7 @@ class TestOrchestratorSourcesScoping:
         sources=None — identical to pre-change behavior (full ingest).
         """
         from unittest.mock import patch
-        from pipeline.orchestrator import Orchestrator, SeasonResult
+        from pipeline.orchestrator import Orchestrator
 
         with patch(
             "pipeline.orchestrator._live_season",

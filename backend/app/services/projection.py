@@ -430,9 +430,7 @@ class ProjectionService:
         otherwise.
         """
         from ml.playing_time import (
-            assert_cold_start_qb_not_in_top24,
             attach_playing_time,
-            rank_rest_of_season,
             simulate_season_paths,
         )
 

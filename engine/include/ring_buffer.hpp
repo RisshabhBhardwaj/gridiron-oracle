@@ -3,7 +3,7 @@
  *
  * Lock-free single-producer single-consumer (SPSC) ring buffer.
  *
- * Memory ordering rationale (CLAUDE.md §3 C++ Rules / Interview anchor §1):
+ * Memory ordering rationale:
  *
  *   head_ is the write index, owned exclusively by the producer.
  *   tail_ is the read  index, owned exclusively by the consumer.
@@ -53,7 +53,7 @@
  *     4. Read buffer_[tail_].
  *     5. Release-store tail_             — frees the slot.
  *
- * Design constraints (CLAUDE.md §3):
+ * Design constraints:
  *   - Capacity must be a power of 2 (enforced by static_assert); enables
  *     fast bitmasking instead of modulo.
  *   - head_ and tail_ each occupy one destructive-interference stride

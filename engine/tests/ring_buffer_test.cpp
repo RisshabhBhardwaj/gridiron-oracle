@@ -2,7 +2,7 @@
  * engine/tests/ring_buffer_test.cpp
  *
  * Catch2 v3 correctness tests + BENCHMARK for RingBuffer<GameEvent, N>.
- * BENCHMARK target: < 200 ns per push+pop round-trip (CLAUDE.md §8).
+ * BENCHMARK target: < 200 ns per push+pop round-trip.
  */
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -297,7 +297,7 @@ TEST_CASE("RingBuffer: zero-copy producer to copying consumer, threaded", "[ring
 
 // ── Benchmark ────────────────────────────────────────────────────────────────
 // Run with: ./run_tests "[!benchmark]"  (benchmarks excluded by default)
-// Target: < 200 ns per push+pop round-trip (CLAUDE.md §8)
+// Target: < 200 ns per push+pop round-trip
 
 TEST_CASE("RingBuffer: push+pop latency benchmark", "[ring_buffer][!benchmark]") {
     RingBuffer<GameEvent, 1024> buf;

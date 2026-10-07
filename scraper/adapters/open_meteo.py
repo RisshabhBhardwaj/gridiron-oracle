@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -17,7 +17,7 @@ import psycopg2
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.schema import normalize_dsn
-from scraper.adapters.weather_adapter import STADIUM_COORDS, _find_coords, _kickoff_at
+from scraper.adapters.weather_adapter import _find_coords, _kickoff_at
 
 logger = logging.getLogger(__name__)
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"

@@ -3,7 +3,7 @@
  *
  * GameEvent — the fundamental message unit passed through the SPSC ring buffer.
  *
- * Design constraints (CLAUDE.md §3 C++ Rules):
+ * Design constraints:
  *   - No dynamic allocation: all fields are fixed-size arrays or POD types.
  *   - No std::string in the hot path.
  *   - Stack-allocatable and trivially copy-constructible into the ring buffer.

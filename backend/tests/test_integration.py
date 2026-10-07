@@ -180,7 +180,7 @@ class TestProjectionsWeek:
         assert body["count"] == len(body["projections"])
 
     def test_projections_have_required_non_null_fields(self, int_client, best_wr_projection):
-        """CLAUDE.md: projection, floor, ceiling, boom_probability must be present."""
+        """ projection, floor, ceiling, boom_probability must be present."""
         r = int_client.get(
             f"/projections/week/{best_wr_projection['week']}",
             params={"season": best_wr_projection["season"], "stat": "receiving_yards"},
@@ -197,7 +197,7 @@ class TestProjectionsWeek:
         assert first["boom_probability"] is not None, "boom_probability should not be None"
 
     def test_data_freshness_present_and_parseable(self, int_client, best_wr_projection):
-        """CLAUDE.md API Rule: data_freshness required on every /predict response."""
+        """API rule: data_freshness required on every /predict response."""
         r = int_client.get(
             f"/projections/week/{best_wr_projection['week']}",
             params={"season": best_wr_projection["season"]},
@@ -243,7 +243,7 @@ class TestPredict:
         )
 
     def test_data_freshness_present_and_parseable(self, int_client, best_wr_projection):
-        """CLAUDE.md API Rule: data_freshness on every /predict response."""
+        """API rule: data_freshness on every /predict response."""
         body = self._call(int_client, best_wr_projection).json()
         assert "data_freshness" in body
         datetime.fromisoformat(body["data_freshness"])
@@ -335,7 +335,7 @@ class TestBacktest:
     """
     Walk-forward backtest results page.
 
-    CLAUDE.md §3 requires: MAE, RMSE, Brier score, simulated P&L,
+    The API contract requires: MAE, RMSE, Brier score, simulated P&L,
     Sharpe ratio, max drawdown, calibration data points.
 
     If backtest CSV exists (from ml/run_backtest.py), also verifies
@@ -351,7 +351,7 @@ class TestBacktest:
             assert r.status_code == 200
 
     def test_has_all_required_fields_when_backtest_is_available(self, int_client):
-        """CLAUDE.md §3: MAE, RMSE, Brier, P&L, Sharpe, max_drawdown, calibration."""
+        """MAE, RMSE, Brier, P&L, Sharpe, max_drawdown, calibration."""
         response = int_client.get("/backtest", params={"stat": "receiving_yards"})
         if response.status_code == 503:
             # Artifact-backed mode must not fabricate a backtest response.
@@ -363,14 +363,14 @@ class TestBacktest:
             "overall_mae", "overall_rmse", "brier_score",
             "simulated_pnl", "sharpe_ratio", "max_drawdown", "calibration",
         ):
-            assert field in body, f"Missing CLAUDE.md-required backtest field: {field}"
+            assert field in body, f"Missing required backtest field: {field}"
         assert isinstance(body["calibration"], list)
 
     def test_coverage_80_above_threshold(self, int_client):
         """
         At least one season × position cohort must have coverage_80 > 0.60.
 
-        Expected values (from CLAUDE.md §7 Backtesting status):
+        Expected values (from the backtest status docs):
           WR receiving_yards coverage_80 ≈ 0.80-0.86 after ×3.0 sigma correction.
 
         Skips if no backtest CSV or DB data is available.

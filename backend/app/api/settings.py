@@ -6,7 +6,7 @@ GET /settings and PUT /settings endpoints.
 Manages user-configurable feature weights and fantasy scoring presets.
 Weights are stored in user_config.json; validated to sum to 100%.
 
-CLAUDE.md §5.1: Weights are fully user-configurable, validated to sum to 100%.
+Weights are fully user-configurable, validated to sum to 100%.
 """
 
 from __future__ import annotations

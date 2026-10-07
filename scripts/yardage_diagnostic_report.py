@@ -36,7 +36,6 @@ def build_report(df: pd.DataFrame, target: str, position: str) -> dict:
         raise ValueError(f"Missing {target_col} (feature matrix) or y_true (OOF) column")
     cohort = cohort[cohort[observed_col].notna()].copy()
     feature_cols = [c for c in FEATURE_COLS if c in cohort]
-    leakage_columns = [c for c in feature_cols if c.startswith("actual_")]
     id_cols = [c for c in ("player_id", "game_id") if c in cohort.columns]
     duplicate_rows = int(cohort.duplicated(id_cols).sum()) if id_cols else 0
     temporal_ordered = True

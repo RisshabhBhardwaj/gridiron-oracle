@@ -296,7 +296,7 @@ private:
 // Identical to gridiron::RingBuffer except that push()/pop() acquire-load the
 // *opposite* index on every single operation instead of consulting a cached
 // copy. This is what shipped before; it is compiled in so the before/after
-// claim in BENCHMARKS.md is reproducible from one command rather than being
+// claim in docs/BENCHMARKS.md is reproducible from one command rather than being
 // a number you have to take on trust.
 template <typename T, std::size_t Capacity>
 class alignas(gridiron::kDestructiveInterference) LegacyRingBuffer {

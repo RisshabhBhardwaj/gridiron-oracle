@@ -1341,7 +1341,7 @@ class PipelineRunner:
         """
         Log pipeline run metadata to MLflow.
 
-        Required fields per CLAUDE.md §3 (adapted for pipeline runs):
+        Required fields (adapted for pipeline runs):
             n_projections, mean_projection per (position, stat), timestamp.
 
         Returns:

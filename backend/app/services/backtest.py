@@ -6,7 +6,7 @@ Backtest service — wraps ml/backtest.py for the /backtest API endpoint.
 Loads pre-computed backtest CSV results if available, otherwise returns
 a summary from the DB backtest_results table.
 
-CLAUDE.md §3 (API Rules) requires /backtest to include:
+The API requires /backtest to include:
   MAE, RMSE, Brier score, simulated P&L, Sharpe ratio,
   max drawdown, calibration data points.
 """
@@ -56,7 +56,7 @@ class SeasonMetrics:
 
 @dataclass
 class BacktestSummary:
-    """Aggregated backtest metrics required by CLAUDE.md §3."""
+    """Aggregated backtest metrics required by the API contract."""
     model_version:            str
     seasons:                  list[int]
     positions:                list[str]

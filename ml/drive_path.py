@@ -11,13 +11,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 from ml.drive_engine import require_transitions
-from ml.markov_simulator import N_DOWN, N_FP_BUCKETS, N_QUARTER, N_SCORE_BUCKETS, N_YTG_BUCKETS
+from ml.markov_simulator import N_DOWN, N_FP_BUCKETS, N_QUARTER, N_YTG_BUCKETS
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ backend/app/api/predict.py
 
 /predict and /projections/week/{n} endpoints.
 
-CLAUDE.md §3 (API Rules):
+API rules:
   - Every endpoint returns a typed Pydantic response model.
   - data_freshness timestamp required on every /predict response.
   - Frontend displays a warning if data_freshness is > 24 hours old.

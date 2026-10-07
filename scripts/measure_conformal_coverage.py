@@ -26,7 +26,7 @@ def main() -> int:
     import pandas as pd
 
     from ml.backtest import compute_crps_single
-    from ml.conformal import empirical_coverage, oof_conformal_bounds, residual_quantiles
+    from ml.conformal import empirical_coverage, oof_conformal_bounds
 
     rows = []
     for path in sorted(args.oof_dir.glob("stack_*_*_*.csv")):

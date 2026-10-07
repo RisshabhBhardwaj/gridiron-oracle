@@ -58,7 +58,7 @@ class DeadLetter(SQLModel, table=True):
     """
     Dead-letter queue for rows that failed Pydantic validation.
 
-    CLAUDE.md §3: "Never silently drop bad data."
+    "Never silently drop bad data."
     Every failed row lands here with the full error message and raw payload.
 
     Fields:

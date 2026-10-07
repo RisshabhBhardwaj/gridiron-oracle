@@ -90,7 +90,7 @@ class TestResolveWeekGamesOverridesElo:
         unplayed weeks) — _resolve_week_games must override it with this
         simulation's own carried-forward ratings before predicting."""
         sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=4)
-
+        monkeypatch.setattr(SeasonSimulator, "_training_seasons", lambda self: [2024, 2025])
         monkeypatch.setattr(
             "pipeline.team_game_features.build_team_game_frame",
             lambda db_url, seasons: _fake_train_df(),
@@ -125,6 +125,7 @@ class TestResolveWeekGamesOverridesElo:
 class TestEnsurePointsModelFailsLoud:
     def test_raises_when_no_training_rows(self, monkeypatch) -> None:
         sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=4)
+        monkeypatch.setattr(SeasonSimulator, "_training_seasons", lambda self: [2024, 2025])
         monkeypatch.setattr(
             "pipeline.team_game_features.build_team_game_frame",
             lambda db_url, seasons: pd.DataFrame(),
@@ -136,6 +137,7 @@ class TestEnsurePointsModelFailsLoud:
 class TestEnsureYardsModelFailsLoud:
     def test_raises_when_no_training_rows(self, monkeypatch) -> None:
         sim = SeasonSimulator(season=2026, start_week=5, end_week=5, n_simulations=4)
+        monkeypatch.setattr(SeasonSimulator, "_training_seasons", lambda self: [2024, 2025])
         monkeypatch.setattr(
             "pipeline.team_game_features.build_team_game_frame",
             lambda db_url, seasons: pd.DataFrame(),

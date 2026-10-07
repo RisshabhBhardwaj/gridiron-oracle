@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Promote a fully gated candidate manifest into the active baseline."""
 from __future__ import annotations
-import argparse, json, subprocess
+import argparse
+import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 

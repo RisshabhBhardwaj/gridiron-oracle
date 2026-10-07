@@ -3,7 +3,7 @@ backend/app/api/backtest.py
 
 GET /backtest endpoint.
 
-CLAUDE.md §3 (API Rules):
+API rules:
   "/backtest endpoint must include: MAE, RMSE, Brier score, simulated P&L,
    Sharpe ratio, max drawdown, calibration data points."
 
@@ -54,7 +54,7 @@ class BacktestResponse(BaseModel):
     """
     Full backtest summary returned by GET /backtest.
 
-    Required fields per CLAUDE.md §3:
+    Required fields per 
       mae, rmse, brier_score, simulated_pnl, sharpe_ratio,
       max_drawdown, calibration data points.
     """

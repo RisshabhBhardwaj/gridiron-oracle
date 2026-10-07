@@ -9,7 +9,7 @@ Free tier: 500 req/month. Use sparingly (e.g. weekly fetch for upcoming games).
 Standalone usage:
   python scraper/adapters/odds_adapter.py --db-url $DATABASE_URL
 
-CLAUDE.md §6: ODDS_API_KEY in .env.
+ODDS_API_KEY in .env.
 """
 
 from __future__ import annotations

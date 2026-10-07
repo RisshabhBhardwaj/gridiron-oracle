@@ -31,7 +31,7 @@ DEFAULT_XGB_PARAMS (useful for CI tests).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MLflow LOGGING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Every training run logs to MLflow (required by CLAUDE.md §3):
+Every training run logs to MLflow (required):
   - Params: best_params, target, seasons, position_filter, n_optuna_trials
   - Metrics: mae, rmse (aggregate + per-fold), feature importances
   - Artifacts: model (.json via XGBoost native), oof predictions (.csv)

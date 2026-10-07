@@ -1,7 +1,7 @@
 /**
  * engine/include/kelly_sizer.hpp
  *
- * Fractional Kelly criterion for bet sizing (CLAUDE.md §3 / Interview anchor §2).
+ * Fractional Kelly criterion for bet sizing.
  *
  * Kelly derivation (must be reproducible on a whiteboard):
  *
@@ -21,7 +21,7 @@
  *           p = win_probability
  *           q = 1 - p
  *
- * Why fractional Kelly (0.25×)? (CLAUDE.md §5)
+ * Why fractional Kelly (0.25×)?
  *   Full Kelly maximizes long-run log-wealth but exhibits extreme variance.
  *   At fraction k: log-growth ≈ k*(1 - k/2) * G_full.
  *   At k = 0.25: growth ≈ 0.25 * 0.875 * G_full ≈ 21.9% of G_full per unit
@@ -36,7 +36,7 @@
 namespace gridiron {
 
 struct KellyConfig {
-    double kelly_fraction     = 0.25;   // fractional multiplier (CLAUDE.md §5)
+    double kelly_fraction     = 0.25;   // fractional multiplier
     double max_bet_fraction   = 0.05;   // hard cap: never exceed 5% of bankroll
     double min_edge_threshold = 0.01;   // ignore bets with edge (f*) below 1%
 };

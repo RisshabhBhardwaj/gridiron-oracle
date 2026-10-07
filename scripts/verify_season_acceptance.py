@@ -29,7 +29,6 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=ROOT / "reports" / "season_acceptance.json")
     args = parser.parse_args()
 
-    import numpy as np
     import pandas as pd
     import psycopg2
     from scipy.stats import spearmanr

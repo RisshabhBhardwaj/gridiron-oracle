@@ -321,7 +321,13 @@ def test_predict_no_forecast_available_response_shape():
 
     from backend.app.main import app
 
-    with TestClient(app) as client:
+    from backend.app.services.projection import NoForecastAvailable, ProjectionService
+
+    def _raise(*_args, **_kwargs):
+        raise NoForecastAvailable("no approved forecast")
+
+    # Hermetic: the API mapping is under test, not the database contents.
+    with patch.object(ProjectionService, "get_projection", _raise), TestClient(app) as client:
         cur_r = client.get(
             "/predict",
             params={"player": "Puka Nacua", "week": 1, "season": 2099, "stat": "receiving_yards"},

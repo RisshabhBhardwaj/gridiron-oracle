@@ -49,7 +49,6 @@ def main() -> int:
         evaluate_component,
         paired_difference,
         pooled_spearman,
-        top_n_precision,
     )
     from ml.draft_projection import build_preseason_projections
     from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL

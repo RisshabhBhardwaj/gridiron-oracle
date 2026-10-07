@@ -25,7 +25,6 @@ or the 2019-2020 Raiders rows silently drop out of the training set.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import numpy as np
 import pandas as pd

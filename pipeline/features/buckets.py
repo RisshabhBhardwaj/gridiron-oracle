@@ -875,7 +875,6 @@ def compute_progression_priors(
     # `players.years_exp` is a mutable present-day snapshot.  Entry year is an
     # immutable draft/roster fact, so season - entry_year is the only legal
     # as-of experience estimate for the opt-in progression group.
-    years_exp = None
     try:
         entry_year = target_row.get("entry_year")
         years_exp_f = max(float(season - int(entry_year)), 0.0) if entry_year is not None else None

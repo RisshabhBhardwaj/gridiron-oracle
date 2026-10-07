@@ -6,7 +6,7 @@ backend/app/api/explain.py
 Returns SHAP factor attributions for a player's projection.
 Factor labels are plain-English strings from ml/shap_service.FEATURE_LABELS.
 
-CLAUDE.md §3: "SHAP factor labels served by the backend must be plain English
+"SHAP factor labels served by the backend must be plain English
 strings, not raw feature names."
 """
 

@@ -1,3 +1,11 @@
+Type: Research (measurement log)
+Last verified against code: 2026-10-07 (not re-run; raw logs for the 2026-09-08 run are in `bench/results/2026-09-08/`)
+Status: Measurements from one machine (Apple M2 Pro). Numbers do not transfer to other hardware.
+
+Note: the opening paragraph quotes the 2026-09-05 run (clang 17). The 2026-09-08 re-run (clang 21) gives a smaller fix multiplier (about 4x, not 5.7x); the file itself says so further down. Reproduce with `make latency-bench`.
+
+---
+
 # Engine latency + throughput benchmarks
 
 Open-loop end-to-end latency and saturation throughput of

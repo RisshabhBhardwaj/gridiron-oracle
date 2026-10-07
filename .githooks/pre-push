@@ -9,7 +9,7 @@
 # THIS HOOK IS CONVENIENCE, NOT A SECURITY BOUNDARY. It runs on the pusher's
 # machine and can be skipped with `--no-verify`. The authoritative gate is the
 # `push-gate` job in .github/workflows/ci.yml (required check). See
-# CONTRIBUTING.md § "Public-push gate".
+# AGENTS.md (invariants).
 set -uo pipefail
 
 remote_name="${1:-origin}"
