@@ -10,3 +10,9 @@
 
 Other durable text: `releases/README.md` and `releases/artifacts/README.md` (release and evidence policy), `SECURITY.md`.
 Older plans, audits and status reports were archived outside the repo on 2026-10-07 because they were dated or contradicted by the code.
+
+## Status and development
+
+- [status/CURRENT.md](status/CURRENT.md): current state, next steps, to-dos. Updated every session.
+- [status/HISTORY.md](status/HISTORY.md): one line per session or milestone.
+- [DEVELOPMENT.md](DEVELOPMENT.md): setup, run, test, and architecture notes.
