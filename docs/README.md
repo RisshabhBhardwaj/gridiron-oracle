@@ -19,3 +19,4 @@ Standard: `_internal-docs/_platform/DOCS_STANDARD.md`. Every doc here has Type, 
 
 Other durable text: `releases/README.md`, `releases/artifacts/README.md` (release and evidence policy), `SECURITY.md`.
 Older plans, audits and status reports were archived outside the repo on 2026-10-07: they were dated or contradicted by the code.
+- [UX_PRINCIPLES.md](UX_PRINCIPLES.md): convention first, know the user, always show the next step. Read before any UI work.

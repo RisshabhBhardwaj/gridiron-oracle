@@ -30,7 +30,7 @@ Every decision is made for the project's best long-term outcome, including scale
 ## Working principles
 
 - **Trust the code.** Docs and earlier "done" claims can be stale. Verify by reading and running the code, and never report work complete without running the quality gate above.
-- **Know the users.** Who uses this and what each person needs is in `docs/USERS.md`. Show each person the least that lets them do everything they need, with a clear next step, in plain words anyone can understand.
+- **Know the users.** Principles: `docs/UX_PRINCIPLES.md`. Who uses this and what each person needs is in `docs/USERS.md`. Show each person the least that lets them do everything they need, with a clear next step, in plain words anyone can understand.
 - **Do not reinvent UI.** Use the primitives, component library, and tokens chosen in `docs/DESIGN_SYSTEM.md`. The experience should feel seamless and thoughtful.
 - **Keep docs honest.** Short, plain, dated, and clear about what is built versus planned. Durable docs live in `docs/`; plans and research are labeled with date and status.
 - **Keep context moving between tools.** Read `docs/status/CURRENT.md` at the start of a session. At the end of a session or milestone, update it (state, in progress, next steps, to-dos, open questions) and add a line to `docs/status/HISTORY.md`. Record decisions in `docs/decisions/` so no other tool overrules them without a new decision. Doc layout: `_internal-docs/_platform/DOCS_STANDARD.md`.
