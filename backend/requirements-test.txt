@@ -1,0 +1,8 @@
+# Test-only additions for CI jobs that pass pytest flags from pytest-timeout
+# (see .github/workflows/nightly.yml). Not used by backend/Dockerfile.
+
+-r requirements.txt
+
+# Pinned. 2.5.0 is yanked on PyPI ("accidental breaking change"), so 2.4.0 is
+# the newest usable release. Re-check the yanked flag before bumping.
+pytest-timeout==2.4.0

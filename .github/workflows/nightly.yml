@@ -5,30 +5,21 @@ on:
     - cron: "0 2 * * *"   # 02:00 UTC daily
   workflow_dispatch:       # allow manual trigger
 
+permissions:
+  contents: read
+
 jobs:
   slow-tests:
     name: Bayesian calibration + slow suite
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: oracle
-          POSTGRES_PASSWORD: oracle
-          POSTGRES_DB: oracle
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # No database service: the selection `-m slow` is backend/tests/test_bayesian_layer.py
+    # only, and it does not connect to Postgres.
 
     env:
-      DATABASE_URL: postgresql://oracle:oracle@localhost:5432/oracle
       KMP_DUPLICATE_LIB_OK: "TRUE"
       OMP_NUM_THREADS: "1"
+      OTEL_TRACES_EXPORTER: "none"
 
     steps:
       - uses: actions/checkout@v4
@@ -37,12 +28,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install backend deps
-        run: pip install -r backend/requirements.txt
+      # CPU-only torch first, as in ci.yml and backend/Dockerfile (see the note there).
+      - name: Install CPU-only torch
+        run: pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
+
+      # requirements-test.txt adds the pinned pytest-timeout that provides --timeout.
+      - name: Install backend deps and test tooling
+        run: pip install --no-cache-dir -r backend/requirements-test.txt
 
       - name: Run slow test suite
         run: |
-          pytest backend/tests/ -v -m "slow" \
+          python -m pytest backend/tests/ -v -m "slow" \
             --cov=ml --cov=backend \
             --cov-report=term-missing \
             --timeout=600
