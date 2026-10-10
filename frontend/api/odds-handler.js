@@ -32,6 +32,12 @@ const ALLOWED_MARKETS = new Set([
 ]);
 
 export default async function handler(req, res) {
+  // Read-only. Other methods would still reach the upstream key-billed call.
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    res.status(405).json({ detail: 'Method not allowed' });
+    return;
+  }
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) {
     res.status(200).json({ configured: false });

@@ -61,6 +61,20 @@ from pipeline.schema import normalize_dsn  # noqa: E402
 logger = logging.getLogger(__name__)
 PIPELINE_RUN_ID = f"stack_materialize_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
+
+def _git_commit() -> str:
+    """Commit of the deployed code. The container ships without .git (.dockerignore),
+    so read the platform's commit variable first, then git, else report unknown."""
+    sha = os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("GIT_COMMIT_SHA")
+    if sha:
+        return sha
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
 CELLS: list[tuple[str, str]] = list(REQUIRED_SERVING_CELLS)
 CONFORMAL_LEVEL = 0.90
 _MIN_CONFORMAL_HISTORY = 100
@@ -325,9 +339,7 @@ def main() -> int:
     )
     report = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "git_commit": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-        ).strip(),
+        "git_commit": _git_commit(),
         "pipeline_run_id": PIPELINE_RUN_ID,
         "n_rows": int(len(all_df)),
         "cells": summary,
