@@ -86,6 +86,15 @@ class FakeConn:
     def close(self) -> None:
         self.closed = True
 
+    # psycopg2 semantics: `with conn:` rolls back on error and does not close.
+    def __enter__(self) -> "FakeConn":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if exc_type is not None:
+            self.rollback()
+        return False
+
     def execute_values(
         self, cur: Any, sql: str, argslist: Any, template: Any = None,
         page_size: int = 100, fetch: bool = False,
