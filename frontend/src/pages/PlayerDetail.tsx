@@ -55,7 +55,11 @@ export function PlayerDetail() {
   const position   = predictData?.position ?? ''
   const tone       = toneClass(positionTone(position))
 
-  const bookLine   = oddsData ? findPlayerLine(oddsData.player_props, name) : null
+  // Without a server-side key, useOdds returns generated lines (source 'mock').
+  // A generated number is not a market price, and an edge computed from it would
+  // be invented, so only live lines are shown.
+  const liveOdds   = oddsData?.source === 'live' ? oddsData : null
+  const bookLine   = liveOdds ? findPlayerLine(liveOdds.player_props, name) : null
   const edge       = bookLine != null ? calcEdge(projection, bookLine) : null
   const edgePos    = edge !== null && edge > 0
 
@@ -181,7 +185,7 @@ export function PlayerDetail() {
                 )}
               >
                 <div className="corner-glow absolute top-0 right-0 w-16 h-16 rounded-bl-full opacity-30" />
-                <span className="section-label">Sportsbook Line</span>
+                <span className="section-label">Sportsbook line</span>
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-display text-4xl leading-none text-fg">
                     {bookLine.toFixed(1)}
@@ -193,7 +197,13 @@ export function PlayerDetail() {
                 </span>
               </div>
             ) : (
-              <ProjectionCard label="Book Line" value={0} subtext="No line avail" tone="muted" />
+              <ProjectionCard
+                label="Sportsbook line"
+                value={null}
+                emptyText="No line yet"
+                subtext="Compare the range below with the line at your sportsbook."
+                tone="muted"
+              />
             )}
 
             <ProjectionCard label="Floor (p10)" value={floor}      unit="yds" tone="negative" />
@@ -284,10 +294,10 @@ export function PlayerDetail() {
           {/* What-If Studio */}
           {player_id && (
             <>
-              {oddsData && (
+              {liveOdds && (
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
                   <span className="px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08]">
-                    {oddsData.source === 'live' ? `${oddsData.provider} live line` : 'Mock demo line'}
+                    {liveOdds.provider} live line
                   </span>
                   {bookLine !== null && (
                     <span>

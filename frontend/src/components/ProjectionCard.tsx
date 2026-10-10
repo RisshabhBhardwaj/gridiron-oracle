@@ -8,6 +8,8 @@ interface ProjectionCardProps {
   unit?: string
   tone?: Tone
   subtext?: string
+  /** Words to show instead of "—" when there is no value (for example "No line yet"). */
+  emptyText?: string
 }
 
 function useCountUp(target: number, duration = 600): number {
@@ -27,7 +29,7 @@ function useCountUp(target: number, duration = 600): number {
   return current
 }
 
-export function ProjectionCard({ label, value, unit, tone = 'info', subtext }: ProjectionCardProps) {
+export function ProjectionCard({ label, value, unit, tone = 'info', subtext, emptyText }: ProjectionCardProps) {
   const animated = useCountUp(value ?? 0)
   const display = value == null ? '—' : animated.toFixed(1)
 
@@ -44,9 +46,13 @@ export function ProjectionCard({ label, value, unit, tone = 'info', subtext }: P
 
       <span className="section-label">{label}</span>
       <div className="flex items-baseline gap-1.5">
-        <span className="glow-text font-display text-4xl leading-none text-tone transition-all">
-          {value == null ? '—' : display}
-        </span>
+        {value == null && emptyText ? (
+          <span className="font-display text-3xl leading-none text-tone">{emptyText}</span>
+        ) : (
+          <span className="glow-text font-display text-4xl leading-none text-tone transition-all">
+            {value == null ? '—' : display}
+          </span>
+        )}
         {unit && (
           <span className="text-xs font-medium text-tone/50">
             {unit}

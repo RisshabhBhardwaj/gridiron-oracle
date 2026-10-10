@@ -96,4 +96,48 @@ describe('PlayerDetail', () => {
       expect(await screen.findByPlaceholderText(/search players/i)).toBeInTheDocument()
     })
   })
+
+  describe('sportsbook line', () => {
+    it('says "No line yet" instead of showing 0 or an invented line when odds are not live', async () => {
+      // Default handler: the server has no odds key, so useOdds generates a demo line.
+      renderPlayer()
+      expect(await screen.findByText('No line yet')).toBeInTheDocument()
+      expect(screen.getByText(/compare the range below with the line at your sportsbook/i)).toBeInTheDocument()
+      expect(screen.queryByText(/% edge/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/demo line/i)).not.toBeInTheDocument()
+    })
+
+    it('shows the real line and edge when a live line exists for the player', async () => {
+      server.use(
+        http.get('/api/odds', () =>
+          HttpResponse.json({
+            configured: true,
+            events: [
+              {
+                bookmakers: [
+                  {
+                    key: 'fanduel',
+                    markets: [
+                      {
+                        key: 'player_reception_yards',
+                        outcomes: [
+                          { name: 'Over', price: -110, point: 80.5, description: 'Justin Jefferson' },
+                          { name: 'Under', price: -110, point: 80.5, description: 'Justin Jefferson' },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+      )
+      renderPlayer()
+      expect(await screen.findByText('80.5')).toBeInTheDocument()
+      expect(screen.getByText('Sportsbook line')).toBeInTheDocument()
+      expect(screen.getAllByText(/% edge/).length).toBeGreaterThan(0)
+      expect(screen.queryByText('No line yet')).not.toBeInTheDocument()
+    })
+  })
 })
