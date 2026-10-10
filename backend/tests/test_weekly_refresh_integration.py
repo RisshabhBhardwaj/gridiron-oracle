@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import types
 import uuid
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
@@ -625,3 +626,85 @@ def test_upgrade_head_explicit_url_wins_over_database_url_env(monkeypatch):
     finally:
         admin.cursor().execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.close()
+
+
+def test_season_simulation_write_never_changes_approved_rows(db, monkeypatch):
+    """Step 5 (real materialize() and real upserts) must not overwrite rows served by an approved run.
+
+    Only the model and roster reads are replaced. Each of the three season tables has an
+    approved row on key p1 / AAA; the pending run must leave it alone and insert p2 / BBB.
+    """
+    import scripts.materialize_season_simulation as sim_mod
+
+    _execute(
+        db,
+        "INSERT INTO season_simulations (season, start_week, player_id, stat, mean, interval_method, pipeline_run_id) "
+        "VALUES (2026, 3, 'p1', 'fantasy_ppr', 10.0, 'season_simulator_mc', %s)",
+        (APPROVED,),
+    )
+    _execute(
+        db,
+        "INSERT INTO season_simulation_weeks (season, start_week, week, player_id, stat, mean, pipeline_run_id) "
+        "VALUES (2026, 3, 3, 'p1', 'fantasy_ppr', 10.0, %s)",
+        (APPROVED,),
+    )
+    _execute(
+        db,
+        "INSERT INTO season_team_wins (season, start_week, team, wins_mean, pipeline_run_id) "
+        "VALUES (2026, 3, 'AAA', 9.5, %s)",
+        (APPROVED,),
+    )
+
+    def _player(player_id: str, name: str) -> dict:
+        return {
+            "player_id": player_id, "player_name": name, "position": "WR", "team": "AAA",
+            "prior_snap_share": 0.5, "team_games_played": 3, "depth_rank": 1,
+            "prior_active_games": 3, "prior_games": 3,
+        }
+
+    class _FakeResult:
+        player_season_totals = {
+            "p1": {"fantasy_ppr": {"mean": 99.0, "p10": 90.0, "p50": 99.0, "p90": 108.0}},
+            "p2": {"fantasy_ppr": {"mean": 12.0, "p10": 6.0, "p50": 12.0, "p90": 18.0}},
+        }
+        week_by_week = [
+            {"week": 3, "player_id": "p1", "stat": "fantasy_ppr", "mean": 99.0, "p10": 90.0, "p50": 99.0, "p90": 108.0},
+            {"week": 3, "player_id": "p2", "stat": "fantasy_ppr", "mean": 12.0, "p10": 6.0, "p50": 12.0, "p90": 18.0},
+        ]
+        team_win_totals = {
+            "AAA": {"wins_mean": 1.0, "wins_p10": 0.0, "wins_p90": 2.0},
+            "BBB": {"wins_mean": 7.0, "wins_p10": 6.0, "wins_p90": 8.0},
+        }
+
+    class _FakeSimulator:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def run(self, *args, **kwargs):
+            return _FakeResult()
+
+    fake_playing_time = types.ModuleType("ml.playing_time")
+    fake_playing_time.p_active_from_priors = lambda *a, **k: 0.9
+    monkeypatch.setitem(sys.modules, "ml.playing_time", fake_playing_time)
+    monkeypatch.setattr(sim_mod, "assert_training_window_present", lambda *a, **k: None)
+    monkeypatch.setattr(sim_mod, "_load_roster", lambda *a, **k: [_player("p1", "P One"), _player("p2", "P Two")])
+    monkeypatch.setattr(sim_mod, "_load_prior_game_rows", lambda *a, **k: [])
+    monkeypatch.setattr(sim_mod, "_load_schedule_gate", lambda *a, **k: object())
+    monkeypatch.setattr(sim_mod, "SeasonSimulator", _FakeSimulator)
+
+    sim_mod.materialize(
+        season=2026, start_week=3, end_week=18, n_simulations=1, positions=["WR"],
+        database_url=db, pipeline_run_id=PENDING,
+    )
+
+    assert _query(db, "SELECT player_id, mean, pipeline_run_id FROM season_simulations ORDER BY player_id") == [
+        ("p1", 10.0, APPROVED),
+        ("p2", 12.0, PENDING),
+    ]
+    assert _query(
+        db, "SELECT player_id, week, mean, pipeline_run_id FROM season_simulation_weeks ORDER BY player_id"
+    ) == [("p1", 3, 10.0, APPROVED), ("p2", 3, 12.0, PENDING)]
+    assert _query(db, "SELECT team, wins_mean, pipeline_run_id FROM season_team_wins ORDER BY team") == [
+        ("AAA", 9.5, APPROVED),
+        ("BBB", 7.0, PENDING),
+    ]

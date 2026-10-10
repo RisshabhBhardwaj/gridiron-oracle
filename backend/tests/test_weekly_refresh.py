@@ -92,6 +92,14 @@ def test_promote_run_id_only_relabels_pending_rows():
     assert all(call.args[1][0] == "approved_id" for call in cur.execute.call_args_list)
 
 
+def test_approved_run_ids_resolve_against_the_repo_not_the_working_directory(monkeypatch, tmp_path):
+    """A cron job that starts outside the repo must still see the manifest's approved ids."""
+    from pipeline.run_guard import approved_pipeline_run_ids
+
+    monkeypatch.chdir(tmp_path)
+    assert "weekly_auto_2026" in approved_pipeline_run_ids()
+
+
 def test_dry_run_mode():
     with patch("psycopg2.connect") as mock_conn:
         mock_cur = MagicMock()

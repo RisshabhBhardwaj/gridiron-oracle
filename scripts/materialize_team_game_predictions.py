@@ -30,10 +30,13 @@ from sklearn.linear_model import Ridge
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from backend.app.services.projection import load_approved_pipeline_run_ids
 from ml.team_game_model import FEATURE_COLS, TARGET_COLS, _prepare_x, compute_oof_residual_std
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
-from pipeline.run_guard import approved_array_literal, skip_rows_served_by_another_approved_run
+from pipeline.run_guard import (
+    approved_array_literal,
+    approved_pipeline_run_ids,
+    skip_rows_served_by_another_approved_run,
+)
 from pipeline.team_game_features import build_team_game_forward_frame, build_team_game_frame
 
 logger = logging.getLogger(__name__)
@@ -107,7 +110,7 @@ def materialize(
     try:
         with conn.cursor() as cur:
             # Rows served under another approved run are never overwritten (see pipeline/run_guard.py).
-            approved = approved_array_literal(load_approved_pipeline_run_ids())
+            approved = approved_array_literal(approved_pipeline_run_ids())
             psycopg2.extras.execute_values(
                 cur,
                 f"""

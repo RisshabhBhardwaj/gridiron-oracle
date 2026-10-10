@@ -10,7 +10,25 @@ projection_policy.approved_pipeline_run_ids, the same set the API serves.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from psycopg2.extensions import adapt
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def approved_pipeline_run_ids() -> frozenset[str]:
+    """Approved ids from the baseline manifest, resolved against the repo root.
+
+    The projection service resolves a relative manifest path against the working
+    directory. A cron job that starts elsewhere must not change which ids a
+    materializer protects, so the writers resolve the path here instead.
+    """
+    from backend.app.core.config import settings
+    from backend.app.services.projection import load_approved_pipeline_run_ids
+
+    path = Path(settings.baseline_manifest_path)
+    return load_approved_pipeline_run_ids(path if path.is_absolute() else REPO_ROOT / path)
 
 
 def approved_array_literal(approved) -> str:

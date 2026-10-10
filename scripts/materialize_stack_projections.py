@@ -49,10 +49,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.app.services.projection import load_approved_pipeline_run_ids  # noqa: E402
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, get_manifest  # noqa: E402
 from ml.scoring import SCORED_STATS, score_fantasy  # noqa: E402
-from pipeline.run_guard import approved_array_literal, skip_rows_served_by_another_approved_run  # noqa: E402
+from pipeline.run_guard import (  # noqa: E402
+    approved_array_literal,
+    approved_pipeline_run_ids,
+    skip_rows_served_by_another_approved_run,
+)
 from pipeline.schema import normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -272,7 +275,7 @@ def _upsert(conn, df: pd.DataFrame) -> int:
     with conn.cursor() as cur:
         guard = skip_rows_served_by_another_approved_run(
             "projections", "pipeline_run_id",
-            approved_array_literal(load_approved_pipeline_run_ids()),
+            approved_array_literal(approved_pipeline_run_ids()),
         )
         psycopg2.extras.execute_batch(cur, sql.replace("__GUARD__", guard), rows, page_size=500)
     conn.commit()
