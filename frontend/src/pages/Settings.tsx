@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
+import { Check, CalendarDays, CloudSun, HeartPulse, Lock, Swords, TrendingUp, Users, ChartColumn, type LucideIcon } from 'lucide-react'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
@@ -14,14 +15,14 @@ const DEFAULT_WEIGHTS: FeatureWeights = {
   weather_venue: 10, team_context: 5, roster_injury: 5, rule_meta: 5,
 }
 
-const WEIGHT_META: Record<keyof FeatureWeights, { label: string; icon: string; tone: Tone }> = {
-  kalman_form:       { label: 'Kalman Form (Player Ability)', icon: '📈', tone: 'info' },
-  seasonal_baseline: { label: 'Seasonal Baseline',            icon: '📅', tone: 'positive' },
-  matchup:           { label: 'Matchup Quality',              icon: '⚔️',  tone: 'warning' },
-  weather_venue:     { label: 'Weather & Venue',              icon: '🌦',  tone: 'highlight' },
-  team_context:      { label: 'Team Context',                 icon: '🏈', tone: 'info' },
-  roster_injury:     { label: 'Roster & Injury Status',       icon: '🏥', tone: 'negative' },
-  rule_meta:         { label: 'Rule & Meta Trends',           icon: '📊', tone: 'warning' },
+const WEIGHT_META: Record<keyof FeatureWeights, { label: string; icon: LucideIcon; tone: Tone }> = {
+  kalman_form:       { label: 'Kalman Form (Player Ability)', icon: TrendingUp, tone: 'info' },
+  seasonal_baseline: { label: 'Seasonal Baseline',            icon: CalendarDays, tone: 'positive' },
+  matchup:           { label: 'Matchup Quality',              icon: Swords,  tone: 'warning' },
+  weather_venue:     { label: 'Weather & Venue',              icon: CloudSun,  tone: 'highlight' },
+  team_context:      { label: 'Team Context',                 icon: Users, tone: 'info' },
+  roster_injury:     { label: 'Roster & Injury Status',       icon: HeartPulse, tone: 'negative' },
+  rule_meta:         { label: 'Rule & Meta Trends',           icon: ChartColumn, tone: 'warning' },
 }
 
 const WEIGHT_KEYS = Object.keys(DEFAULT_WEIGHTS) as (keyof FeatureWeights)[]
@@ -104,7 +105,10 @@ export function Settings() {
           role="note"
           className="tone-info flex flex-col gap-1 rounded-xl p-4 text-sm bg-tone/[0.08] border border-tone/25"
         >
-          <p className="font-semibold text-tone">You can look at these settings, but not change them here</p>
+          <p className="flex items-center gap-2 font-semibold text-tone">
+            <Lock className="size-4 flex-shrink-0" aria-hidden="true" />
+            You can look at these settings, but not change them here
+          </p>
           <p className="text-fg-muted leading-relaxed">
             Changes are turned off on this website so that nobody can change the numbers for everyone else.
             To try your own values, run your own copy of Gridiron Oracle. The setup steps are in the
@@ -135,7 +139,7 @@ export function Settings() {
               <div key={key} className={clsx(toneClass(meta.tone), 'flex flex-col gap-2')}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-base select-none">{meta.icon}</span>
+                    <meta.icon className="size-4 text-tone" aria-hidden="true" />
                     <span className="text-xs font-medium text-fg-muted">{meta.label}</span>
                   </div>
                   <span className="text-sm font-bold font-mono text-tone">
@@ -262,9 +266,7 @@ export function Settings() {
       {/* Feedback */}
       {updateSettings.isSuccess && (
         <div className="tone-positive flex items-center gap-2 px-4 py-3 rounded-xl text-sm bg-tone/[0.08] border border-tone/20 text-tone">
-          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
+          <Check className="size-4 flex-shrink-0" aria-hidden="true" />
           Settings saved successfully.
         </div>
       )}
