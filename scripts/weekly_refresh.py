@@ -99,7 +99,16 @@ def promote_run_id(
     approved_run_id: str,
 ) -> None:
     """
-    Atomically swap pending_run_id -> approved_run_id for (season, start_week).
+    Relabel pending_run_id rows as approved_run_id. Relabel only: this deletes nothing.
+
+    Materializers never overwrite a row served by another approved run, so
+    approved rows keep their ids and stay served. Pending leftovers from a
+    failed run are not served and are removed by the step 9 prune, which keeps
+    only the manifest's approved ids. Scope of the relabel:
+      - season tables: (season, start_week)
+      - projections: season (this refresh's season only; the pinned stack rows
+        for earlier seasons are not promoted)
+      - team_game_predictions: (season, week=start_week)
     """
     logger.info(
         "Atomically promoting %s -> %s for season=%d, start_week=%d",
@@ -109,16 +118,6 @@ def promote_run_id(
         start_week,
     )
     for table in SEASON_START_WEEK_TABLES:
-        # 1. Delete any old rows for this (season, start_week) that are not the pending run
-        cur.execute(
-            f"""
-            DELETE FROM {table}
-            WHERE season = %s AND start_week = %s
-              AND (pipeline_run_id IS NULL OR pipeline_run_id <> %s)
-            """,
-            (season, start_week, pending_run_id),
-        )
-        # 2. Update pending rows to approved run id
         cur.execute(
             f"""
             UPDATE {table}
@@ -129,15 +128,6 @@ def promote_run_id(
             (approved_run_id, season, start_week, pending_run_id),
         )
 
-    # For projections (keyed on season, week)
-    cur.execute(
-        """
-        DELETE FROM projections
-        WHERE season = %s
-          AND (pipeline_run_id IS NULL OR pipeline_run_id <> %s)
-        """,
-        (season, pending_run_id),
-    )
     cur.execute(
         """
         UPDATE projections
@@ -146,6 +136,15 @@ def promote_run_id(
           AND pipeline_run_id = %s
         """,
         (approved_run_id, season, pending_run_id),
+    )
+    cur.execute(
+        """
+        UPDATE team_game_predictions
+        SET model_run_id = %s
+        WHERE season = %s AND week = %s
+          AND model_run_id = %s
+        """,
+        (approved_run_id, season, start_week, pending_run_id),
     )
 
 
@@ -186,7 +185,7 @@ def run_weekly_refresh(
         if start_week > 18:
             logger.info("Season %d has completed all 18 weeks. Nothing new to refresh.", season)
             return 0
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -207,7 +206,7 @@ def run_weekly_refresh(
         failure = _orchestrator_failure(orch_res)
         if failure is not None:
             raise RuntimeError(f"Orchestrator run failed: {failure}")
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -218,7 +217,7 @@ def run_weekly_refresh(
         logger.info("Step 3: Refreshing fantasy_player_ids bridge...")
         n_ids = upsert_playerids(dsn)
         logger.info("Bridge upserted %d player ID records.", n_ids)
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -237,10 +236,14 @@ def run_weekly_refresh(
             pending_run_id,
         ]
         try:
-            mat_stack_main()
+            # main() reports a refusal as a return code, not an exception. Treat it as a failure
+            # here, or the run would continue to step 8 and promote without this step's rows.
+            rc = mat_stack_main()
+            if rc != 0:
+                raise RuntimeError(f"materialize_stack_projections refused (return code {rc})")
         finally:
             sys.argv = old_argv
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -263,7 +266,7 @@ def run_weekly_refresh(
             database_url=dsn,
             pipeline_run_id=pending_run_id,
         )
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -279,7 +282,7 @@ def run_weekly_refresh(
             database_url=dsn,
             pipeline_run_id=pending_run_id,
         )
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -296,6 +299,8 @@ def run_weekly_refresh(
             str(season),
             "--start-week",
             str(start_week),
+            "--database-url",
+            dsn,
         ]
         try:
             rc = verify_main()
@@ -303,7 +308,7 @@ def run_weekly_refresh(
                 raise RuntimeError(f"verify_season_acceptance returned non-zero exit code: {rc}")
         finally:
             sys.argv = old_argv
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED (acceptance check aborted promotion): %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -323,7 +328,7 @@ def run_weekly_refresh(
                 )
             conn.commit()
         logger.info("Atomic promotion complete.")
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1

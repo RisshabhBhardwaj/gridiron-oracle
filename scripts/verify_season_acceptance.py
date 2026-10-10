@@ -27,6 +27,13 @@ def main() -> int:
     parser.add_argument("--end-week", type=int, default=18)
     parser.add_argument("--top-n", type=int, default=24)
     parser.add_argument("--out", type=Path, default=ROOT / "reports" / "season_acceptance.json")
+    from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+
+    parser.add_argument(
+        "--database-url",
+        default=DEFAULT_HOST_DATABASE_URL,
+        help="Database to read projections and realized points from (the refresh passes its own DSN)",
+    )
     args = parser.parse_args()
 
     import pandas as pd
@@ -34,10 +41,9 @@ def main() -> int:
     from scipy.stats import spearmanr
 
     from backend.app.services.projection import ProjectionService
-    from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
     from pipeline.schema import normalize_dsn
 
-    dsn = normalize_dsn(DEFAULT_HOST_DATABASE_URL)
+    dsn = normalize_dsn(args.database_url)
     projected = ProjectionService(dsn).get_season_projections(args.season, args.start_week)
     frame = pd.DataFrame([
         {
@@ -52,7 +58,7 @@ def main() -> int:
         for row in projected
     ])
 
-    with psycopg2.connect(normalize_dsn(DEFAULT_HOST_DATABASE_URL)) as conn:
+    with psycopg2.connect(dsn) as conn:
         realized = pd.read_sql(
             "SELECT player_id, SUM(fantasy_points_ppr) AS realized FROM game_logs "
             "WHERE season = %s AND week BETWEEN %s AND %s GROUP BY player_id",
@@ -115,7 +121,8 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2) + "\n")
     print(json.dumps(payload, indent=2))
-    return 0
+    # The report is written either way; an unmet acceptance must still fail the caller.
+    return 0 if payload["acceptance"]["met"] else 1
 
 
 if __name__ == "__main__":

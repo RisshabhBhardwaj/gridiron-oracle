@@ -53,6 +53,7 @@ def _weekly_refresh_with_orchestrator(summary: OrchestratorSummary):
         stack.enter_context(patch.object(Orchestrator, "run", return_value=summary))
         mocks = {name: stack.enter_context(patch(target)) for name, target in _PATCHED_STEPS.items()}
         mocks["upsert_playerids"].return_value = 5
+        mocks["stack"].return_value = 0
         mocks["acceptance"].return_value = 0
         mocks["purge_processed"].return_value = 0
         mocks["purge_stale"].return_value = 0
@@ -80,11 +81,23 @@ def test_resolve_season_and_week_none():
     assert start_week == 1
 
 
-def test_promote_run_id():
+def test_promote_run_id_only_relabels_pending_rows():
+    """Promotion is a relabel: no DELETE, one UPDATE per season table, projections and team games."""
     cur = MagicMock()
     promote_run_id(cur, 2026, 5, "pending_id", "approved_id")
-    # Should execute DELETE and UPDATE on each table
-    assert cur.execute.call_count >= 8
+    statements = [call.args[0] for call in cur.execute.call_args_list]
+    assert not any("DELETE" in sql for sql in statements)
+    assert len(statements) == 5  # 3 season tables + projections + team_game_predictions
+    assert all("UPDATE" in sql for sql in statements)
+    assert all(call.args[1][0] == "approved_id" for call in cur.execute.call_args_list)
+
+
+def test_approved_run_ids_resolve_against_the_repo_not_the_working_directory(monkeypatch, tmp_path):
+    """A cron job that starts outside the repo must still see the manifest's approved ids."""
+    from pipeline.run_guard import approved_pipeline_run_ids
+
+    monkeypatch.chdir(tmp_path)
+    assert "weekly_auto_2026" in approved_pipeline_run_ids()
 
 
 def test_dry_run_mode():

@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Key under which upgrade_head/stamp_head hand an explicit URL to alembic/env.py via Config.attributes.
+EXPLICIT_DB_URL = "explicit_db_url"
+
 
 def normalize_dsn(db_url: str) -> str:
     """Convert SQLAlchemy/asyncpg URLs to a psycopg2-compatible DSN."""
@@ -32,6 +35,8 @@ def upgrade_head(db_url: str | None = None) -> None:
     url = normalize_dsn(db_url or database_url_from_env())
     cfg = Config(str(REPO_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", url)
+    # alembic/env.py prefers this explicit URL over DATABASE_URL.
+    cfg.attributes[EXPLICIT_DB_URL] = url
     command.upgrade(cfg, "head")
     logger.info("Alembic upgrade head complete.")
 
@@ -44,5 +49,6 @@ def stamp_head(db_url: str | None = None) -> None:
     url = normalize_dsn(db_url or database_url_from_env())
     cfg = Config(str(REPO_ROOT / "alembic.ini"))
     cfg.set_main_option("sqlalchemy.url", url)
+    cfg.attributes[EXPLICIT_DB_URL] = url
     command.stamp(cfg, "head")
     logger.info("Alembic stamp head complete.")
