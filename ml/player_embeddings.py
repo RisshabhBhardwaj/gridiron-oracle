@@ -326,6 +326,7 @@ class PlayerProfileEmbedder:
             return np.zeros((len(player_ids), EMBED_DIM), dtype=np.float32)
 
         profiles = [self._profiles.get(pid) for pid in player_ids]
+        known = np.array([p is not None for p in profiles], dtype=bool)
         raw_list = [
             p.to_raw_features() if p is not None
             else np.zeros(10, dtype=np.float32)
@@ -339,9 +340,14 @@ class PlayerProfileEmbedder:
             mx_W    = mx.array(self._W)
             mx_emb  = mx.tanh(mx_norm @ mx_W)   # (N, EMBED_DIM)
             mx.eval(mx_emb)
-            return np.array(mx_emb.tolist(), dtype=np.float32)
+            emb = np.array(mx_emb.tolist(), dtype=np.float32)
         else:
-            return np.tanh(normalized @ self._W).astype(np.float32)
+            emb = np.tanh(normalized @ self._W).astype(np.float32)
+
+        # Unknown players get zeros, as embed() returns. Projecting the zero raw vector
+        # above is not zero, so the rows are cleared here, after both branches.
+        emb[~known] = 0.0
+        return emb
 
     def _project(self, profile: PlayerProfile) -> np.ndarray:
         """Project a PlayerProfile through the fitted embedding matrix."""

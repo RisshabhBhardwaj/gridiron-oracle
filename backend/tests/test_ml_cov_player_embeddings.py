@@ -172,14 +172,6 @@ class TestEmbedderFitted:
         for row, pid in enumerate(ids):
             np.testing.assert_allclose(batch[row], embedder.embed(pid), atol=1e-6)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Production bug: embed_batch documents zeros for players outside the profile store, "
-            "but it normalises a zero raw vector, which yields a non-zero embedding. embed() does "
-            "return zeros. Fix in ml/player_embeddings.py, then this xfail flips to a pass."
-        ),
-    )
     def test_batch_unknown_player_is_zero_as_documented(self) -> None:
         embedder = PlayerProfileEmbedder().fit(_roster(6))
         assert not embedder.embed_batch(["NOPE"]).any()
@@ -236,7 +228,8 @@ class TestEmbeddingStore:
         assert len(out) == 3  # no rows dropped
         expected = store._embedder.embed_batch(["P01", "GHOST", "P03"])
         np.testing.assert_allclose(out[emb_cols].to_numpy(), expected, atol=1e-6)
-        # The unknown GHOST row is covered by the single-player path only: see the xfail above.
+        # GHOST is outside the profile store, so its row is zeros, the same as embed("GHOST").
+        assert not out[emb_cols].to_numpy()[1].any()
         assert store._embedder.embed("GHOST").tolist() == [0.0] * EMBED_DIM
 
     def test_enrich_without_player_id_returns_frame_unchanged(self, caplog) -> None:

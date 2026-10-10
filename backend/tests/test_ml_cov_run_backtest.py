@@ -194,8 +194,8 @@ class TestRealDataProvider:
         assert qb.iloc[0]["naive_baseline"] == pytest.approx(30.0)  # 2023 mean of attempts
 
     def test_multi_source_fumbles_sum_components(self, fake_db) -> None:
-        # Every fumble component is filled in, so the sum is well defined (see the xfail below
-        # for the NaN case that pandas conversion produces).
+        # Every fumble component is filled in here; test_nan_fumble_component_does_not_poison_total
+        # covers the NaN case that pandas conversion produces.
         history = _history()
         for row in history:
             for attr in ("rushing_fumbles", "receiving_fumbles", "sack_fumbles"):
@@ -209,15 +209,6 @@ class TestRealDataProvider:
         assert list(by_player["P1"].sort_values("week")["actual_value"]) == [0.5, 2.0]
         assert list(by_player["P2"]["actual_value"]) == [0.0]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Production bug: read_gamelog_stat sums fumble components with `is not None`, so a NaN "
-            "component (what pandas produces for a missing value) makes the whole total NaN. The "
-            "real_data_provider DataFrame path therefore drops most fumble rows. Fix in "
-            "ml/stat_resolution.py, then this xfail flips to a pass."
-        ),
-    )
     def test_nan_fumble_component_does_not_poison_total(self) -> None:
         from ml.stat_resolution import read_gamelog_stat
 

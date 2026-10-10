@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -212,6 +213,30 @@ def test_optuna_returns_params_inside_search_ranges() -> None:
 
 # ── train() ───────────────────────────────────────────────────────────────────
 
+class _FakeClock:
+    """Stands in for the time module inside ml.catboost_model so run ids are predictable."""
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def time(self) -> float:
+        return self.now
+
+
+class TestPseudoRunId:
+    def test_is_eight_hex_digits_of_unix_seconds(self) -> None:
+        assert cbm._pseudo_run_id(1_780_000_000) == f"{1_780_000_000:08x}"
+
+    def test_unique_per_second_and_time_ordered(self) -> None:
+        ids = [cbm._pseudo_run_id(t) for t in (1_780_000_000, 1_780_000_001, 1_780_086_400)]
+        assert len(set(ids)) == 3
+        assert ids == sorted(ids)
+
+    def test_sorts_after_legacy_date_stamps(self) -> None:
+        # Stacking discovery takes the newest file by name; old YYYYMMDD stamps must sort first.
+        assert cbm._pseudo_run_id(1_780_000_000) > "20261231"
+
+
 class TestTrain:
     def test_unknown_target_is_rejected(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="Unknown target 'bogus'"):
@@ -311,10 +336,24 @@ class TestTrain:
         assert result.run_id is None
         assert "MLflow logging failed: registry unavailable" in caplog.text
         assert result.oof_path is not None and result.oof_path.exists()
-        # The pseudo run id is a UTC timestamp (YYYYMMDDTHHMMSS), but save_oof keeps only
-        # run_id[:8], so the file suffix is the date alone.
+        # The pseudo run id is 8 hex digits of Unix seconds, and save_oof keeps run_id[:8].
         suffix = result.oof_path.stem.rsplit("_", 1)[-1]
-        assert re.fullmatch(r"\d{8}", suffix)
+        assert re.fullmatch(r"[0-9a-f]{8}", suffix)
+        assert abs(int(suffix, 16) - time.time()) < 3600
+
+    def test_same_day_pseudo_runs_keep_separate_oof_files(self, tmp_path, monkeypatch) -> None:
+        # Without MLflow each run gets a pseudo run id. A date-only id gave both same-day runs
+        # one file name, so the second run overwrote the first.
+        clock = _FakeClock(1_780_000_000.0)
+        monkeypatch.setattr(cbm, "time", clock, raising=False)
+        df = _synthetic_df([2021, 2022, 2023])
+        kwargs = dict(target="receiving_yards", n_optuna_trials=0, position_filter="WR",
+                      mlflow_tracking_uri="", out_dir=tmp_path / "oof")
+        first = train(df, [2021, 2022, 2023], **kwargs)
+        clock.now += 60
+        second = train(df, [2021, 2022, 2023], **kwargs)
+        assert first.oof_path != second.oof_path
+        assert first.oof_path.exists() and second.oof_path.exists()
 
     def test_uri_from_environment_when_not_passed(self, tmp_path, monkeypatch, mlflow_restore) -> None:
         mlflow = mlflow_restore

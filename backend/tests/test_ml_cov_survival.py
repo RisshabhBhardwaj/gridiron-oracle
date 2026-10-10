@@ -345,14 +345,6 @@ class TestBuildSurvivalDataset:
         _, game_logs = self._inputs()
         assert build_survival_dataset(feature_matrix, game_logs).empty
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Production bug: build_survival_dataset uses `row.get(...) or default`, so "
-            "injury_status_encoded 0 (Out) is replaced by 2 (Questionable). Fix in "
-            "ml/survival_model.py, then this xfail flips to a pass."
-        ),
-    )
     def test_out_status_zero_is_preserved(self) -> None:
         feature_matrix = pd.DataFrame([
             {"player_id": "A", "season": 2024, "week": 2, "games_missed_streak": 1,
