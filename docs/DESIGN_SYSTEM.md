@@ -23,7 +23,7 @@ Done:
 
 Still hand-rolled (follow-up, in this order of value):
 1. Native selects styled with `.oracle-select`: `pages/CurrentSeason.tsx:241,259,277`, `pages/SeasonReview.tsx:88,115`, `pages/BacktestExplorer.tsx:81`, `pages/DraftBoard.tsx:223,336,378`. Replace with `Select`; the tests that use `fireEvent.change` on them need user-event.
-2. Tab and mode switchers made of buttons: `pages/CurrentSeason.tsx:201-221` (Weekly, Season-Long, Games), `pages/DraftBoard.tsx:187,197` (board, mock). Replace with `Tabs`, which exists and is tested but has no page using it yet. Position filter toggles (`CurrentSeason.tsx:301`, `DraftBoard.tsx:354,366`, `BacktestExplorer.tsx:90`, `SeasonReview`) are toggle buttons with `aria-pressed`; a ToggleGroup is the right primitive.
+2. Tab and mode switchers made of buttons: `pages/CurrentSeason.tsx:201-221` (Weekly, Season-Long, Games), `pages/DraftBoard.tsx:187,197` (board, mock). Replace with `Tabs`, which exists and is tested but has no page using it yet. Position filter toggles are plain buttons; a ToggleGroup is the right primitive. `CurrentSeason.tsx:301`, `DraftBoard.tsx:354,366` and `BacktestExplorer.tsx:90` set `aria-pressed`; the ones in `SeasonReview.tsx` do not yet.
 3. `components/WhatIfStudio.tsx`: four sliders (`:239`, a transparent range input over a drawn thumb, no visible focus ring) and the dome switch (`:190`). Use `Slider` and a Switch.
 4. Settings scoring choice (PPR / Half-PPR / Standard): card buttons with `aria-pressed`; a RadioGroup is the right primitive.
 5. Phone navigation menu in `components/layout/NavBar.tsx` and the inline search box in `pages/Home.tsx` (a second hand-built combobox).

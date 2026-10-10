@@ -22,7 +22,7 @@ Last verified against code: 2026-10-07 (routes and copy read; no user research e
 - Metrics: same baseline comparisons; note evidence is marked provisional.
 
 ## 4. Bettor (implied by "Book Line", edge, Kelly engine)
-- Sees: player page edge versus a book line; the line is empty ("Book Line 0") when none exists.
+- Sees: player page edge versus a book line; when no live line exists the card says "No line yet" (it showed "Book Line 0", then generated demo lines, before 2026-10-10).
 - Status: in scope (owner). No bet slip in the UI; engine link to live odds unverified.
 
 ## 5. Operator/developer
@@ -45,4 +45,4 @@ Money or time saved, league outcomes, user retention. No usage tracking or resul
 | `frontend/src/components/BacktestPanel.tsx:93` | Sharpe Ratio | Return per unit of risk (or remove) |
 | `frontend/src/pages/DraftBoard.tsx:186` | Ranked via 8-team VOR | Ranked by value over a replacement player in an 8-team league |
 | `frontend/src/components/PercentileFan.tsx:13` | conformal bounds unavailable | Range not available for this player |
-| `frontend/src/components/shared/NoForecastBanner.tsx` | hard-coded "2026 in-season projections are not yet available" | Derive year and state from the API |
+| `frontend/src/components/shared/NoForecastBanner.tsx` | (fixed 2026-10-10) now "No forecast yet for Week N, YYYY" from the request | none |
