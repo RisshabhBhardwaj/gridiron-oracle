@@ -10,7 +10,7 @@ Checked on 2026-10-07 by running the tests, not by trusting older documents.
 | Check | Result |
 |---|---|
 | Backend tests (offline subset) | 1305 passed, 0 failed, 27 skipped |
-| Frontend typecheck, 76 tests, build | all pass (2026-10-10, branch `agent/gor-frontend-02-design-system`) |
+| Frontend typecheck, 77 tests, build | all pass (2026-10-10, branch `agent/gor-frontend-02-design-system`) |
 | C++ engine, 72 tests | all pass |
 | Lint (`ruff` 0.15.12) | clean |
 | Evidence manifest check | passes; every entry is marked "provisional" |

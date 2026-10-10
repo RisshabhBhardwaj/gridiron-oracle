@@ -19,7 +19,7 @@ Done:
 - Tokens unified (palette: the neutral dark set; the old neon values are gone).
 - Settings: sliders use `Slider`; icons are lucide; view-only on the public site.
 - Player page: stat chooser is a `Select` (was 15 pill buttons).
-- Search (cmd+K): `Dialog` plus an ARIA combobox (was a hand-built overlay with no focus trap that crashed on open).
+- Search (cmd+K): `Dialog` plus an ARIA combobox, loaded on first open so it stays out of the landing bundle (was a hand-built overlay with no focus trap that crashed on open).
 
 Still hand-rolled (follow-up, in this order of value):
 1. Native selects styled with `.oracle-select`: `pages/CurrentSeason.tsx:241,259,277`, `pages/SeasonReview.tsx:88,115`, `pages/BacktestExplorer.tsx:81`, `pages/DraftBoard.tsx:223,336,378`. Replace with `Select`; the tests that use `fireEvent.change` on them need user-event.
