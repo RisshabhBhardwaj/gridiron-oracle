@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
-from pipeline.orchestrator import Orchestrator, _write_dead_letter
+from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
 from pipeline.schema import normalize_dsn
 from pipeline.staging_retention import purge_processed_staging, purge_stale_staging
 from scraper.adapters.ff_playerids import upsert_playerids
@@ -55,6 +55,22 @@ WEEKLY_SOURCES = [
     "nextgen_stats",
     "team_stats",
 ]
+
+
+def _orchestrator_failure(summary: OrchestratorSummary) -> str | None:
+    """
+    Return the first failed step across all seasons as
+    "season=<y> step=<name>: <error>", or None when every step succeeded.
+
+    Orchestrator.run() records step failures in StepResult.ok / .error and
+    returns normally, so the caller has to look for them here.
+    """
+    for season_result in summary.season_results:
+        for step in season_result.steps:
+            if not step.ok:
+                detail = step.error or "failed without an error message"
+                return f"season={season_result.season} step={step.name}: {detail}"
+    return None
 
 
 def resolve_season_and_week(cur, default_season: int = 2026) -> tuple[int, int, int]:
@@ -188,8 +204,9 @@ def run_weekly_refresh(
         logger.info("Step 2: Running Orchestrator with weekly sources %s...", WEEKLY_SOURCES)
         orch = Orchestrator(dsn)
         orch_res = orch.run(seasons=[season], sources=WEEKLY_SOURCES)
-        if not orch_res or not orch_res[0].ok:
-            raise RuntimeError(f"Orchestrator run failed: {orch_res}")
+        failure = _orchestrator_failure(orch_res)
+        if failure is not None:
+            raise RuntimeError(f"Orchestrator run failed: {failure}")
     except Exception as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
