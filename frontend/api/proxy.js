@@ -17,11 +17,16 @@
  * Path contract mirrors the Vite dev proxy, which strips the prefix:
  *   browser /api/draft/board  →  Railway /draft/board
  *
+ * Which methods and paths are forwarded is decided by proxy-policy.js before
+ * any upstream fetch. The proxy attaches no admin key of its own, so settings
+ * writes cannot be made through the public site.
+ *
  * Env (Vercel project settings):
  *   BACKEND_URL        https://<service>.up.railway.app   (no trailing slash)
  *   BACKEND_API_KEY    same value as API_KEY on Railway
- *   BACKEND_ADMIN_KEY  same value as ADMIN_API_KEY on Railway (optional)
  */
+
+import { decide } from './proxy-policy.js';
 
 const HOP_BY_HOP = new Set([
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
@@ -41,6 +46,12 @@ export default async function handler(req, res) {
   const rawPath = Array.isArray(__path) ? __path.join('/') : (__path || '');
   const segments = String(rawPath).split('/').filter(Boolean);
 
+  const verdict = decide(req.method, segments);
+  if (!verdict.allow) {
+    res.status(verdict.status).json({ detail: verdict.detail });
+    return;
+  }
+
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     for (const v of Array.isArray(value) ? value : [value]) search.append(key, v);
@@ -53,7 +64,6 @@ export default async function handler(req, res) {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers[key] = value;
   }
   if (process.env.BACKEND_API_KEY) headers['x-api-key'] = process.env.BACKEND_API_KEY;
-  if (process.env.BACKEND_ADMIN_KEY) headers['x-admin-key'] = process.env.BACKEND_ADMIN_KEY;
 
   let body;
   if (!['GET', 'HEAD'].includes(req.method)) {

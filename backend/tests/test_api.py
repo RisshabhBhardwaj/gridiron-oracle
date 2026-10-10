@@ -970,3 +970,29 @@ class TestAPIKeyMiddleware:
 
         assert unauthenticated.status_code == 401
         assert authenticated.status_code == 200
+
+    def test_admin_key_guards_settings_writes_not_reads(self):
+        """With ADMIN_API_KEY set, reading /settings needs only X-API-Key, so a
+        public visitor (the proxy attaches no X-Admin-Key) can read it.
+        Writes still need X-Admin-Key. _save_config is patched so no file is
+        written."""
+        body = {"weight_preset_name": "Default"}
+        with patch("backend.app.main.settings.api_key", "test-secret-key"), patch(
+            "backend.app.main.settings.admin_api_key", "test-admin-key"
+        ), patch("backend.app.api.settings._save_config"):
+            read = client.get("/settings", headers={"X-API-Key": "test-secret-key"})
+            write_without_admin = client.put(
+                "/settings", json=body, headers={"X-API-Key": "test-secret-key"}
+            )
+            write_with_admin = client.put(
+                "/settings",
+                json=body,
+                headers={
+                    "X-API-Key": "test-secret-key",
+                    "X-Admin-Key": "test-admin-key",
+                },
+            )
+
+        assert read.status_code == 200
+        assert write_without_admin.status_code == 403
+        assert write_with_admin.status_code != 403
