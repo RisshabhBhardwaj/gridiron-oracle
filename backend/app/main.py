@@ -414,6 +414,7 @@ from backend.app.api import (  # noqa: E402
     mock_draft as mock_draft_router,
     team_game as team_game_router,
     drive as drive_router,
+    odds as odds_router,
 )
 
 app.include_router(predict.router)
@@ -427,6 +428,7 @@ app.include_router(draft_router.router)
 app.include_router(mock_draft_router.router)
 app.include_router(team_game_router.router)
 app.include_router(drive_router.router)
+app.include_router(odds_router.router)
 
 
 # ---------------------------------------------------------------------------

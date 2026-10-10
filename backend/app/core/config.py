@@ -38,6 +38,8 @@ class Settings:
         OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf | grpc
         OTEL_EXPORTER_OTLP_HEADERS:  comma-separated k=v pairs
         OTEL_EXPORTER_OTLP_INSECURE: true/false for OTLP gRPC transport
+        ODDS_API_KEY:        The Odds API key for GET /odds. Optional; absent
+                             means /odds reports configured=false (no upstream call).
     """
 
     def __init__(self) -> None:
@@ -85,6 +87,9 @@ class Settings:
         # X-Admin-Key: <value>. Falls back to api_key if unset, so a single
         # key still works for local dev. Set a separate value in production.
         self.admin_api_key: str = os.environ.get("ADMIN_API_KEY", "").strip()
+        # The Odds API key used by GET /odds. Read server-side only; never logged
+        # or returned. Empty disables the upstream call (configured=false).
+        self.odds_api_key: str = os.environ.get("ODDS_API_KEY", "").strip()
         self.otel_service_name: str = os.environ.get(
             "OTEL_SERVICE_NAME",
             "gridiron-oracle-api",
