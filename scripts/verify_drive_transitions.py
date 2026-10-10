@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -41,7 +42,7 @@ def main() -> int:
     from ml.markov_simulator import DriveMarkovModel, _score_diff_bucket
     from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 
-    conn = psycopg2.connect(DEFAULT_HOST_DATABASE_URL)
+    conn = psycopg2.connect(os.environ.get("DATABASE_URL", DEFAULT_HOST_DATABASE_URL))
     try:
         df = pd.read_sql(
             """

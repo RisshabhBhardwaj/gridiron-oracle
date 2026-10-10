@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 import pandas as pd
 import pytest
 
-from backend.app.api.draft import _fetch_db_projections_ppr, model_ranks_by_vor
+from backend.app.api.draft import DraftBoardResponse, _fetch_db_projections_ppr, model_ranks_by_vor
 from ml.draft_projection import build_preseason_projections
 
 
@@ -196,3 +197,13 @@ def test_rookies_with_a_fitted_basis_are_ranked() -> None:
     ranks = model_ranks_by_vor(adp, model)
     assert ranks["rook"] == 1
     assert ranks["vet"] == 2
+
+
+def test_served_draft_note_makes_no_season_count_claims() -> None:
+    """The served note may not state "N of M seasons" win counts.
+
+    Those counts came from reports that do not reproduce at HEAD, so AGENTS.md
+    bars citing them. See docs/runbooks/scripts.md.
+    """
+    note = DraftBoardResponse.model_fields["note"].default
+    assert re.search(r"\b\d+\s+of\s+\d+\b", note) is None, note

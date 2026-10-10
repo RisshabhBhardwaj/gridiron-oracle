@@ -9,7 +9,7 @@ is safe to re-run and does not touch feature_matrix, matchups, or ftn
 tables.
 
 Usage:
-  DATABASE_URL=... python scripts/backfill_pbp_plays_outcomes.py
+  DATABASE_URL=... python archive/scripts-2026-10/backfill_pbp_plays_outcomes.py
 """
 from __future__ import annotations
 
