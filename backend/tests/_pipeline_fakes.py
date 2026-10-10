@@ -42,7 +42,7 @@ class FakeCursor:
                 self._rows = [_copy_row(r) for r in rows]
                 self.rowcount = len(self._rows) if rowcount is None else rowcount
                 if columns is not None:
-                    self.description = [(c,) for c in columns]
+                    self.description = [_Column(c) for c in columns]
                 break
 
     def fetchall(self) -> list[Any]:
@@ -50,6 +50,17 @@ class FakeCursor:
 
     def fetchone(self) -> Optional[Any]:
         return self._rows[0] if self._rows else None
+
+
+class _Column(tuple):
+    """A DB-API column description: indexable like (name,) and exposes .name like psycopg2."""
+
+    def __new__(cls, name: str) -> "_Column":
+        return super().__new__(cls, (name,))
+
+    @property
+    def name(self) -> str:
+        return self[0]
 
 
 def _copy_row(row: Any) -> Any:
