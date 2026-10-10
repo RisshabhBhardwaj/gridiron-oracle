@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+# Every job here only reads the repository.
+permissions:
+  contents: read
+
+# The jobs below run the gate from `make ci` (Makefile targets `ci`, `complexity`,
+# `typecheck`, `engine`) natively on the runner instead of through docker compose.
+# Keep the commands in step with the Makefile.
+
 jobs:
   # The authoritative public-push gate. The local `.githooks/pre-push` hook is
   # convenience only — it runs on the contributor's machine and is skippable
@@ -49,8 +57,8 @@ jobs:
             "0000000000000000000000000000000000000000" \
             | ./.githooks/pre-push origin "${{ github.server_url }}/${{ github.repository }}.git"
 
-  python:
-    name: Python tests + lint
+  lint:
+    name: Ruff, complexity gate, evidence manifest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,31 +67,81 @@ jobs:
         with:
           python-version: "3.11"   # matches local dev (Apple Silicon M-series)
 
-      - name: Install backend deps
-        run: pip install -r backend/requirements.txt
+      # Only the tools these steps call. No ML stack, so this job cannot fail on
+      # disk space or install time.
+      - name: Install lint tools
+        run: pip install --no-cache-dir "ruff>=0.4" "radon>=6.0"
 
-      - name: Ruff lint
+      - name: Ruff lint (make ci)
         run: ruff check .
 
+      # Same rule as `make complexity`: any rank-F function fails the job.
+      # radon exits 0 even when it finds one, so its output is checked here.
+      - name: Complexity gate (make complexity)
+        run: |
+          set -euo pipefail
+          output=$(radon cc -n F backend/app ml pipeline)
+          if [ -n "$output" ]; then
+            echo "$output"
+            echo "Complexity gate FAILED: rank-F functions (CC >= 26) detected."
+            exit 1
+          fi
+
       # Evidence under reports/ and ml/experiments/ is gitignored-plus-force-added,
-      # so `git status` cannot report drift in it (audit C-29).
+      # so `git status` cannot report drift in it (audit C-29). The script imports
+      # only the standard library (ml/artifact_manifest.py), so no ML stack is needed.
       - name: Evidence manifest
         run: python scripts/verify_evidence_manifest.py
 
-      - name: Pytest (unit + API — no DB required)
-        # Exclude integration tests (require live PostgreSQL) and slow MCMC tests
+  python:
+    name: Pytest (offline subset, 80% coverage gate)
+    runs-on: ubuntu-latest
+    env:
+      # No database service on purpose. The DB-backed tests in this subset read
+      # DATABASE_URL (default localhost:15439) and skip when Postgres is unreachable
+      # (db_conn fixtures and _skip_if_db_unreachable helpers). Their assertions need
+      # seeded data that CI does not have, so starting an empty Postgres here would
+      # turn skips into failures. `make ci` runs them against the compose database.
+      KMP_DUPLICATE_LIB_OK: "TRUE"
+      OMP_NUM_THREADS: "1"
+      OTEL_TRACES_EXPORTER: "none"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # CPU-only torch first, as backend/Dockerfile does. The default PyPI wheel
+      # pulls several GB of nvidia-* CUDA packages; with them, this job ran out of
+      # disk (run 32920850950: "No space left on device"). --no-cache-dir keeps pip
+      # from keeping a second copy of every wheel.
+      - name: Install CPU-only torch
+        run: pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
+
+      - name: Install backend deps
+        run: pip install --no-cache-dir -r backend/requirements.txt
+
+      - name: Fail if torch is not the CPU build
         run: |
-          export KMP_DUPLICATE_LIB_OK=TRUE
-          export OMP_NUM_THREADS=1
-          export OTEL_TRACES_EXPORTER=none
-          pytest backend/tests/ -v -m "not integration and not slow and not network"
+          python -c "import sys, torch; sys.exit(0 if '+cpu' in torch.__version__ else 'torch is not the CPU build: ' + torch.__version__)"
+
+      - name: Pytest with coverage gate (make ci)
+        # Explicit directory with `python -m pytest`: a bare `pytest` can abort
+        # during collection and still exit 0 (see root-level mlflow scratch files).
+        # -rs prints why each test skipped, so DB-backed skips are visible in the log.
+        run: |
+          python -m pytest backend/tests/ -v -rs \
+            -m "not integration and not network and not slow" \
+            --cov=ml --cov=pipeline --cov=backend \
+            --cov-report=term-missing --cov-fail-under=80
 
   schema-migrations:
     name: Alembic upgrade-downgrade-upgrade
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        image: postgres:18
         env:
           POSTGRES_USER: oracle
           POSTGRES_PASSWORD: oracle
@@ -91,7 +149,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U oracle"
+          --health-cmd "pg_isready -U oracle -d oracle"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -104,8 +162,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      # The revisions and alembic/env.py import only alembic, sqlalchemy and the
+      # standard library, so the ML stack is not installed here.
       - name: Install migration dependencies
-        run: pip install -r backend/requirements.txt
+        run: pip install --no-cache-dir "alembic>=1.13" "sqlalchemy>=2.0" "psycopg2-binary>=2.9"
 
       - name: Prove migration reversibility on an empty database
         run: |
@@ -115,26 +175,29 @@ jobs:
           alembic upgrade head
 
   cpp:
-    name: C++ build + tests
+    name: C++ build + ctest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # Boost enables ws_integration_tests (engine/CMakeLists.txt, find_package(Boost 1.82)).
       - name: Install Boost
         run: sudo apt-get update && sudo apt-get install -y libboost-all-dev
 
+      # Same flags as `make engine`.
       - name: CMake configure
-        run: cmake -B engine/build engine/ -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B engine/build engine/ -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=17 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
-        run: cmake --build engine/build -j$(nproc)
+        run: cmake --build engine/build -j"$(nproc)"
 
-      - name: Run all C++ tests (unified run_tests binary)
-        # Runs all 4 suites: ring_buffer, kelly, exposure_manager, ipc_bridge
-        run: ./engine/build/run_tests
+      # Runs every discovered test, as `make ci` does. --no-tests=error makes a
+      # configure that discovers zero tests fail rather than pass silently.
+      - name: Test (ctest, as make ci)
+        run: ctest --test-dir engine/build --output-on-failure --no-tests=error
 
   frontend:
-    name: TypeScript type check + tests
+    name: TypeScript typecheck, Vitest, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -147,10 +210,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Type check
+      - name: Type check (make typecheck)
         working-directory: frontend
         run: npm run typecheck
 
       - name: Unit tests (Vitest)
         working-directory: frontend
-        run: npm test -- --run
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
