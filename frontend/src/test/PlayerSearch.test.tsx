@@ -6,6 +6,8 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { SearchProvider, useSearch } from '../context/SearchContext'
 import { PlayerSearch } from '../components/PlayerSearch'
 import { NavBar } from '../components/layout/NavBar'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { App } from '../App'
 
 function renderShell() {
   return render(
@@ -123,5 +125,20 @@ describe('PlayerSearch as a dialog', () => {
     await screen.findByRole('dialog')
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+describe('search in the real app shell', () => {
+  it('loads the search dialog on first open (it is not in the landing bundle)', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={['/settings']}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    expect(await screen.findByRole('dialog', { name: 'Search players' })).toBeInTheDocument()
   })
 })

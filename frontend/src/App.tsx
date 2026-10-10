@@ -1,9 +1,8 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { NavBar } from './components/layout/NavBar'
 import { PageShell } from './components/layout/PageShell'
-import { PlayerSearch } from './components/PlayerSearch'
-import { SearchProvider } from './context/SearchContext'
+import { SearchProvider, useSearch } from './context/SearchContext'
 
 // Route-level chunks keep the landing experience small; analytics-heavy pages
 // (charts, backtest tables, settings) are fetched only when the user opens them.
@@ -15,13 +14,30 @@ const DraftBoard = lazy(async () => ({ default: (await import('./pages/DraftBoar
 const PlayerDetail = lazy(async () => ({ default: (await import('./pages/PlayerDetail')).PlayerDetail }))
 const BacktestExplorer = lazy(async () => ({ default: (await import('./pages/BacktestExplorer')).BacktestExplorer }))
 const Settings = lazy(async () => ({ default: (await import('./pages/Settings')).Settings }))
+// The search dialog (and the dialog library behind it) is only needed once someone opens search.
+const PlayerSearch = lazy(async () => ({ default: (await import('./components/PlayerSearch')).PlayerSearch }))
+
+/** Loads the search dialog the first time search is opened, then keeps it mounted. */
+function SearchHost() {
+  const { isOpen } = useSearch()
+  const [wanted, setWanted] = useState(false)
+  useEffect(() => {
+    if (isOpen) setWanted(true)
+  }, [isOpen])
+  if (!wanted) return null
+  return (
+    <Suspense fallback={null}>
+      <PlayerSearch />
+    </Suspense>
+  )
+}
 
 export function App() {
   return (
     <SearchProvider>
       <div className="min-h-screen bg-surface text-fg">
         <NavBar />
-        <PlayerSearch />
+        <SearchHost />
         <PageShell>
           <Suspense fallback={<div className="p-8 text-fg-muted">Loading view…</div>}>
             <Routes>
