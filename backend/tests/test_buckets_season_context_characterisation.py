@@ -293,6 +293,19 @@ def test_spot_values_match_hand_derivation() -> None:
     assert ctx.league_carry[4]["TE"] == 0.0
 
 
+def _order_rows() -> list[dict[str, Any]]:
+    """Four WRs with one prior target share each. Their mean depends on summation order in the last bit."""
+    return [_row(week=1, player_id=f"w{i}", position="WR", target_share=v) for i, v in enumerate((0.1, 0.2, 0.3, 0.15))]
+
+
+def test_league_mean_keeps_player_summation_order() -> None:
+    # Forward order gives 0.18750000000000003; reversed order gives 0.18749999999999997.
+    # Pinning the repr catches any change to the order players are summed in.
+    ctx = build_season_feature_context(_order_rows())
+    assert ctx.league_ts[2] == {"WR": (0.1 + 0.2 + 0.3 + 0.15) / 4}
+    assert repr(ctx.league_ts[2]["WR"]) == "0.18750000000000003"
+
+
 def test_input_rows_are_not_mutated() -> None:
     rows = _main_rows()
     before = copy.deepcopy(rows)
