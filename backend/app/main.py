@@ -63,8 +63,11 @@ from backend.app.services.runtime_status import RuntimeStatusService
 # to read the docs, or curl /openapi.json with X-API-Key.
 _AUTH_EXEMPT_PATHS = frozenset({"/", "/health"})
 
-# Write paths that require X-Admin-Key (falls back to X-API-Key when ADMIN_API_KEY unset).
+# Paths whose writes require X-Admin-Key (falls back to X-API-Key when ADMIN_API_KEY unset).
+# Reads of these paths need only X-API-Key, so the public site can show them
+# without holding the admin key.
 _ADMIN_PATHS = frozenset({"/settings"})
+_READ_METHODS = frozenset({"GET", "HEAD"})
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
@@ -73,12 +76,13 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
     Active only when the API_KEY env var is set. When active:
       - Every non-exempt request must include X-API-Key: <API_KEY>
-      - Requests to admin paths (PUT /settings) must also include
-        X-Admin-Key: <ADMIN_API_KEY>. When ADMIN_API_KEY is unset,
-        the regular API_KEY is accepted on admin paths (local dev).
+      - Non-read requests (anything but GET/HEAD) to admin paths
+        (PUT /settings) must also include X-Admin-Key: <ADMIN_API_KEY>.
+        When ADMIN_API_KEY is unset, the regular API_KEY is accepted on
+        admin paths (local dev).
 
     Exempt paths (always allowed): / /health /integrity /docs /redoc /openapi.json /metrics
-    Admin paths (require X-Admin-Key): /settings
+    Admin paths (writes require X-Admin-Key, reads need only X-API-Key): /settings
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -91,7 +95,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 )
 
             # Extra guard for write endpoints: require X-Admin-Key when configured.
-            if request.url.path in _ADMIN_PATHS and settings.admin_api_key:
+            if (
+                request.url.path in _ADMIN_PATHS
+                and request.method not in _READ_METHODS
+                and settings.admin_api_key
+            ):
                 provided_admin = request.headers.get("X-Admin-Key", "")
                 if not hmac.compare_digest(provided_admin, settings.admin_api_key):
                     return JSONResponse(
