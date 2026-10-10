@@ -283,3 +283,7 @@ secrets/
 gridiron-private-history.bundle
 **/ACTIVE_PROJECTS_AUDIT_*/
 reports/
+
+# Settings store: sibling lock file and atomic-write temp files (backend/app/api/settings.py)
+user_config.json.lock
+.user_config.json.*.tmp
