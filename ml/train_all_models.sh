@@ -79,10 +79,18 @@ if [ ! -f "$VENV_DIR/bin/python3.11" ]; then
 fi
 PYTHON="$VENV_DIR/bin/python3.11"
 
+# PRODUCT_MODE defaults to artifact_backed (fail closed).  Local development must
+# opt in to graceful fallback explicitly.  Any other value is refused, never
+# treated as fallback.
+case "${PRODUCT_MODE:-artifact_backed}" in
+  artifact_backed|graceful_fallback) ;;
+  *) echo "ERROR: PRODUCT_MODE=${PRODUCT_MODE} is not valid. See ml/product_mode.py." >&2; exit 1 ;;
+esac
+
 # Artifact-backed runs may not silently substitute null PBP/routes/depth/weather
-# groups or operate without historical prop lines. Development fallback runs are
-# intentionally exempt so local unit tests remain self-contained.
-if [ "${PRODUCT_MODE:-graceful_fallback}" = "artifact_backed" ]; then
+# groups or operate without historical prop lines.  Explicit fallback runs skip
+# this gate so local unit tests remain self-contained.
+if [ "${PRODUCT_MODE:-artifact_backed}" = "artifact_backed" ]; then
   "$PYTHON" scripts/verify_artifact_prerequisites.py
 fi
 # Keep candidate rebuilds isolated from the currently promoted artifact set.

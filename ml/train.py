@@ -88,6 +88,7 @@ import pandas as pd
 
 from backend.app.core.tracing import start_span
 from ml.artifact_manifest import ManifestError, get_manifest
+from ml.product_mode import ARTIFACT_BACKED, resolve_product_mode
 from ml.utils import FEATURE_COLS, suppress_training_warnings
 from ml.reliability import YARDAGE_STATS, split_conformal_interval
 
@@ -422,7 +423,7 @@ class PipelineRunner:
             # deep in conformal calibration.
             artifact_backed = (
                 not dry_run_mode
-                and os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed"
+                and resolve_product_mode() == ARTIFACT_BACKED
             )
             manifest_cells = get_manifest().stack_index if artifact_backed else None
 
@@ -545,6 +546,7 @@ class PipelineRunner:
                 stat=stat,
                 position=position,
                 player_ids=player_ids,
+                season=season,
                 n_samples=n_samples,
                 dry_run_mode=dry_run_mode,
                 fast=self.fast,
@@ -564,8 +566,9 @@ class PipelineRunner:
 
         # Yardage intervals are calibrated from stacked OOF residuals.  This
         # widens/narrows posterior intervals using held-out empirical error,
-        # rather than trusting a parametric posterior alone.
-        if stat in YARDAGE_STATS:
+        # rather than trusting a parametric posterior alone.  Dry runs have no
+        # OOF-backed calibration source, so they keep the Bayesian intervals.
+        if stat in YARDAGE_STATS and not dry_run_mode:
             mc_df = self._apply_conformal_yardage_intervals(
                 mc_df, stacked_estimates, stat=stat, position=position,
             )
@@ -798,7 +801,9 @@ class PipelineRunner:
         Returns:
             np.ndarray of shape (n_players,) — stacked estimates.
         """
-        artifact_backed = os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed"
+        # Dry runs are synthetic and never touch MLflow, the DB or the manifest,
+        # so the artifact gate does not apply to them.
+        artifact_backed = not dry_run_mode and resolve_product_mode() == ARTIFACT_BACKED
 
         def fallback(reason: str) -> np.ndarray:
             """Return an explicitly marked graceful-mode fallback only."""
@@ -951,12 +956,17 @@ class PipelineRunner:
         stat: str,
         position: str,
         player_ids: List[str],
+        *,
+        season: int,
         n_samples: int = 2000,
         dry_run_mode: bool = False,
         fast: bool = False,
     ) -> Dict[str, np.ndarray]:
         """
         Layer 3: Produce Bayesian posterior samples per player.
+
+        season: the season being projected. Calibration residuals come only
+        from seasons strictly before it (causal), so it is required.
 
         dry_run_mode: synthetic normal samples — no MCMC (for tests).
         fast=True:    Laplace/Gaussian approximation — no MCMC (~100x faster).
@@ -982,7 +992,7 @@ class PipelineRunner:
                 # variance and not a hand-tuned ×3 fudge.
                 from ml.conformal import residual_quantiles
 
-                residuals = self._load_oof_residuals(position, stat)
+                residuals = self._load_oof_residuals(position, stat, season=season)
                 try:
                     lo, hi = residual_quantiles(residuals, alpha=0.20)
                     conformal_std = max((float(hi) - float(lo)) / (2.0 * 1.2815515655446004), min_std)
@@ -998,10 +1008,11 @@ class PipelineRunner:
         # Production path: BayesianProjection with MCMC sampling.
         from ml.bayesian_layer import BayesianProjection
 
-        cache_key = f"{position}_{stat}"
+        # The fit depends on the season's calibration residuals, so the cache is per season.
+        cache_key = f"{season}_{position}_{stat}"
         if cache_key not in self._bayesian_cache:
             proj = BayesianProjection()
-            residuals = self._load_oof_residuals(position, stat)
+            residuals = self._load_oof_residuals(position, stat, season=season)
             proj.fit(position, residuals)
             self._bayesian_cache[cache_key] = proj
 
@@ -1082,16 +1093,20 @@ class PipelineRunner:
     }
     _SIGMA_FALLBACK_DEFAULT: float = 35.0
 
-    def _load_oof_residuals(self, position: str, stat: str) -> np.ndarray:
+    def _load_oof_residuals(self, position: str, stat: str, *, season: int) -> np.ndarray:
         """
         Load real stacking residuals from XGB+LGBM OOF CSVs for Bayesian calibration.
 
         Strategy:
           1. Scan self.oof_dir for xgb_{stat}_*.csv and lgbm_{stat}_*.csv files.
-          2. Load them, filter rows to `position`, compute residual = y_true - y_pred.
-          3. Return combined residuals from both learners as a 1-D float array.
+          2. Keep rows for `position` in seasons strictly before `season`. This keeps
+             calibration causal: the season being evaluated and later seasons never
+             contribute. A file without a `season` column is skipped with a warning,
+             because its rows cannot be shown to be prior-season.
+          3. Compute residual = y_true - y_pred and return the combined residuals from
+             both learners as a 1-D float array.
 
-        Fallback (when no OOF files found):
+        Fallback (when no prior-season residuals are found, e.g. the earliest season):
           Returns an array whose std matches the position-calibrated fallback sigma
           rather than synthetic Gaussian noise. This ensures BayesianProjection
           learns a physically meaningful sigma even on the first training run.
@@ -1099,6 +1114,8 @@ class PipelineRunner:
         Args:
             position: e.g. "WR", "RB", "QB", "TE"
             stat:     e.g. "receiving_yards", "rushing_yards" — matches OOF filename prefix
+            season:   evaluation season. Only seasons < season are used. Required, with
+                      no default: a None default would mean "all seasons" and reopen the leak.
 
         Returns:
             np.ndarray of residuals (1-D, dtype float). Length >= 2 guaranteed.
@@ -1114,9 +1131,18 @@ class PipelineRunner:
                 try:
                     df = pd.read_csv(filepath)
                     # OOF files: player_id, game_id, season, week, y_true, y_pred, fold_idx
+                    if "season" not in df.columns:
+                        logger.warning(
+                            "_load_oof_residuals: %s has no season column; skipping it "
+                            "because its rows cannot be shown to be prior-season.",
+                            filepath,
+                        )
+                        continue
                     # Filter to position if the column is present.
                     if "position" in df.columns:
                         df = df[df["position"] == position]
+                    # Causal cut: strictly earlier seasons only. NaN seasons are dropped.
+                    df = df[pd.to_numeric(df["season"], errors="coerce") < season]
                     if "y_true" in df.columns and "y_pred" in df.columns:
                         residuals = (df["y_true"] - df["y_pred"]).dropna().values
                         if len(residuals) > 0:
@@ -1127,20 +1153,21 @@ class PipelineRunner:
         if all_residuals:
             combined = np.concatenate(all_residuals)
             logger.info(
-                "Bayesian fit: loaded %d OOF residuals for position=%s stat=%s",
-                len(combined), position, stat,
+                "Bayesian fit: loaded %d prior-season (<%d) OOF residuals for position=%s stat=%s",
+                len(combined), season, position, stat,
             )
             return combined
 
-        # No OOF files yet — use stat+position-calibrated fallback sigma.
+        # No prior-season residuals (no OOF files yet, or the earliest season) —
+        # use stat+position-calibrated fallback sigma.
         sigma = self._POSITION_SIGMA_FALLBACK.get(
             f"{stat}_{position}",
             self._POSITION_SIGMA_FALLBACK.get(position, self._SIGMA_FALLBACK_DEFAULT),
         )
         logger.warning(
-            "No OOF files found for stat=%s. Using position-calibrated fallback "
-            "sigma=%.1f for position=%s. Run train_all_models.sh to generate OOF files.",
-            stat, sigma, position,
+            "No prior-season (<%d) OOF residuals for stat=%s. Using position-calibrated "
+            "fallback sigma=%.1f for position=%s. Run train_all_models.sh to generate OOF files.",
+            season, stat, sigma, position,
         )
         rng = np.random.default_rng(42)
         # Generate enough samples so std(ddof=1) is stable; use exact sigma as scale.
@@ -1185,7 +1212,7 @@ class PipelineRunner:
 
         if not actual_parts:
             message = f"No stacked OOF residuals for conformal {stat}/{position}"
-            if os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed":
+            if resolve_product_mode() == ARTIFACT_BACKED:
                 raise RuntimeError(message)
             logger.warning("%s; retaining Bayesian intervals in fallback mode", message)
             return mc_df

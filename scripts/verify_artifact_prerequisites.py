@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """Fail artifact-backed training when required feature sources are absent.
 
-Graceful-fallback development remains possible without credentials.  A run that
-will be promoted, however, must prove that its major feature groups are present
-in the database rather than silently training on their NULL fallbacks.
+Graceful-fallback development remains possible without credentials, but only when
+the fallback mode is set explicitly through PRODUCT_MODE.  A run that will be
+promoted, however, must prove that its major feature groups are present in the
+database rather than silently training on their NULL fallbacks.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass, asdict
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from ml.product_mode import ARTIFACT_BACKED, resolve_product_mode  # noqa: E402
 
 
 @dataclass
@@ -57,7 +65,7 @@ def build_report(db_url: str) -> dict:
 
 
 def main() -> int:
-    if os.environ.get("PRODUCT_MODE", "graceful_fallback") != "artifact_backed":
+    if resolve_product_mode() != ARTIFACT_BACKED:
         print(json.dumps({"overall_status": "skipped", "detail": "PRODUCT_MODE is not artifact_backed"}))
         return 0
     db_url = os.environ.get("DATABASE_URL", "")
