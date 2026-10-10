@@ -21,6 +21,12 @@ export function PlayerSearch() {
     if (isOpen) setActiveIndex(0)
   }, [isOpen, query, results.length])
 
+  const helperText = useMemo(() => {
+    if (query.length === 0) return 'Start typing a first name, last name, team, or position.'
+    if (results.length === 0) return `No players found for "${query}".`
+    return `${results.length} match${results.length !== 1 ? 'es' : ''} for "${query}".`
+  }, [query, results.length])
+
   if (!isOpen) return null
 
   const activePlayer = results[activeIndex] ?? null
@@ -51,11 +57,6 @@ export function PlayerSearch() {
     }
   }
 
-  const helperText = useMemo(() => {
-    if (query.length === 0) return 'Start typing a first name, last name, team, or position.'
-    if (results.length === 0) return `No players found for "${query}".`
-    return `${results.length} match${results.length !== 1 ? 'es' : ''} for "${query}".`
-  }, [query, results.length])
 
   return (
     <>
