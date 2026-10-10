@@ -127,6 +127,14 @@ def _process_injuries(raw: pd.DataFrame) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = None
 
+    # Rows with no player id cannot join a player's timeline. groupby("player_id")
+    # below drops NaN keys, which leaves the per-row streak list shorter than the
+    # frame and aborts the whole load, so drop them here and count them instead.
+    no_player = df["player_id"].isna()
+    if no_player.any():
+        logger.warning("dropped %d injury row(s) without a player id", int(no_player.sum()))
+        df = df[~no_player].copy()
+
     # ── Classify active / out per row ──────────────────────────────────────
     df["is_out"] = df["report_status"].isin(OUT_STATUSES)
 
@@ -181,8 +189,6 @@ def _process_injuries(raw: pd.DataFrame) -> pd.DataFrame:
 
     df["event_type"] = df.apply(_classify_event, axis=1)
 
-    # Keep only rows where player is identified
-    df = df[df["player_id"].notna()].copy()
     df["season"] = df["season"].astype(int)
     df["week"]   = df["week"].astype(int)
 

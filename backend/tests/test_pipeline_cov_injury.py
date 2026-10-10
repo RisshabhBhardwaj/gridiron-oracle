@@ -108,19 +108,17 @@ def test_process_injuries_casts_season_and_week_to_int():
     assert out.iloc[0]["week"] == 3
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=ValueError,
-    reason="_process_injuries assigns a per-row streak list built from groupby(player_id), "
-           "which drops NaN keys, so a null gsis_id row makes the lengths disagree.",
-)
-def test_process_injuries_drops_rows_without_a_player_id():
+def test_process_injuries_drops_rows_without_a_player_id(caplog):
     raw = _raw([
         {"gsis_id": None, "season": 2024, "week": 1, "report_status": "Out"},
         *_player_timeline("00-7", [(1, "Full")]),
     ])
-    out = inj._process_injuries(raw)
+    with caplog.at_level(logging.WARNING, logger="injury_pipeline"):
+        out = inj._process_injuries(raw)
+
     assert out["player_id"].tolist() == ["00-7"]
+    assert any("dropped 1 injury row(s) without a player id" in r.getMessage()
+               for r in caplog.records)
 
 
 # ── _load_injuries ────────────────────────────────────────────────────────────
