@@ -598,16 +598,57 @@ class SeasonFeatureContext:
     team_game_volume: dict[str, list[tuple[int, float, float]]]
 
 
-def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureContext:
-    """Scan season rows once; return lookups keyed by week / game / team."""
-    team_carries_by_game: dict[tuple[str, str], float] = defaultdict(float)
-    team_pass_by_game: dict[tuple[str, str], float] = defaultdict(float)
-    team_rush_by_game: dict[tuple[str, str], float] = defaultdict(float)
-    team_targets_by_game: dict[tuple[str, str], float] = defaultdict(float)
-    game_week: dict[tuple[str, str], int] = {}
-    by_player: dict[str, list[tuple]] = defaultdict(list)
-    player_pos: dict[str, str] = {}
+@dataclass
+class _SeasonScan:
+    """Raw totals from one pass over the season rows, before any per-week logic."""
 
+    team_carries_by_game: defaultdict[tuple[str, str], float]
+    team_pass_by_game: defaultdict[tuple[str, str], float]
+    team_rush_by_game: defaultdict[tuple[str, str], float]
+    team_targets_by_game: defaultdict[tuple[str, str], float]
+    game_week: dict[tuple[str, str], int]
+    by_player: defaultdict[str, list[tuple]]
+    player_pos: dict[str, str]
+
+
+def _snap_share(raw: Any) -> Optional[float]:
+    """Offense snap share as a fraction. Values above 1 are percentages."""
+    if raw is None:
+        return None
+    v = float(raw)
+    return v / 100.0 if v > 1.0 else v
+
+
+def _add_team_game_totals(scan: _SeasonScan, key: tuple[str, str], week: int, r: dict) -> None:
+    scan.team_carries_by_game[key] += float(r.get("carries") or 0)
+    scan.team_pass_by_game[key] += float(r.get("attempts") or r.get("pass_attempts") or 0)
+    scan.team_rush_by_game[key] += float(r.get("carries") or 0)
+    scan.team_targets_by_game[key] += float(r.get("targets") or 0)
+    scan.game_week[key] = week
+
+
+def _add_player_observation(
+    scan: _SeasonScan, pid: str, pos: str, week: int, gid: Any, team: str, r: dict
+) -> None:
+    scan.player_pos[pid] = pos
+    snap = _snap_share(r.get("offense_pct"))
+    ts = r.get("target_share")
+    scan.by_player[pid].append(
+        (week, float(ts) if ts is not None else None, snap, gid, float(r.get("carries") or 0), team)
+    )
+
+
+def _scan_season_rows(all_season_rows: list[dict]) -> _SeasonScan:
+    """Scan season rows once, collecting team-game totals and per-player history."""
+    scan = _SeasonScan(
+        team_carries_by_game=defaultdict(float),
+        team_pass_by_game=defaultdict(float),
+        team_rush_by_game=defaultdict(float),
+        team_targets_by_game=defaultdict(float),
+        game_week={},
+        by_player=defaultdict(list),
+        player_pos={},
+    )
     for r in all_season_rows:
         week = int(r.get("week") or 0)
         gid = r.get("game_id")
@@ -615,87 +656,122 @@ def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureCo
         pid = str(r.get("player_id") or "")
         pos = (r.get("position") or "").upper()
         if gid and team:
-            key = (str(gid), str(team))
-            team_carries_by_game[key] += float(r.get("carries") or 0)
-            team_pass_by_game[key] += float(r.get("attempts") or r.get("pass_attempts") or 0)
-            team_rush_by_game[key] += float(r.get("carries") or 0)
-            team_targets_by_game[key] += float(r.get("targets") or 0)
-            game_week[key] = week
+            _add_team_game_totals(scan, (str(gid), str(team)), week, r)
         if pid:
-            player_pos[pid] = pos
-            snap_raw = r.get("offense_pct")
-            snap = None
-            if snap_raw is not None:
-                v = float(snap_raw)
-                snap = v / 100.0 if v > 1.0 else v
-            ts = r.get("target_share")
-            by_player[pid].append(
-                (week, float(ts) if ts is not None else None, snap, gid, float(r.get("carries") or 0), team)
-            )
+            _add_player_observation(scan, pid, pos, week, gid, team, r)
+    return scan
 
+
+def _build_team_game_volume(scan: _SeasonScan) -> dict[str, list[tuple[int, float, float]]]:
+    """Per team, one (week, pass attempts, carries) entry per game, in week order."""
     team_game_volume: dict[str, list[tuple[int, float, float]]] = defaultdict(list)
     seen_team_game: set[tuple[str, str]] = set()
-    for (gid, team), week in game_week.items():
+    for (gid, team), week in scan.game_week.items():
         key = (team, gid)
         if key in seen_team_game:
             continue
         seen_team_game.add(key)
         team_game_volume[team].append(
-            (week, team_pass_by_game.get((gid, team), 0.0), team_rush_by_game.get((gid, team), 0.0))
+            (week, scan.team_pass_by_game.get((gid, team), 0.0), scan.team_rush_by_game.get((gid, team), 0.0))
         )
     for team in team_game_volume:
         team_game_volume[team].sort(key=lambda x: x[0])
+    return dict(team_game_volume)
 
-    max_week = max(game_week.values()) if game_week else 18
-    league_ts: dict[int, dict[str, float]] = {w: {} for w in range(1, max_week + 2)}
-    league_snap: dict[int, dict[str, float]] = {w: {} for w in range(1, max_week + 2)}
-    league_carry: dict[int, dict[str, float]] = {w: {} for w in range(1, max_week + 2)}
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def _mean_or_none(values: list[float]) -> Optional[float]:
+    return _mean(values) if values else None
+
+
+def _prior_carry_shares(entries: list[tuple], week: int, team_carries_by_game: dict) -> list[float]:
+    """A player's carry share (own carries / team carries) for games before `week`.
+
+    Games whose team has no carries are skipped.
+    """
+    shares: list[float] = []
+    for e in entries:
+        if e[0] >= week:
+            continue
+        team_carries = team_carries_by_game.get((str(e[3] or ""), str(e[5] or "")), 0.0)
+        if team_carries > 0:
+            shares.append(e[4] / team_carries)
+    return shares
+
+
+def _prior_means(
+    entries: list[tuple], week: int, team_carries_by_game: dict
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    """A player's mean target share, snap share and carry share over games before `week`."""
+    ts_vals = [e[1] for e in entries if e[0] < week and e[1] is not None]
+    snap_vals = [e[2] for e in entries if e[0] < week and e[2] is not None]
+    return (
+        _mean_or_none(ts_vals),
+        _mean_or_none(snap_vals),
+        _mean_or_none(_prior_carry_shares(entries, week, team_carries_by_game)),
+    )
+
+
+def _league_position_means(
+    scan: _SeasonScan, week: int
+) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    """Per-position league means for `week`, each averaged over players' prior-game means."""
+    pos_ts: dict[str, list[float]] = defaultdict(list)
+    pos_snap: dict[str, list[float]] = defaultdict(list)
+    pos_carry: dict[str, list[float]] = defaultdict(list)
+    for pid, entries in scan.by_player.items():
+        pos = scan.player_pos.get(pid, "")
+        ts_mean, snap_mean, carry_mean = _prior_means(entries, week, scan.team_carries_by_game)
+        if ts_mean is not None:
+            pos_ts[pos].append(ts_mean)
+        if snap_mean is not None:
+            pos_snap[pos].append(snap_mean)
+        if carry_mean is not None:
+            pos_carry[pos].append(carry_mean)
+    return (
+        {pos: _mean(vals) for pos, vals in pos_ts.items() if vals},
+        {pos: _mean(vals) for pos, vals in pos_snap.items() if vals},
+        {pos: _mean(vals) for pos, vals in pos_carry.items() if vals},
+    )
+
+
+def _targets_allowed_before(scan: _SeasonScan, week: int) -> Optional[float]:
+    """Mean team targets over the team games played before `week`."""
+    tgt_vals = [scan.team_targets_by_game[key] for key, w in scan.game_week.items() if w < week]
+    return _mean_or_none(tgt_vals)
+
+
+def build_season_feature_context(all_season_rows: list[dict]) -> SeasonFeatureContext:
+    """Scan season rows once; return lookups keyed by week / game / team."""
+    scan = _scan_season_rows(all_season_rows)
+    team_game_volume = _build_team_game_volume(scan)
+    max_week = max(scan.game_week.values()) if scan.game_week else 18
+
+    league_ts: dict[int, dict[str, float]] = {}
+    league_snap: dict[int, dict[str, float]] = {}
+    league_carry: dict[int, dict[str, float]] = {}
     league_tgt_allowed: dict[int, float] = {}
-
     for week in range(1, max_week + 2):
-        pos_ts: dict[str, list[float]] = defaultdict(list)
-        pos_snap: dict[str, list[float]] = defaultdict(list)
-        pos_carry: dict[str, list[float]] = defaultdict(list)
-        for pid, entries in by_player.items():
-            pos = player_pos.get(pid, "")
-            ts_vals = [e[1] for e in entries if e[0] < week and e[1] is not None]
-            snap_vals = [e[2] for e in entries if e[0] < week and e[2] is not None]
-            cs_vals = []
-            for e in entries:
-                if e[0] >= week:
-                    continue
-                gid = e[3]
-                tc = team_carries_by_game.get((str(gid or ""), str(e[5] or "")), 0.0)
-                if tc > 0:
-                    cs_vals.append(e[4] / tc)
-            if ts_vals:
-                pos_ts[pos].append(sum(ts_vals) / len(ts_vals))
-            if snap_vals:
-                pos_snap[pos].append(sum(snap_vals) / len(snap_vals))
-            if cs_vals:
-                pos_carry[pos].append(sum(cs_vals) / len(cs_vals))
-        for pos, vals in pos_ts.items():
-            if vals:
-                league_ts[week][pos] = sum(vals) / len(vals)
-        for pos, vals in pos_snap.items():
-            if vals:
-                league_snap[week][pos] = sum(vals) / len(vals)
-        for pos, vals in pos_carry.items():
-            if vals:
-                league_carry[week][pos] = sum(vals) / len(vals)
-        tgt_vals = [team_targets_by_game[key] for key, w in game_week.items() if w < week]
-        if tgt_vals:
-            league_tgt_allowed[week] = sum(tgt_vals) / len(tgt_vals)
+        ts_means, snap_means, carry_means = _league_position_means(scan, week)
+        league_ts[week] = ts_means
+        league_snap[week] = snap_means
+        league_carry[week] = carry_means
+        tgt_mean = _targets_allowed_before(scan, week)
+        if tgt_mean is not None:
+            league_tgt_allowed[week] = tgt_mean
 
     return SeasonFeatureContext(
-        team_carries_by_game=dict(team_carries_by_game),
-        team_pass_by_game=dict(team_pass_by_game),
-        team_rush_by_game=dict(team_rush_by_game),
+        team_carries_by_game=dict(scan.team_carries_by_game),
+        team_pass_by_game=dict(scan.team_pass_by_game),
+        team_rush_by_game=dict(scan.team_rush_by_game),
         league_ts=league_ts,
         league_snap=league_snap,
         league_carry=league_carry,
         league_tgt_allowed=league_tgt_allowed,
-        team_game_volume=dict(team_game_volume),
+        team_game_volume=team_game_volume,
     )
 
 
