@@ -45,7 +45,8 @@ describe('Settings', () => {
       expect(screen.getByText('Total weight')).toBeInTheDocument(),
     )
     const totalEl = screen.getByText('100.0%')
-    expect(totalEl).toHaveStyle({ color: 'rgb(0, 255, 163)' })
+    expect(totalEl).toHaveClass('text-tone')
+    expect(totalEl.closest('.tone-positive')).not.toBeNull()
   })
 
   it('changing one slider updates the total display', async () => {
@@ -101,6 +102,6 @@ describe('Settings', () => {
       expect(screen.getByText('Fantasy Scoring Format')).toBeInTheDocument(),
     )
     const pprButton = screen.getByRole('button', { name: /^PPR 1pt per reception$/i })
-    expect(pprButton).toHaveStyle({ background: 'rgba(0, 194, 255, 0.1)' })
+    expect(pprButton).toHaveAttribute('aria-pressed', 'true')
   })
 })

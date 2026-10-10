@@ -1,4 +1,6 @@
+import clsx from 'clsx'
 import type { BacktestResponse } from '@/types/api'
+import { toneClass, type Tone } from '@/lib/tokens'
 
 interface BacktestPanelProps { data: BacktestResponse }
 
@@ -11,34 +13,30 @@ interface MetricCardProps {
   label: string
   value: string
   subtext?: string
-  color?: string
-  glow?: string
+  /** Colours the value. Leave out for a plain, uncoloured card. "muted" means no data. */
+  tone?: Tone
 }
 
-function MetricCard({ label, value, subtext, color = '#F0F6FF', glow }: MetricCardProps) {
+function MetricCard({ label, value, subtext, tone }: MetricCardProps) {
+  const glowing = tone !== undefined && tone !== 'muted'
   return (
     <div
-      className="relative rounded-xl p-4 flex flex-col gap-2 overflow-hidden"
-      style={{
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
-        border: glow ? `1px solid ${glow}30` : '1px solid rgba(255,255,255,0.06)',
-        boxShadow: glow ? `0 4px 20px rgba(0,0,0,0.3), 0 0 12px ${glow}15` : '0 4px 20px rgba(0,0,0,0.3)',
-      }}
+      className={clsx(
+        tone && toneClass(tone),
+        'relative rounded-xl p-4 flex flex-col gap-2 overflow-hidden bg-panel-gradient',
+        glowing
+          ? 'border border-tone/20 shadow-[0_4px_20px_rgb(var(--shadow)/0.3),0_0_12px_rgb(var(--tone)/0.08)]'
+          : 'border border-white/[0.06] shadow-[0_4px_20px_rgb(var(--shadow)/0.3)]',
+      )}
     >
-      {glow && (
-        <div
-          className="absolute top-0 right-0 w-12 h-12 rounded-bl-full opacity-30"
-          style={{ background: `radial-gradient(circle at top right, ${glow}50, transparent 70%)` }}
-        />
+      {glowing && (
+        <div className="corner-glow absolute top-0 right-0 w-12 h-12 rounded-bl-full opacity-30" />
       )}
       <span className="section-label">{label}</span>
-      <span
-        className="font-display text-3xl leading-none"
-        style={{ color, textShadow: glow ? `0 0 16px ${glow}60` : 'none' }}
-      >
+      <span className={clsx('font-display text-3xl leading-none', tone ? 'text-tone' : 'text-fg', glowing && 'glow-text')}>
         {value}
       </span>
-      {subtext && <span className="text-[10px] text-oracle-muted leading-tight">{subtext}</span>}
+      {subtext && <span className="text-[10px] text-fg-muted leading-tight">{subtext}</span>}
     </div>
   )
 }
@@ -48,9 +46,9 @@ export function BacktestPanel({ data }: BacktestPanelProps) {
   const pnlValue = data.simulated_pnl === null ? '—'
     : `${data.simulated_pnl >= 0 ? '+' : ''}${safeFixed(data.simulated_pnl, 2)}`
 
-  const sharpeColor = data.sharpe_ratio === null ? '#607B9B'
-    : data.sharpe_ratio >= 1 ? '#00FFA3'
-    : data.sharpe_ratio >= 0.5 ? '#FFB800' : '#FF3B5C'
+  const sharpeTone: Tone = data.sharpe_ratio === null ? 'muted'
+    : data.sharpe_ratio >= 1 ? 'positive'
+    : data.sharpe_ratio >= 0.5 ? 'warning' : 'negative'
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -58,50 +56,43 @@ export function BacktestPanel({ data }: BacktestPanelProps) {
         label="MAE"
         value={safeFixed(data.overall_mae, 2)}
         subtext="Mean Absolute Error"
-        color="#00C2FF"
-        glow="#00C2FF"
+        tone="info"
       />
       <MetricCard
         label="RMSE"
         value={safeFixed(data.overall_rmse, 2)}
         subtext="Root Mean Squared Error"
-        color="#00C2FF"
-        glow="#00C2FF"
+        tone="info"
       />
       <MetricCard
         label="CRPS"
         value={safeFixed(data.overall_crps, 3)}
         subtext="Probabilistic accuracy"
-        color="#A855F7"
-        glow="#A855F7"
+        tone="highlight"
       />
       <MetricCard
         label="Brier Score"
         value={safeFixed(data.brier_score, 3)}
         subtext={data.metric_notes?.brier_score ?? 'Binary-event calibration when available'}
-        color="#A855F7"
-        glow="#A855F7"
+        tone="highlight"
       />
       <MetricCard
         label="Simulated P&L"
         value={pnlValue}
         subtext={data.metric_notes?.simulated_pnl ?? 'Backtest wagering output when available'}
-        color={data.simulated_pnl === null ? '#607B9B' : pnlPositive ? '#00FFA3' : '#FF3B5C'}
-        glow={data.simulated_pnl === null ? undefined : pnlPositive ? '#00FFA3' : '#FF3B5C'}
+        tone={data.simulated_pnl === null ? 'muted' : pnlPositive ? 'positive' : 'negative'}
       />
       <MetricCard
         label="Sharpe Ratio"
         value={safeFixed(data.sharpe_ratio, 2)}
         subtext={data.metric_notes?.sharpe_ratio ?? 'Risk-adjusted return'}
-        color={sharpeColor}
-        glow={sharpeColor}
+        tone={sharpeTone}
       />
       <MetricCard
         label="Max Drawdown"
         value={data.max_drawdown === null ? '—' : `${safeFixed(data.max_drawdown, 2)}u`}
         subtext={data.metric_notes?.max_drawdown ?? 'Largest peak-to-trough loss'}
-        color={data.max_drawdown === null ? '#607B9B' : '#FF3B5C'}
-        glow={data.max_drawdown === null ? undefined : '#FF3B5C'}
+        tone={data.max_drawdown === null ? 'muted' : 'negative'}
       />
       <MetricCard
         label="Seasons"

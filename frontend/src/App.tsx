@@ -19,11 +19,11 @@ const Settings = lazy(async () => ({ default: (await import('./pages/Settings'))
 export function App() {
   return (
     <SearchProvider>
-      <div className="min-h-screen bg-oracle-dark text-oracle-white">
+      <div className="min-h-screen bg-surface text-fg">
         <NavBar />
         <PlayerSearch />
         <PageShell>
-          <Suspense fallback={<div className="p-8 text-oracle-muted">Loading view…</div>}>
+          <Suspense fallback={<div className="p-8 text-fg-muted">Loading view…</div>}>
             <Routes>
               <Route path="/"                element={<Home />} />
               <Route path="/projections"     element={<CurrentSeason />} />

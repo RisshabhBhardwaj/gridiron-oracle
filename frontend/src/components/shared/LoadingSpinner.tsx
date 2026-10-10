@@ -5,21 +5,18 @@ interface LoadingSpinnerProps {
   className?: string
 }
 
-const SIZE_CLASSES = { sm: 'w-4 h-4', md: 'w-8 h-8', lg: 'w-12 h-12' }
-const BORDER_SIZES = { sm: 2, md: 3, lg: 4 }
+const SIZE_CLASSES = { sm: 'w-4 h-4 border-2', md: 'w-8 h-8 border-[3px]', lg: 'w-12 h-12 border-4' }
 
 export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) {
-  const b = BORDER_SIZES[size]
   return (
     <div
       role="status"
       aria-label="Loading"
-      className={clsx('rounded-full animate-spin', SIZE_CLASSES[size], className)}
-      style={{
-        border: `${b}px solid rgba(0,194,255,0.1)`,
-        borderTopColor: '#00C2FF',
-        boxShadow: '0 0 12px rgba(0,194,255,0.3)',
-      }}
+      className={clsx(
+        'rounded-full animate-spin border-info/10 border-t-info shadow-[0_0_12px_rgb(var(--info)/0.3)]',
+        SIZE_CLASSES[size],
+        className,
+      )}
     />
   )
 }
@@ -44,11 +41,7 @@ export function SkeletonCard({ count = 6 }: { count?: number }) {
         return (
           <div
             key={i}
-            className="rounded-xl p-5 flex flex-col gap-3"
-            style={{
-              background: 'rgba(13,27,48,0.8)',
-              border: '1px solid rgba(255,255,255,0.05)',
-            }}
+            className="rounded-xl p-5 flex flex-col gap-3 bg-surface-raised border border-white/5"
           >
             <div className="flex justify-between items-center">
               <div className="skeleton h-4 w-28 rounded" style={delay} />

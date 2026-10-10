@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
+import clsx from 'clsx'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
+import { Panel } from '@/components/shared/Panel'
+import { toneClass, type Tone } from '@/lib/tokens'
 import type { FeatureWeights, FantasyScoring } from '@/types/api'
 
 const DEFAULT_WEIGHTS: FeatureWeights = {
@@ -9,14 +12,14 @@ const DEFAULT_WEIGHTS: FeatureWeights = {
   weather_venue: 10, team_context: 5, roster_injury: 5, rule_meta: 5,
 }
 
-const WEIGHT_META: Record<keyof FeatureWeights, { label: string; icon: string; color: string }> = {
-  kalman_form:       { label: 'Kalman Form (Player Ability)', icon: '📈', color: '#00C2FF' },
-  seasonal_baseline: { label: 'Seasonal Baseline',            icon: '📅', color: '#00FFA3' },
-  matchup:           { label: 'Matchup Quality',              icon: '⚔️',  color: '#FFB800' },
-  weather_venue:     { label: 'Weather & Venue',              icon: '🌦',  color: '#A855F7' },
-  team_context:      { label: 'Team Context',                 icon: '🏈', color: '#00C2FF' },
-  roster_injury:     { label: 'Roster & Injury Status',       icon: '🏥', color: '#FF3B5C' },
-  rule_meta:         { label: 'Rule & Meta Trends',           icon: '📊', color: '#FFB800' },
+const WEIGHT_META: Record<keyof FeatureWeights, { label: string; icon: string; tone: Tone }> = {
+  kalman_form:       { label: 'Kalman Form (Player Ability)', icon: '📈', tone: 'info' },
+  seasonal_baseline: { label: 'Seasonal Baseline',            icon: '📅', tone: 'positive' },
+  matchup:           { label: 'Matchup Quality',              icon: '⚔️',  tone: 'warning' },
+  weather_venue:     { label: 'Weather & Venue',              icon: '🌦',  tone: 'highlight' },
+  team_context:      { label: 'Team Context',                 icon: '🏈', tone: 'info' },
+  roster_injury:     { label: 'Roster & Injury Status',       icon: '🏥', tone: 'negative' },
+  rule_meta:         { label: 'Rule & Meta Trends',           icon: '📊', tone: 'warning' },
 }
 
 const WEIGHT_KEYS = Object.keys(DEFAULT_WEIGHTS) as (keyof FeatureWeights)[]
@@ -30,24 +33,6 @@ const SCORING_OPTIONS: { value: FantasyScoring; label: string; desc: string }[] 
   { value: 'half_ppr', label: 'Half-PPR', desc: '0.5pt per reception' },
   { value: 'standard', label: 'Standard', desc: 'No reception points' },
 ]
-
-function GlassSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div
-      className="rounded-xl overflow-hidden"
-      style={{
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-      }}
-    >
-      <div className="px-5 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <h2 className="text-sm font-semibold text-oracle-white">{title}</h2>
-      </div>
-      <div className="p-5">{children}</div>
-    </div>
-  )
-}
 
 export function Settings() {
   const { data, isLoading, isError, error } = useSettings()
@@ -90,38 +75,22 @@ export function Settings() {
 
       {/* Header */}
       <div>
-        <h1
-          className="font-display text-5xl tracking-widest"
-          style={{
-            background: 'linear-gradient(135deg, #FFB800 0%, #00C2FF 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
+        <h1 className="font-display text-5xl tracking-widest bg-gradient-to-br from-warning to-info bg-clip-text text-transparent">
           SETTINGS
         </h1>
-        <p className="text-sm text-oracle-muted mt-1">Configure model weights and engine parameters</p>
+        <p className="text-sm text-fg-muted mt-1">Configure model weights and engine parameters</p>
       </div>
 
       {/* Feature Weights */}
-      <GlassSection title="Feature Weights">
+      <Panel title="Feature Weights">
         <div className="flex flex-col gap-5">
           {/* Total indicator */}
-          <div
-            className="flex items-center justify-between p-3 rounded-lg"
-            style={{
-              background: totalValid ? 'rgba(0,255,163,0.06)' : 'rgba(255,59,92,0.06)',
-              border: `1px solid ${totalValid ? 'rgba(0,255,163,0.2)' : 'rgba(255,59,92,0.2)'}`,
-            }}
-          >
-            <span className="text-xs text-oracle-muted">Total weight</span>
-            <span
-              className="font-display text-2xl"
-              style={{ color: totalValid ? '#00FFA3' : '#FF3B5C', textShadow: `0 0 12px ${totalValid ? 'rgba(0,255,163,0.5)' : 'rgba(255,59,92,0.5)'}` }}
-            >
+          <div className={clsx(toneClass(totalValid ? 'positive' : 'negative'), 'flex items-center justify-between p-3 rounded-lg bg-tone/[0.06] border border-tone/20')}>
+            <span className="text-xs text-fg-muted">Total weight</span>
+            <span className="glow-text font-display text-2xl text-tone">
               {total.toFixed(1)}%
             </span>
-            {!totalValid && <span className="text-xs text-oracle-red">Must equal 100%</span>}
+            {!totalValid && <span className="text-xs text-negative">Must equal 100%</span>}
           </div>
 
           {/* Sliders */}
@@ -131,22 +100,22 @@ export function Settings() {
             const pct   = (value / 100) * 100
 
             return (
-              <div key={key} className="flex flex-col gap-2">
+              <div key={key} className={clsx(toneClass(meta.tone), 'flex flex-col gap-2')}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="text-base select-none">{meta.icon}</span>
-                    <span className="text-xs font-medium text-oracle-muted">{meta.label}</span>
+                    <span className="text-xs font-medium text-fg-muted">{meta.label}</span>
                   </div>
-                  <span className="text-sm font-bold font-mono" style={{ color: meta.color }}>
+                  <span className="text-sm font-bold font-mono text-tone">
                     {value.toFixed(1)}%
                   </span>
                 </div>
 
-                <div className="relative h-2 rounded-full" style={{ background: 'rgba(26,47,78,0.8)' }}>
+                <div className="relative h-2 rounded-full bg-surface-overlay/80">
                   {/* Fill track */}
                   <div
-                    className="absolute top-0 left-0 h-full rounded-full transition-all duration-150"
-                    style={{ width: `${pct}%`, background: `${meta.color}50` }}
+                    className="absolute top-0 left-0 h-full rounded-full transition-all duration-150 bg-tone/30"
+                    style={{ width: `${pct}%` }}
                   />
                   <input
                     type="range" min={0} max={100} step={0.5} value={value}
@@ -157,75 +126,60 @@ export function Settings() {
                   />
                   {/* Custom thumb */}
                   <div
-                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full pointer-events-none transition-all duration-150"
-                    style={{
-                      left: `calc(${pct}% - 8px)`,
-                      background: meta.color,
-                      boxShadow: `0 0 8px ${meta.color}80`,
-                      border: '2px solid rgba(5,11,24,0.8)',
-                    }}
+                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full pointer-events-none transition-all duration-150 bg-tone border-2 border-surface/80 shadow-[0_0_8px_rgb(var(--tone)/0.5)]"
+                    style={{ left: `calc(${pct}% - 8px)` }}
                   />
                 </div>
               </div>
             )
           })}
         </div>
-      </GlassSection>
+      </Panel>
 
       {/* Fantasy Scoring */}
-      <GlassSection title="Fantasy Scoring Format">
+      <Panel title="Fantasy Scoring Format">
         <div className="grid grid-cols-3 gap-3">
           {SCORING_OPTIONS.map(({ value, label, desc }) => (
             <button
               key={value}
               onClick={() => setScoring(value)}
-              className="flex flex-col gap-1 p-4 rounded-xl text-left transition-all duration-150 border"
-              style={scoring === value
-                ? {
-                    background: 'rgba(0,194,255,0.1)',
-                    borderColor: 'rgba(0,194,255,0.4)',
-                    boxShadow: '0 0 16px rgba(0,194,255,0.1)',
-                  }
-                : {
-                    background: 'rgba(26,47,78,0.3)',
-                    borderColor: 'rgba(255,255,255,0.06)',
-                  }
-              }
+              aria-pressed={scoring === value}
+              className={clsx(
+                toneClass('info'),
+                'flex flex-col gap-1 p-4 rounded-xl text-left transition-all duration-150 border',
+                scoring === value
+                  ? 'bg-tone/10 border-tone/40 shadow-[0_0_16px_rgb(var(--tone)/0.1)]'
+                  : 'bg-surface-overlay/30 border-white/[0.06] hover:border-white/15',
+              )}
             >
-              <span
-                className="text-sm font-bold"
-                style={{ color: scoring === value ? '#00C2FF' : '#607B9B' }}
-              >
+              <span className={clsx('text-sm font-bold', scoring === value ? 'text-tone' : 'text-fg-muted')}>
                 {label}
               </span>
-              <span className="text-[10px] text-oracle-muted">{desc}</span>
+              <span className="text-[10px] text-fg-muted">{desc}</span>
             </button>
           ))}
         </div>
-      </GlassSection>
+      </Panel>
 
       {/* Engine Exposure Cap */}
-      <GlassSection title="Engine Exposure Cap">
+      <Panel title="Engine Exposure Cap">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-oracle-white font-medium">Max bankroll fraction per bet</p>
-              <p className="text-[10px] text-oracle-muted mt-0.5">
+              <p className="text-sm text-fg font-medium">Max bankroll fraction per bet</p>
+              <p className="text-[10px] text-fg-muted mt-0.5">
                 Fractional Kelly: default 25% — 94% log-growth, 50% vol of full Kelly
               </p>
             </div>
-            <span
-              className="font-display text-3xl"
-              style={{ color: '#FFB800', textShadow: '0 0 16px rgba(255,184,0,0.5)' }}
-            >
+            <span className={clsx(toneClass('warning'), 'glow-text font-display text-3xl text-tone')}>
               {(exposureCap * 100).toFixed(0)}%
             </span>
           </div>
 
-          <div className="relative h-2 rounded-full" style={{ background: 'rgba(26,47,78,0.8)' }}>
+          <div className={clsx(toneClass('warning'), 'relative h-2 rounded-full bg-surface-overlay/80')}>
             <div
-              className="absolute top-0 left-0 h-full rounded-full transition-all duration-150"
-              style={{ width: `${exposureCap * 100}%`, background: 'rgba(255,184,0,0.5)' }}
+              className="absolute top-0 left-0 h-full rounded-full transition-all duration-150 bg-tone/50"
+              style={{ width: `${exposureCap * 100}%` }}
             />
             <input
               type="range" min={1} max={100} step={1}
@@ -236,38 +190,32 @@ export function Settings() {
               aria-label="Engine Exposure Cap"
             />
             <div
-              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full pointer-events-none"
-              style={{
-                left: `calc(${exposureCap * 100}% - 8px)`,
-                background: '#FFB800',
-                boxShadow: '0 0 8px rgba(255,184,0,0.7)',
-                border: '2px solid rgba(5,11,24,0.8)',
-              }}
+              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full pointer-events-none bg-tone border-2 border-surface/80 shadow-[0_0_8px_rgb(var(--tone)/0.7)]"
+              style={{ left: `calc(${exposureCap * 100}% - 8px)` }}
             />
           </div>
         </div>
-      </GlassSection>
+      </Panel>
 
       {/* Actions */}
       <div className="flex gap-3">
         <button
           onClick={handleSave}
           disabled={!totalValid || updateSettings.isPending}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{
-            background: totalValid ? 'rgba(0,194,255,0.15)' : 'rgba(96,123,155,0.1)',
-            border: `1px solid ${totalValid ? 'rgba(0,194,255,0.4)' : 'rgba(255,255,255,0.06)'}`,
-            color: totalValid ? '#00C2FF' : '#607B9B',
-            boxShadow: totalValid ? '0 0 20px rgba(0,194,255,0.1)' : 'none',
-          }}
+          className={clsx(
+            toneClass('info'),
+            'flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150 border disabled:opacity-40 disabled:cursor-not-allowed',
+            totalValid
+              ? 'bg-tone/15 border-tone/40 text-tone shadow-[0_0_20px_rgb(var(--tone)/0.1)]'
+              : 'bg-fg-muted/10 border-white/[0.06] text-fg-muted',
+          )}
         >
           {updateSettings.isPending && <LoadingSpinner size="sm" />}
           Save Settings
         </button>
         <button
           onClick={handleReset}
-          className="px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150"
-          style={{ background: 'rgba(26,47,78,0.4)', border: '1px solid rgba(255,255,255,0.06)', color: '#607B9B' }}
+          className="px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150 bg-surface-overlay/40 border border-white/[0.06] text-fg-muted hover:text-fg"
         >
           Reset to Defaults
         </button>
@@ -275,10 +223,7 @@ export function Settings() {
 
       {/* Feedback */}
       {updateSettings.isSuccess && (
-        <div
-          className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
-          style={{ background: 'rgba(0,255,163,0.08)', border: '1px solid rgba(0,255,163,0.2)', color: '#00FFA3' }}
-        >
+        <div className="tone-positive flex items-center gap-2 px-4 py-3 rounded-xl text-sm bg-tone/[0.08] border border-tone/20 text-tone">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>

@@ -4,17 +4,11 @@ import { useMockDraftProfiles, useMockDraftPick } from '@/hooks/useMockDraft'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { SkeletonCard } from '@/components/shared/LoadingSpinner'
 import { POSITIONS } from '@/lib/constants'
+import { PositionBadge } from '@/components/PositionBadge'
 import type { DraftBoardPlayer, PickedItem } from '@/types/api'
 
 type Mode = 'board' | 'mock'
 type SortKey = 'adp' | 'model_rank' | 'value_vs_adp' | 'model_fantasy_ppr'
-
-const POS_CLASS: Record<string, string> = {
-  WR: 'pos-wr',
-  RB: 'pos-rb',
-  TE: 'pos-te',
-  QB: 'pos-qb',
-}
 
 export function DraftBoard() {
   const [mode, setMode] = useState<Mode>('board')
@@ -171,30 +165,30 @@ export function DraftBoard() {
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-7xl mx-auto">
       {/* Header & Mode Switcher */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-oracle-border/60 pb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-line/60 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold font-display tracking-wider text-oracle-white">
+            <h1 className="text-2xl font-bold font-display tracking-wider text-fg">
               {mode === 'board' ? 'Draft Board' : 'Mock Draft Simulator'}
             </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-oracle-green/10 text-oracle-green border border-oracle-green/20">
+            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-accent/10 text-accent border border-accent/20">
               {season} Season
             </span>
           </div>
-          <p className="max-w-2xl text-xs text-oracle-muted mt-1">
+          <p className="max-w-2xl text-xs text-fg-muted mt-1">
             {mode === 'board'
               ? 'Preseason Full PPR projections vs available ADP source. Ranked via 8-team VOR.'
               : 'Simulate live snake drafts against real manager reach tendencies & historical timing.'}
           </p>
         </div>
 
-        <div className="flex items-center rounded-lg bg-oracle-surface p-1 border border-oracle-border">
+        <div className="flex items-center rounded-lg bg-surface-overlay p-1 border border-line">
           <button
             onClick={() => setMode('board')}
             className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
               mode === 'board'
-                ? 'bg-oracle-green text-oracle-dark shadow'
-                : 'text-oracle-muted hover:text-oracle-white'
+                ? 'bg-accent text-accent-fg shadow'
+                : 'text-fg-muted hover:text-fg'
             }`}
           >
             Draft Board
@@ -203,8 +197,8 @@ export function DraftBoard() {
             onClick={() => setMode('mock')}
             className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
               mode === 'mock'
-                ? 'bg-oracle-green text-oracle-dark shadow'
-                : 'text-oracle-muted hover:text-oracle-white'
+                ? 'bg-accent text-accent-fg shadow'
+                : 'text-fg-muted hover:text-fg'
             }`}
           >
             Mock Draft Mode
@@ -214,23 +208,23 @@ export function DraftBoard() {
 
       {/* Mock Draft Manager Order Configuration */}
       {mode === 'mock' && (
-        <div className="flex flex-col gap-4 p-4 rounded-xl bg-oracle-card/40 border border-oracle-border/60">
+        <div className="flex flex-col gap-4 p-4 rounded-xl bg-surface-raised/40 border border-line/60">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-oracle-white">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-fg">
               8-Team Draft Order & Leaguemate Tendencies
             </h2>
             {!profilesLoading && draftOrder.length !== 8 && (
-              <p className="text-[11px] text-oracle-red/80">
+              <p className="text-[11px] text-negative/80">
                 Manager profiles unavailable — a mock draft needs all 8 leaguemates.
               </p>
             )}
             <div className="flex items-center gap-3">
-              <label className="text-xs text-oracle-muted">Your Draft Slot:</label>
+              <label className="text-xs text-fg-muted">Your Draft Slot:</label>
               <select
                 value={userSlot}
                 disabled={isDraftActive}
                 onChange={(e) => setUserSlot(Number(e.target.value))}
-                className="oracle-select bg-oracle-surface border border-oracle-border text-xs rounded-lg px-2.5 py-1 text-oracle-white"
+                className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-2.5 py-1 text-fg"
               >
                 {Array.from({ length: 8 }, (_, i) => i + 1).map((s) => (
                   <option key={s} value={s}>
@@ -243,14 +237,14 @@ export function DraftBoard() {
                 <button
                   onClick={handleStartDraft}
                   disabled={profilesLoading || draftOrder.length !== 8}
-                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-oracle-green text-oracle-dark hover:brightness-110 shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-accent text-accent-fg hover:brightness-110 shadow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
                 >
                   Start Mock Draft
                 </button>
               ) : (
                 <button
                   onClick={handleResetDraft}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-oracle-red/50 text-oracle-red hover:bg-oracle-red/10"
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg border border-negative/50 text-negative hover:bg-negative/10"
                 >
                   Reset Draft
                 </button>
@@ -268,8 +262,8 @@ export function DraftBoard() {
                   key={oid}
                   className={`p-2 rounded-lg border flex flex-col justify-between text-xs ${
                     isUser
-                      ? 'bg-oracle-green/10 border-oracle-green/40 text-oracle-white'
-                      : 'bg-oracle-surface/60 border-oracle-border/60 text-oracle-muted'
+                      ? 'bg-accent/10 border-accent/40 text-fg'
+                      : 'bg-surface-overlay/60 border-line/60 text-fg-muted'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -279,24 +273,24 @@ export function DraftBoard() {
                         <button
                           onClick={() => moveManager(idx, 'up')}
                           disabled={idx === 0}
-                          className="hover:text-oracle-white disabled:opacity-20"
+                          className="hover:text-fg disabled:opacity-20"
                         >
                           ‹
                         </button>
                         <button
                           onClick={() => moveManager(idx, 'down')}
                           disabled={idx === 7}
-                          className="hover:text-oracle-white disabled:opacity-20"
+                          className="hover:text-fg disabled:opacity-20"
                         >
                           ›
                         </button>
                       </div>
                     )}
                   </div>
-                  <span className="font-semibold truncate text-oracle-white">
+                  <span className="font-semibold truncate text-fg">
                     {prof?.display_name || oid} {isUser && '(You)'}
                   </span>
-                  <span className="font-mono text-[9px] mt-1 text-oracle-muted">
+                  <span className="font-mono text-[9px] mt-1 text-fg-muted">
                     ADP Δ: {prof?.adp_delta_mean_shrunk != null ? `${prof.adp_delta_mean_shrunk > 0 ? '+' : ''}${prof.adp_delta_mean_shrunk.toFixed(1)}` : '0.0'}
                   </span>
                 </div>
@@ -309,8 +303,8 @@ export function DraftBoard() {
             <div
               className={`p-3 rounded-lg flex items-center justify-between ${
                 isUserTurn
-                  ? 'bg-oracle-green/20 border border-oracle-green text-oracle-green animate-pulse'
-                  : 'bg-oracle-surface border border-oracle-border text-oracle-white'
+                  ? 'bg-accent/20 border border-accent text-accent animate-pulse'
+                  : 'bg-surface-overlay border border-line text-fg'
               }`}
             >
               <div className="flex items-center gap-2 text-xs">
@@ -325,7 +319,7 @@ export function DraftBoard() {
                 <button
                   onClick={handleSimulateNextOpponents}
                   disabled={pickMutation.isPending}
-                  className="px-3 py-1 text-xs font-bold rounded bg-oracle-green text-oracle-dark hover:brightness-110"
+                  className="px-3 py-1 text-xs font-bold rounded bg-accent text-accent-fg hover:brightness-110"
                 >
                   {pickMutation.isPending ? 'Simulating…' : 'Simulate Picks →'}
                 </button>
@@ -337,10 +331,10 @@ export function DraftBoard() {
 
       {/* Controls Bar */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-xs text-oracle-muted">
+        <label className="text-xs text-fg-muted">
           Draft season
           <select
-            className="ml-2 rounded-md border border-oracle-border bg-oracle-card px-2 py-1.5 text-sm text-oracle-white"
+            className="ml-2 rounded-md border border-line bg-surface-raised px-2 py-1.5 text-sm text-fg"
             aria-label="Draft season"
             value={season}
             onChange={(e) => setSeason(Number(e.target.value))}
@@ -357,8 +351,9 @@ export function DraftBoard() {
           <button
             type="button"
             onClick={() => setPosition(null)}
+            aria-pressed={position == null}
             className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-              position == null ? 'bg-oracle-green/20 text-oracle-green' : 'text-oracle-muted hover:text-oracle-white'
+              position == null ? 'bg-accent/20 text-accent' : 'text-fg-muted hover:text-fg'
             }`}
           >
             ALL
@@ -368,8 +363,9 @@ export function DraftBoard() {
               key={p}
               type="button"
               onClick={() => setPosition(p)}
+              aria-pressed={position === p}
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                position === p ? 'bg-oracle-green/20 text-oracle-green' : 'text-oracle-muted hover:text-oracle-white'
+                position === p ? 'bg-accent/20 text-accent' : 'text-fg-muted hover:text-fg'
               }`}
             >
               {p}
@@ -377,10 +373,10 @@ export function DraftBoard() {
           ))}
         </div>
 
-        <label className="text-xs text-oracle-muted">
+        <label className="text-xs text-fg-muted">
           Sort
           <select
-            className="ml-2 rounded-md border border-oracle-border bg-oracle-card px-2 py-1.5 text-sm text-oracle-white"
+            className="ml-2 rounded-md border border-line bg-surface-raised px-2 py-1.5 text-sm text-fg"
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as SortKey)}
           >
@@ -394,13 +390,13 @@ export function DraftBoard() {
         <button
           type="button"
           onClick={() => refetch()}
-          className="rounded-md border border-oracle-border px-3 py-1.5 text-xs text-oracle-muted hover:text-oracle-white"
+          className="rounded-md border border-line px-3 py-1.5 text-xs text-fg-muted hover:text-fg"
         >
           {isFetching ? 'Refreshing…' : 'Refresh'}
         </button>
 
         {data?.spearman_rho != null && (
-          <span className="ml-auto font-mono text-xs text-oracle-green" aria-label="Draft projection metadata">
+          <span className="ml-auto font-mono text-xs text-accent" aria-label="Draft projection metadata">
             {data.projection_source} · as of {data.as_of} · ρ={data.spearman_rho.toFixed(3)} · n={data.count}
           </span>
         )}
@@ -415,9 +411,9 @@ export function DraftBoard() {
       )}
 
       {!isLoading && rows.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-oracle-border">
+        <div className="overflow-x-auto rounded-xl border border-line">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-oracle-surface text-[11px] uppercase tracking-wider text-oracle-muted">
+            <thead className="bg-surface-overlay text-[11px] uppercase tracking-wider text-fg-muted">
               <tr>
                 {mode === 'mock' && isDraftActive && <th className="px-3 py-2">Action</th>}
                 <th className="px-3 py-2">ADP#</th>
@@ -434,7 +430,7 @@ export function DraftBoard() {
               {rows.map((row: DraftBoardPlayer) => (
                 <tr
                   key={`${row.player_name}-${row.adp_rank ?? row.model_rank}`}
-                  className="border-t border-oracle-border/60 hover:bg-oracle-card/40"
+                  className="border-t border-line/60 hover:bg-surface-raised/40"
                 >
                   {mode === 'mock' && isDraftActive && (
                     <td className="px-3 py-2">
@@ -443,29 +439,27 @@ export function DraftBoard() {
                         disabled={!isUserTurn}
                         className={`px-2.5 py-1 rounded text-xs font-bold ${
                           isUserTurn
-                            ? 'bg-oracle-green text-oracle-dark hover:brightness-110'
-                            : 'bg-oracle-border text-oracle-muted cursor-not-allowed opacity-40'
+                            ? 'bg-accent text-accent-fg hover:brightness-110'
+                            : 'bg-line text-fg-muted cursor-not-allowed opacity-40'
                         }`}
                       >
                         Draft
                       </button>
                     </td>
                   )}
-                  <td className="px-3 py-2 font-mono text-oracle-muted">{row.adp_rank ?? '—'}</td>
-                  <td className="px-3 py-2 font-medium text-oracle-white">
+                  <td className="px-3 py-2 font-mono text-fg-muted">{row.adp_rank ?? '—'}</td>
+                  <td className="px-3 py-2 font-medium text-fg">
                     {row.player_name}
                     {row.board_tail && (
-                      <span className="ml-1.5 px-1.5 py-0.5 text-[9px] rounded bg-oracle-border text-oracle-muted">
+                      <span className="ml-1.5 px-1.5 py-0.5 text-[9px] rounded bg-line text-fg-muted">
                         Tail
                       </span>
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={POS_CLASS[row.position ?? ''] ?? 'text-oracle-muted'}>
-                      {row.position ?? '—'}
-                    </span>
+                    <PositionBadge position={row.position} />
                   </td>
-                  <td className="px-3 py-2 text-oracle-muted">{row.team ?? '—'}</td>
+                  <td className="px-3 py-2 text-fg-muted">{row.team ?? '—'}</td>
                   <td className="px-3 py-2 font-mono">{row.adp != null ? row.adp.toFixed(1) : '—'}</td>
                   <td className="px-3 py-2 font-mono">{row.model_rank ?? '—'}</td>
                   <td className="px-3 py-2 font-mono">
@@ -474,10 +468,10 @@ export function DraftBoard() {
                   <td
                     className={`px-3 py-2 font-mono ${
                       (row.value_vs_adp ?? 0) > 0
-                        ? 'text-oracle-green'
+                        ? 'text-positive'
                         : (row.value_vs_adp ?? 0) < 0
-                          ? 'text-oracle-red'
-                          : 'text-oracle-muted'
+                          ? 'text-negative'
+                          : 'text-fg-muted'
                     }`}
                   >
                     {row.value_vs_adp != null

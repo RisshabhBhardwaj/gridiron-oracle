@@ -16,16 +16,16 @@ export function NavBar() {
   const { open: openSearch } = useSearch()
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-oracle-border bg-oracle-dark/95 backdrop-blur-xl">
+    <nav className="sticky top-0 z-50 border-b border-line bg-surface/95 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-[52px] gap-4">
 
           {/* Logo */}
           <Link to="/" className="flex flex-shrink-0 items-baseline gap-1.5 group">
-            <span className="font-sans text-sm font-bold uppercase tracking-[0.16em] text-oracle-muted transition-colors group-hover:text-oracle-white">
+            <span className="font-sans text-sm font-bold uppercase tracking-[0.16em] text-fg-muted transition-colors group-hover:text-fg">
               Gridiron
             </span>
-            <span className="font-sans text-sm font-bold uppercase tracking-[0.16em] text-oracle-green">
+            <span className="font-sans text-sm font-bold uppercase tracking-[0.16em] text-accent">
               Oracle
             </span>
           </Link>
@@ -37,8 +37,8 @@ export function NavBar() {
               className={({ isActive }) => clsx(
                 'rounded-md border-b-2 px-3 py-1.5 text-sm font-medium transition-colors',
                 isActive
-                  ? 'border-oracle-green bg-oracle-surface text-oracle-white'
-                  : 'border-transparent text-oracle-muted hover:bg-oracle-card hover:text-oracle-white',
+                  ? 'border-accent bg-surface-overlay text-fg'
+                  : 'border-transparent text-fg-muted hover:bg-surface-raised hover:text-fg',
               )}
             >
               Home
@@ -51,8 +51,8 @@ export function NavBar() {
                 className={({ isActive }) => clsx(
                   'rounded-md border-b-2 px-3 py-1.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'border-oracle-green bg-oracle-surface text-oracle-white'
-                    : 'border-transparent text-oracle-muted hover:bg-oracle-card hover:text-oracle-white',
+                    ? 'border-accent bg-surface-overlay text-fg'
+                    : 'border-transparent text-fg-muted hover:bg-surface-raised hover:text-fg',
                 )}
               >
                 {label}
@@ -64,7 +64,7 @@ export function NavBar() {
             <button
               onClick={openSearch}
               id="nav-search-btn"
-              className="hidden sm:flex items-center gap-2 rounded-md border border-oracle-border bg-oracle-card px-3 py-1.5 text-xs font-medium text-oracle-muted transition-colors hover:border-oracle-green/40 hover:text-oracle-green"
+              className="hidden sm:flex items-center gap-2 rounded-md border border-line bg-surface-raised px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent/40 hover:text-accent"
               title="Search players (Cmd+K)"
               aria-label="Search players"
             >
@@ -72,22 +72,22 @@ export function NavBar() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <span>Search</span>
-              <kbd className="rounded border border-oracle-border bg-oracle-dark px-1.5 py-0.5 font-mono text-[9px]">
+              <kbd className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[9px]">
                 ⌘K
               </kbd>
             </button>
 
             <div className="hidden lg:flex items-center gap-2 px-2 py-1">
               <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping-slow rounded-full bg-oracle-green opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-oracle-green" />
+                <span className="absolute inline-flex h-full w-full animate-ping-slow rounded-full bg-accent opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
               </span>
-              <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-oracle-muted">Live</span>
+              <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-fg-muted">Live</span>
             </div>
 
             {/* Mobile hamburger */}
             <button
-              className="md:hidden text-oracle-muted hover:text-oracle-white p-2 rounded-md border border-oracle-border transition-colors"
+              className="md:hidden text-fg-muted hover:text-fg p-2 rounded-md border border-line transition-colors"
               onClick={() => setMenuOpen((prev) => !prev)}
               aria-label="Toggle navigation"
               aria-expanded={menuOpen}
@@ -103,11 +103,11 @@ export function NavBar() {
 
         {/* Mobile menu */}
         {menuOpen && (
-          <div className="md:hidden pb-4 border-t border-oracle-border pt-3 flex flex-col gap-1">
+          <div className="md:hidden pb-4 border-t border-line pt-3 flex flex-col gap-1">
             {/* Mobile search */}
             <button
               onClick={() => { openSearch(); setMenuOpen(false) }}
-              className="flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium text-oracle-muted hover:text-oracle-white hover:bg-oracle-card"
+              className="flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium text-fg-muted hover:text-fg hover:bg-surface-raised"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -120,7 +120,7 @@ export function NavBar() {
               onClick={() => setMenuOpen(false)}
               className={({ isActive }) => clsx(
                 'px-4 py-2.5 rounded-md text-sm font-medium transition-colors',
-                isActive ? 'text-oracle-white bg-oracle-surface' : 'text-oracle-muted hover:text-oracle-white hover:bg-oracle-card',
+                isActive ? 'text-fg bg-surface-overlay' : 'text-fg-muted hover:text-fg hover:bg-surface-raised',
               )}
             >
               Home
@@ -130,7 +130,7 @@ export function NavBar() {
                 onClick={() => setMenuOpen(false)}
                 className={({ isActive }) => clsx(
                   'px-4 py-2.5 rounded-md text-sm font-medium transition-colors',
-                  isActive ? 'text-oracle-white bg-oracle-surface' : 'text-oracle-muted hover:text-oracle-white hover:bg-oracle-card',
+                  isActive ? 'text-fg bg-surface-overlay' : 'text-fg-muted hover:text-fg hover:bg-surface-raised',
                 )}
               >
                 {label}
