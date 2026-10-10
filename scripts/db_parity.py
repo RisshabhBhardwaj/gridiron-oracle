@@ -7,9 +7,10 @@ Row counts and content checksums for the public schema, for database parity chec
 
 The snapshot is read in one read-only REPEATABLE READ transaction. The session is
 pinned to UTC and ISO dates, so the same rows give the same text on any server.
-Checksums are md5 over the row text, taken only for CHECKSUM_TABLES. Each one
-builds the whole table as a single string in server memory, so it is costly on
-small hosted tiers.
+Checksums are md5 over the row text, taken only for CHECKSUM_TABLES. Rows are
+ordered with COLLATE "C", not the server's locale, so the order (and the hash)
+does not depend on the server's collation. Each checksum builds the whole table
+as a single string in server memory, so it is costly on small hosted tiers.
 
 DATABASE_URL is read from the environment. It is never printed or written, and
 failures print the exception class name only. A SQLAlchemy-style driver suffix
@@ -37,7 +38,10 @@ SESSION_SETUP = (
     "SET LOCAL DateStyle = 'ISO, YMD'",
     "SET LOCAL extra_float_digits = 1",
 )
-_CHECKSUM_SQL = "SELECT md5(string_agg(t::text, '|' ORDER BY t::text)) FROM {} t"
+# The brief's literal form is ORDER BY t::text. That sorts with each database's
+# default collation, so two servers with identical rows can order them
+# differently and report a false MISMATCH. COLLATE "C" fixes a byte-wise order.
+_CHECKSUM_SQL = "SELECT md5(string_agg(t::text, '|' ORDER BY t::text COLLATE \"C\")) FROM {} t"
 _DRIVER_SUFFIX = re.compile(r"^postgresql\+[A-Za-z0-9_]+://")
 
 

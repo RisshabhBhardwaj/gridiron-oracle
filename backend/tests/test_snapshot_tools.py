@@ -549,7 +549,7 @@ def test_build_snapshot_counts_every_public_table_and_checksums_two_tables():
     assert conn.session == {"readonly": True, "isolation_level": "REPEATABLE READ", "autocommit": False}
     assert conn.log[0] == "SET LOCAL TIME ZONE 'UTC'"
     assert (
-        "SELECT md5(string_agg(t::text, '|' ORDER BY t::text)) FROM \"projections\" t" in conn.log
+        "SELECT md5(string_agg(t::text, '|' ORDER BY t::text COLLATE \"C\")) FROM \"projections\" t" in conn.log
     )
 
 
