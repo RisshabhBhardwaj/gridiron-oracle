@@ -2,6 +2,7 @@
  * SearchContext — global state for the command-palette player search overlay.
  */
 import { createContext, useCallback, useContext, useState, useEffect, type ReactNode } from 'react'
+import { CURRENT_SEASON, CURRENT_WEEK } from '@/lib/constants'
 
 /**
  * Minimal shape the search overlay needs — deliberately narrower than any one
@@ -25,7 +26,7 @@ interface SearchCtx {
   toggle: () => void
   query: string
   setQuery: (q: string) => void
-  /** All players loaded from latest projections — set by Dashboard on load */
+  /** Players loaded by the page the visitor is on (Home, Current Season). Search results come from this list. */
   players: SearchablePlayer[]
   setPlayers: (p: SearchablePlayer[]) => void
   /** Filtered subset matching query */
@@ -42,7 +43,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen]   = useState(false)
   const [query, setQuery]     = useState('')
   const [players, setPlayers] = useState<SearchablePlayer[]>([])
-  const [defaults, setDefaultsState] = useState({ week: 1, season: 2025, stat: 'receiving_yards' })
+  const [defaults, setDefaultsState] = useState({ week: CURRENT_WEEK, season: CURRENT_SEASON, stat: 'receiving_yards' })
 
   const setDefaults = useCallback((next: { week: number; season: number; stat: string }) => {
     setDefaultsState((prev) => (

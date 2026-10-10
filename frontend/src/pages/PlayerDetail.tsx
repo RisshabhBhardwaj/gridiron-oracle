@@ -120,7 +120,7 @@ export function PlayerDetail() {
           <svg className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Dashboard
+          Back
         </button>
 
         <div className="flex flex-wrap items-start justify-between gap-4">
