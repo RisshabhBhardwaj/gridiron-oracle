@@ -5,6 +5,7 @@ import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { Panel } from '@/components/shared/Panel'
+import { Slider } from '@/components/ui/slider'
 import { toneClass, type Tone } from '@/lib/tokens'
 import { isSettingsEditable } from '@/lib/config'
 import { ApiError } from '@/lib/api-client'
@@ -133,7 +134,6 @@ export function Settings() {
           {WEIGHT_KEYS.map((key) => {
             const meta  = WEIGHT_META[key]
             const value = localWeights[key]
-            const pct   = (value / 100) * 100
 
             return (
               <div key={key} className={clsx(toneClass(meta.tone), 'flex flex-col gap-2')}>
@@ -147,25 +147,16 @@ export function Settings() {
                   </span>
                 </div>
 
-                <div className="relative h-2 rounded-full bg-surface-overlay/80">
-                  {/* Fill track */}
-                  <div
-                    className="absolute top-0 left-0 h-full rounded-full transition-all duration-150 bg-tone/30"
-                    style={{ width: `${pct}%` }}
-                  />
-                  <input
-                    type="range" min={0} max={100} step={0.5} value={value} disabled={!editable}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleWeightChange(key, parseFloat(e.target.value))}
-                    className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
-                    style={{ appearance: 'none', zIndex: 1 }}
-                    aria-label={meta.label}
-                  />
-                  {/* Custom thumb */}
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full pointer-events-none transition-all duration-150 bg-tone border-2 border-surface/80 shadow-[0_0_8px_rgb(var(--tone)/0.5)]"
-                    style={{ left: `calc(${pct}% - 8px)` }}
-                  />
-                </div>
+                <Slider
+                  tone={meta.tone}
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={value}
+                  onValueChange={(next) => handleWeightChange(key, next)}
+                  disabled={!editable}
+                  aria-label={meta.label}
+                />
               </div>
             )
           })}
@@ -213,24 +204,16 @@ export function Settings() {
             </span>
           </div>
 
-          <div className={clsx(toneClass('warning'), 'relative h-2 rounded-full bg-surface-overlay/80')}>
-            <div
-              className="absolute top-0 left-0 h-full rounded-full transition-all duration-150 bg-tone/50"
-              style={{ width: `${exposureCap * 100}%` }}
-            />
-            <input
-              type="range" min={1} max={100} step={1} disabled={!editable}
-              value={Math.round(exposureCap * 100)}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExposureCap(parseFloat(e.target.value) / 100)}
-              className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
-              style={{ appearance: 'none', zIndex: 1 }}
-              aria-label="Engine Exposure Cap"
-            />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full pointer-events-none bg-tone border-2 border-surface/80 shadow-[0_0_8px_rgb(var(--tone)/0.7)]"
-              style={{ left: `calc(${exposureCap * 100}% - 8px)` }}
-            />
-          </div>
+          <Slider
+            tone="warning"
+            min={1}
+            max={100}
+            step={1}
+            value={Math.round(exposureCap * 100)}
+            onValueChange={(next) => setExposureCap(next / 100)}
+            disabled={!editable}
+            aria-label="Engine Exposure Cap"
+          />
         </div>
       </Panel>
 

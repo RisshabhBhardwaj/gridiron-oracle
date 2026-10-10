@@ -18,8 +18,11 @@ import { STATS, STAT_LABELS, CURRENT_SEASON, LAST_FANTASY_WEEK } from '@/lib/con
 import { useSearch } from '@/context/SearchContext'
 import { ApiError } from '@/lib/api-client'
 import { Panel } from '@/components/shared/Panel'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PositionBadge } from '@/components/PositionBadge'
 import { positionTone, toneClass } from '@/lib/tokens'
+
+const STAT_ITEMS = STATS.map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }))
 
 export function PlayerDetail() {
   const navigate = useNavigate()
@@ -127,24 +130,23 @@ export function PlayerDetail() {
             </div>
           </div>
 
-          {/* Stat selector */}
-          <div className="flex flex-wrap gap-1.5">
-            {STATS.map((s) => (
-              <button
-                key={s}
-                onClick={() => handleStatChange(s)}
-                aria-pressed={stat === s}
-                className={clsx(
-                  tone,
-                  'px-3 py-1.5 rounded-lg text-[11px] font-medium tracking-wide transition-all duration-150 border',
-                  stat === s
-                    ? 'bg-tone/[0.12] border-tone/30 text-tone'
-                    : 'bg-surface-raised/60 border-white/[0.06] text-fg-muted hover:text-fg',
-                )}
-              >
-                {STAT_LABELS[s] ?? s}
-              </button>
-            ))}
+          {/* Stat selector: 15 options, so a dropdown rather than a wall of buttons */}
+          <div className="flex w-full flex-col gap-1.5 sm:w-64">
+            <span className="section-label" aria-hidden="true">Stat</span>
+            <Select
+              items={STAT_ITEMS}
+              value={stat}
+              onValueChange={(next) => { if (next) handleStatChange(next) }}
+            >
+              <SelectTrigger aria-label="Stat" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STAT_ITEMS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import { http, HttpResponse } from 'msw'
 import { server } from './handlers'
 import { factories } from './factories'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SearchProvider } from '../context/SearchContext'
@@ -181,5 +182,31 @@ describe('PlayerDetail', () => {
     server.use(http.get('/api/explain/:player_id', () => HttpResponse.json({ detail: 'unavailable' }, { status: 503 })))
     renderPlayer()
     expect(await screen.findByText(/cannot show what drives this projection for this stat yet/i)).toBeInTheDocument()
+  })
+
+  it('switches the stat from the dropdown, and the dropdown can be used from the keyboard', async () => {
+    const stats: string[] = []
+    server.use(
+      http.get('/api/predict', ({ request }) => {
+        stats.push(new URL(request.url).searchParams.get('stat') ?? '')
+        return HttpResponse.json(factories.predictResponse())
+      }),
+    )
+    renderPlayer()
+    const user = userEvent.setup()
+    const trigger = await screen.findByRole('combobox', { name: 'Stat' })
+    expect(trigger).toHaveTextContent('Receiving Yards')
+
+    await user.click(trigger)
+    await user.click(await screen.findByRole('option', { name: 'Receptions' }))
+    await waitFor(() => expect(stats).toContain('receptions'))
+    expect(screen.getByRole('combobox', { name: 'Stat' })).toHaveTextContent('Receptions')
+
+    // Keyboard: focus the trigger, open with Enter, move with the arrow keys, choose with Enter.
+    screen.getByRole('combobox', { name: 'Stat' }).focus()
+    await user.keyboard('{Enter}')
+    await screen.findByRole('listbox')
+    await user.keyboard('{ArrowDown}{Enter}')
+    await waitFor(() => expect(stats.length).toBeGreaterThan(2))
   })
 })

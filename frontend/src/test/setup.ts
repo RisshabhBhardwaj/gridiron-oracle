@@ -9,6 +9,22 @@ import { beforeAll, afterEach, afterAll, vi } from 'vitest'
     disconnect: vi.fn(),
   }))
 
+// jsdom has no PointerEvent. Base UI (Select, Dialog, Slider) listens for pointer
+// events, so give it a minimal one built on MouseEvent.
+if (typeof window.PointerEvent === 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number
+    pointerType: string
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerId = init.pointerId ?? 1
+      this.pointerType = init.pointerType ?? 'mouse'
+    }
+  }
+  ; (window as any).PointerEvent = PointerEventPolyfill
+}
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = vi.fn()
+
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())

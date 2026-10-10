@@ -1,28 +1,35 @@
 Type: Decision
-Status: Proposed (no migration done)
-Last verified against code: 2026-10-07 (frontend read; library status from a secondary web source, confirm before adopting)
+Status: Accepted (owner approved 2026-10-10); migration in progress, see "Migration status"
+Last verified against code: 2026-10-10 (`cd frontend && npm run typecheck && npm run test && npm run build`)
 
 # Frontend design system
 
+Decision record: [decisions/0004-shadcn-on-base-ui.md](decisions/0004-shadcn-on-base-ui.md). Principles: [UX_PRINCIPLES.md](UX_PRINCIPLES.md).
+
 ## What exists
-- React 18, Vite, Tailwind 3, `clsx`, Recharts, TanStack Query. No component library and no primitive library (no Radix, React Aria, Headless UI) in `frontend/package.json`.
-- Tokens: Tailwind `oracle.*` colors, fonts (Space Grotesk, Bebas Neue, JetBrains Mono), neon shadows in `tailwind.config.ts`.
-- Two palettes disagree: `src/index.css` CSS variables (`#00C2FF`, `#00FFA3`, ...) versus the Tailwind tokens (`#59A6FF`, `#42D889`, ...). Neon shadows and gradients use the old values.
-- Hard-coded inline hex/rgba in components (e.g. `NoForecastBanner.tsx`, `Settings.tsx` colors) instead of tokens.
-- Emoji icons in `Settings.tsx`.
+- React 18, Vite, Tailwind 3, Recharts, TanStack Query.
+- **Tokens:** one set of colour variables in `frontend/src/index.css` (surface, surface-raised, surface-overlay, line, fg, fg-muted, fg-subtle, accent, positive, negative, warning, info, highlight, shadow), mapped to classes in `frontend/tailwind.config.ts` (`bg-surface-raised`, `text-fg-muted`, `border-line`, `text-positive`, `bg-accent/15`). No hex or `rgb(number)` in components (`grep -rnE "#[0-9A-Fa-f]{6}|rgba?\([0-9]" frontend/src` finds only tests). A **tone** (`.tone-info`, then `text-tone`, `border-tone/20`) lets one component take a tone prop; `lib/tokens.ts` has `Tone`, `positionTone` (one colour per position everywhere) and `token()` for SVG and chart props.
+- **Primitives (shadcn/ui on Base UI, copied in):** `components/ui/slider.tsx`, `select.tsx`, `dialog.tsx`, `tabs.tsx`; `lib/utils.ts` `cn`. Shared pieces: `components/shared/Panel.tsx`, `components/PositionBadge.tsx`, `ProjectionCard`, `ErrorBanner`, `NoForecastBanner`, `DataStalenessWarning`, `LoadingSpinner`.
+- **Icons:** `lucide-react`.
+- **Motion:** CSS transitions; `prefers-reduced-motion` is honoured globally in `index.css` and in `ProjectionCard`'s count-up.
+- Fonts: Space Grotesk (text), Bebas Neue (display numbers), JetBrains Mono.
 
-## Hand-rolled and should be replaced
-Command-style player search (`PlayerSearch.tsx`, cmd+K), sliders (`.oracle-slider`), selects (`.oracle-select`), toggle (WhatIfStudio), tabs/pills, panels (`GlassPanel`), banners, tables, loading and error states, page shell and nav.
+## Migration status (2026-10-10)
+Done:
+- Tokens unified (palette: the neutral dark set; the old neon values are gone).
+- Settings: sliders use `Slider`; icons are lucide; view-only on the public site.
+- Player page: stat chooser is a `Select` (was 15 pill buttons).
+- Search (cmd+K): `Dialog` plus an ARIA combobox (was a hand-built overlay with no focus trap that crashed on open).
 
-## Recommendation
-1. **Primitives and components: shadcn/ui** (copied into the repo, so we own the code), on accessible primitives. A web search on 2026-10-07 reports that shadcn now defaults to Base UI with Radix still supported, and that Base UI is stable. Verify this against shadcn docs, then pick Base UI or Radix (Radix has slower maintenance per the same source).
-2. **Tokens:** one source of truth as CSS variables (Tailwind 4 `@theme`), semantic names (surface, text, positive, negative, accent), no raw hex in components.
-3. **Charts:** keep Recharts, wrap in one themed chart component using the tokens.
-4. **Motion:** CSS transitions for hover/focus; add the `motion` library only if layout animations are needed. Respect `prefers-reduced-motion`.
-5. **Data tables:** TanStack Table for the draft board and backtest tables.
-6. **Icons:** one icon set (e.g. lucide) replacing emoji.
+Still hand-rolled (follow-up, in this order of value):
+1. Native selects styled with `.oracle-select`: `pages/CurrentSeason.tsx:241,259,277`, `pages/SeasonReview.tsx:88,115`, `pages/BacktestExplorer.tsx:81`, `pages/DraftBoard.tsx:223,336,378`. Replace with `Select`; the tests that use `fireEvent.change` on them need user-event.
+2. Tab and mode switchers made of buttons: `pages/CurrentSeason.tsx:201-221` (Weekly, Season-Long, Games), `pages/DraftBoard.tsx:187,197` (board, mock). Replace with `Tabs`, which exists and is tested but has no page using it yet. Position filter toggles (`CurrentSeason.tsx:301`, `DraftBoard.tsx:354,366`, `BacktestExplorer.tsx:90`, `SeasonReview`) are toggle buttons with `aria-pressed`; a ToggleGroup is the right primitive.
+3. `components/WhatIfStudio.tsx`: four sliders (`:239`, a transparent range input over a drawn thumb, no visible focus ring) and the dome switch (`:190`). Use `Slider` and a Switch.
+4. Settings scoring choice (PPR / Half-PPR / Standard): card buttons with `aria-pressed`; a RadioGroup is the right primitive.
+5. Phone navigation menu in `components/layout/NavBar.tsx` and the inline search box in `pages/Home.tsx` (a second hand-built combobox).
+6. Inline SVG icons (`NavBar`, `ErrorBanner`, `NoForecastBanner`, `DataStalenessWarning`, `Home`, `PlayerDetail`, `WhatIfStudio`) and emoji in `WhatIfStudio`, `DraftBoard`, `GameDetail`: switch to lucide.
+7. Tables (`DraftBoard`, `SeasonReview`, `BacktestExplorer`): TanStack Table. Chart wrapper: one themed Recharts component using `token()`.
+8. Upgrade Tailwind 3 to 4 once the above is stable (move `tailwind-merge` to 3, tokens into `@theme`).
 
-Why: accessible keyboard and screen-reader behavior for combobox, dialog, slider and select is hard to hand-roll correctly and is the largest risk in the current code; owning copied components avoids lock-in; tokens remove the palette split.
-
-## Migration order
-1. Unify tokens (palette, remove duplicate CSS variables). 2. Add primitives for search/combobox, select, slider, toggle. 3. Replace panels, banners, loading/error with shared components. 4. Tables. 5. Chart wrapper. 6. Upgrade Tailwind 3 to 4 once the above is stable. Keep the 34 existing tests green at each step.
+## How to add a control
+Check `components/ui/` first. If it is missing, copy it from shadcn (`npx shadcn@latest view <name>` with `style: "base-nova"` shows the source), read the Base UI doc for the part in `frontend/node_modules/@base-ui/react/docs/react/components/`, rewrite the class strings to Tailwind 3 and the project tokens, and add a test that uses the keyboard. Do not use shadcn's colour names; use the tokens above.

@@ -35,7 +35,9 @@ describe('Settings (editable build)', () => {
       expect(screen.getByText('Feature Weights')).toBeInTheDocument(),
     )
     // Check all 7 sliders have correct default values
-    const sliders = screen.getAllByRole('slider')
+    // hidden: true because Base UI keeps the thumb visibility:hidden until it can
+    // measure layout, which jsdom never does. The slider is fully visible in a browser.
+    const sliders = screen.getAllByRole('slider', { hidden: true })
     expect(sliders.length).toBeGreaterThanOrEqual(7)
     // kalman_form = 35
     const kalmanSlider = screen.getByLabelText('Kalman Form (Player Ability)')
@@ -130,7 +132,7 @@ describe('Settings (public site, view-only)', () => {
     expect(save).toHaveAccessibleDescription(/look at these settings, but not change them/i)
     expect(screen.getByRole('button', { name: /reset to defaults/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /^PPR 1pt per reception$/i })).toBeDisabled()
-    for (const slider of screen.getAllByRole('slider')) expect(slider).toBeDisabled()
+    for (const slider of screen.getAllByRole('slider', { hidden: true })) expect(slider).toBeDisabled()
   })
 
   it('never sends a PUT', async () => {

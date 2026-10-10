@@ -1,21 +1,27 @@
-import { useRef, useEffect, useMemo, useState } from 'react'
+import { useId, useRef, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import clsx from 'clsx'
+import { ChevronRight, Search, X } from 'lucide-react'
 import { useSearch } from '@/context/SearchContext'
 import { STAT_LABELS } from '@/lib/constants'
-import clsx from 'clsx'
 import { PositionBadge } from '@/components/PositionBadge'
 import { positionTone, toneClass } from '@/lib/tokens'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 
-
+/**
+ * Player search (Cmd+K or the Search button): a dialog holding a combobox and a
+ * list of matching players.
+ *
+ * The dialog (focus trap, Escape, click outside, scroll lock, focus return) comes
+ * from the shared Dialog. The input and list follow the ARIA combobox pattern:
+ * focus stays in the input, arrow keys move the highlighted option, Enter opens it.
+ */
 export function PlayerSearch() {
   const { isOpen, close, query, setQuery, results, defaultWeek, defaultSeason, defaultStat } = useSearch()
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
+  const listId = useId()
   const [activeIndex, setActiveIndex] = useState(0)
-
-  useEffect(() => {
-    if (isOpen) setTimeout(() => inputRef.current?.focus(), 50)
-  }, [isOpen])
 
   useEffect(() => {
     if (isOpen) setActiveIndex(0)
@@ -27,9 +33,8 @@ export function PlayerSearch() {
     return `${results.length} match${results.length !== 1 ? 'es' : ''} for "${query}".`
   }, [query, results.length])
 
-  if (!isOpen) return null
-
   const activePlayer = results[activeIndex] ?? null
+  const optionId = (index: number) => `${listId}-option-${index}`
 
   function handleSelect(player_id: string, name: string, stat = defaultStat) {
     navigate(`/player/${player_id}?week=${defaultWeek}&season=${defaultSeason}&stat=${stat}&name=${encodeURIComponent(name)}`)
@@ -37,11 +42,7 @@ export function PlayerSearch() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (results.length === 0) {
-      if (e.key === 'Escape') close()
-      return
-    }
-
+    if (results.length === 0) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActiveIndex((prev) => (prev + 1) % results.length)
@@ -51,128 +52,126 @@ export function PlayerSearch() {
     } else if (e.key === 'Enter' && activePlayer) {
       e.preventDefault()
       handleSelect(activePlayer.player_id, activePlayer.player_name, activePlayer.stat || defaultStat)
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      close()
     }
   }
 
+  // Keep the highlighted option in view while arrowing through a long list.
+  useEffect(() => {
+    if (isOpen) document.getElementById(optionId(activeIndex))?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeIndex, isOpen])
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-[200] bg-surface/80 backdrop-blur-lg"
-        onClick={close}
-      />
-
-      {/* Modal */}
-      <div
-        className="fixed top-20 left-1/2 -translate-x-1/2 z-[201] w-full max-w-2xl mx-auto px-4"
-        style={{ animation: 'fade-in 0.15s ease-out' }}
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) close() }}>
+      <DialogContent
+        showCloseButton={false}
+        initialFocus={inputRef}
+        className="top-20 max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-2xl border-info/30 p-0 shadow-[0_0_0_1px_rgb(var(--info)/0.1),0_24px_80px_rgb(var(--shadow)/0.8),0_0_60px_rgb(var(--info)/0.08)]"
       >
-        <div className="rounded-2xl overflow-hidden bg-surface-raised border border-info/30 shadow-[0_0_0_1px_rgb(var(--info)/0.1),0_24px_80px_rgb(var(--shadow)/0.8),0_0_60px_rgb(var(--info)/0.08)]">
-          {/* Search input */}
-          <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.06]">
-            <svg className="w-5 h-5 flex-shrink-0 text-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search players, positions, teams…"
-              className="flex-1 bg-transparent text-fg placeholder-fg-muted text-base outline-none"
-              id="player-search-input"
-            />
-            <div className="flex items-center gap-1.5">
-              <kbd className="px-2 py-0.5 text-[10px] font-mono rounded bg-white/[0.08] text-fg-muted border border-white/10">
-                ESC
-              </kbd>
-            </div>
-          </div>
+        <DialogTitle className="sr-only">Search players</DialogTitle>
+        <DialogDescription className="sr-only">
+          Type a name, team or position. Use the up and down arrow keys to choose a player, then press Enter to open them.
+        </DialogDescription>
 
-          {/* Results */}
-          <div className="max-h-80 overflow-y-auto">
-            <div className="px-5 py-2 text-[11px] text-fg-muted border-b border-white/[0.04]">
-              {helperText}
+        {/* Search input */}
+        <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-4">
+          <Search className="size-5 flex-shrink-0 text-info" aria-hidden="true" />
+          <input
+            ref={inputRef}
+            id="player-search-input"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search players or teams…"
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls={listId}
+            aria-activedescendant={results.length > 0 ? optionId(activeIndex) : undefined}
+            aria-autocomplete="list"
+            aria-label="Search players, positions, teams"
+            autoComplete="off"
+            className="flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
+          />
+          <DialogClose
+            aria-label="Close search"
+            className="flex items-center rounded-md p-1 text-fg-muted transition-colors hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            <kbd className="hidden rounded border border-white/10 bg-white/[0.08] px-2 py-0.5 font-mono text-[10px] sm:inline">ESC</kbd>
+            <X className="size-5 sm:hidden" aria-hidden="true" />
+          </DialogClose>
+        </div>
+
+        {/* Results */}
+        <div className="max-h-[min(20rem,60dvh)] overflow-y-auto">
+          <div className="border-b border-white/[0.04] px-5 py-2 text-[11px] text-fg-muted" aria-live="polite">
+            {helperText}
+          </div>
+          {results.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-fg-muted">
+              {query.length > 0
+                ? 'Try a shorter prefix or search by team / position.'
+                : 'Start typing to search players…'}
             </div>
-            {results.length === 0 ? (
-              <div className="px-5 py-8 text-center text-fg-muted text-sm">
-                {query.length > 0
-                  ? 'Try a shorter prefix or search by team / position.'
-                  : 'Start typing to search players…'}
-              </div>
-            ) : (
-              <div className="py-2">
-                {query.length === 0 && (
-                  <p className="px-5 py-2 text-[10px] font-semibold text-fg-muted uppercase tracking-widest">
-                    All Players
-                  </p>
-                )}
+          ) : (
+            <div className="py-2">
+              {query.length === 0 && (
+                <p className="px-5 py-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">
+                  All Players
+                </p>
+              )}
+              <div id={listId} role="listbox" aria-label="Matching players">
                 {results.map((player, idx) => {
                   const isActive = idx === activeIndex
                   return (
-                    <button
+                    <div
                       key={`${player.player_id}-${idx}`}
+                      id={optionId(idx)}
+                      role="option"
+                      aria-selected={isActive}
                       onClick={() => handleSelect(player.player_id, player.player_name, player.stat)}
+                      onMouseEnter={() => setActiveIndex(idx)}
                       className={clsx(
                         toneClass(positionTone(player.position)),
-                        'w-full flex items-center gap-4 px-5 py-3 text-left transition-colors group border-b border-white/[0.03]',
+                        'group flex w-full cursor-pointer items-center gap-4 border-b border-white/[0.03] px-5 py-3 text-left transition-colors',
                         isActive && 'bg-info/[0.08]',
                       )}
-                      onMouseEnter={() => setActiveIndex(idx)}
-                      >
-                      {/* Position badge */}
+                    >
                       <PositionBadge position={player.position} className="flex-shrink-0" />
 
-                      {/* Name + team */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-fg truncate">{player.player_name}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-fg">{player.player_name}</p>
                         <p className="text-[11px] text-fg-muted">{player.team ?? 'UNK'}</p>
                       </div>
 
-                      {/* Projection */}
-                      <div className="text-right flex-shrink-0">
-                        <p className="glow-text font-display text-xl text-tone">
-                          {player.projection.toFixed(1)}
-                        </p>
-                        <p className="text-[10px] text-fg-muted">
-                          {STAT_LABELS[player.stat] ?? player.stat}
-                        </p>
+                      <div className="flex-shrink-0 text-right">
+                        <p className="glow-text font-display text-xl text-tone">{player.projection.toFixed(1)}</p>
+                        <p className="text-[10px] text-fg-muted">{STAT_LABELS[player.stat] ?? player.stat}</p>
                       </div>
 
-                      {/* Arrow */}
-                      <svg
-                        className={clsx('w-4 h-4 transition-opacity flex-shrink-0', isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
+                      <ChevronRight
+                        className={clsx('size-4 flex-shrink-0 transition-opacity', isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
+                        aria-hidden="true"
+                      />
+                    </div>
                   )
                 })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
 
-          {/* Footer hint */}
-          <div className="px-5 py-2.5 flex items-center justify-between border-t border-white/[0.04]">
-            <div className="flex items-center gap-3 text-[10px] text-fg-muted">
-              <span>↵ open highlighted player</span>
-              <span>↑↓ move selection</span>
-              <span>ESC to close</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-white/[0.06] text-fg-muted border border-white/[0.08]">
-                ⌘K
-              </kbd>
-              <span className="text-[10px] text-fg-muted">to toggle</span>
-            </div>
+        {/* Footer hint */}
+        <div className="flex items-center justify-between border-t border-white/[0.04] px-5 py-2.5">
+          <div className="flex items-center gap-3 text-[10px] text-fg-muted">
+            <span>↵ open highlighted player</span>
+            <span className="hidden sm:inline">↑↓ move selection</span>
+            <span className="hidden sm:inline">ESC to close</span>
+          </div>
+          <div className="hidden items-center gap-1 sm:flex">
+            <kbd className="rounded border border-white/[0.08] bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">⌘K</kbd>
+            <span className="text-[10px] text-fg-muted">to toggle</span>
           </div>
         </div>
-      </div>
-    </>
+      </DialogContent>
+    </Dialog>
   )
 }
