@@ -466,7 +466,11 @@ class TeamEloSystem:
         team_a_is_home: bool = False,
     ) -> float:
         """
-        Implied win probability for team_a vs team_b.
+        Implied win probability for team_a vs team_b from END-OF-FIT ratings.
+
+        Not causal for feature rows: it sees every fitted result, including
+        games after the row's own. Feature code must use enrich_features(),
+        which reads the pregame snapshot (audit C1).
 
         Args:
             team_a: Team abbreviation.
@@ -560,10 +564,14 @@ class TeamEloSystem:
             out["opp_off_elo"] = out[opp_col].map(_get_off)
             out["opp_def_elo"] = out[opp_col].map(_get_def)
             out["elo_matchup_diff"]    = out["team_off_elo"] - out["opp_def_elo"]
+            # Built from the same pregame snapshot as the columns above, so a
+            # row never sees its own game or any later result (audit C1).
+            # win_probability() reads end-of-fit ratings and must not feed rows.
             out["elo_implied_win_prob"] = out.apply(
-                lambda r: self.win_probability(
-                    r["team"], r[opp_col],
-                    team_a_is_home=bool(r.get("is_home", 0)),
+                lambda r: _expected_score(
+                    (r["team_off_elo"] + r["team_def_elo"]) / 2,
+                    (r["opp_off_elo"] + r["opp_def_elo"]) / 2,
+                    a_is_home=bool(r.get("is_home", 0)),
                 ),
                 axis=1,
             )
