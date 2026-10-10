@@ -26,6 +26,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -242,6 +243,20 @@ def _walk_forward_cv(
     return fold_results, oof_df, final_model
 
 
+def _pseudo_run_id(now: Optional[float] = None) -> str:
+    """Run id used when MLflow issued none (disabled or unreachable).
+
+    save_oof keeps only run_id[:8] for the file name, so the first 8 characters must
+    identify the run. A UTC date did not: same-day runs wrote the same file and the
+    earlier OOF was lost. The id is the Unix time in seconds as 8 hex digits. It is
+    unique per second, sorts in time order (stacking discovery takes the newest file
+    by name), and always sorts after the old 8-digit date stamps. The 8 digits last
+    until 2106.
+    """
+    seconds = int(time.time() if now is None else now)
+    return f"{seconds:08x}"
+
+
 # ── Main train entry point ────────────────────────────────────────────────────
 
 def train(
@@ -368,10 +383,10 @@ def train(
             logger.error("MLflow logging failed: %s", exc)
             # MLflow was configured but unreachable — still save OOF to disk.
             if not oof_df.empty and oof_path is None:
-                pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+                pseudo_run_id = _pseudo_run_id()
                 oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="catboost", position=position_filter or "all")
     elif not oof_df.empty:
-        pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        pseudo_run_id = _pseudo_run_id()
         oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="catboost", position=position_filter or "all")
 
     return CatBoostTrainResult(fold_results, oof_df, best_params, run_id, feature_importances, oof_path)

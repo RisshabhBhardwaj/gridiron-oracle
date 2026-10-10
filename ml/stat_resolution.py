@@ -9,6 +9,7 @@ fails loudly when a configured (position, stat) cannot be resolved.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -127,15 +128,27 @@ def resolve_stat(stat: str) -> ResolvedStat:
     )
 
 
+def _is_missing(val: Any) -> bool:
+    """True for None and NaN. pandas turns a missing SQL value into NaN, so both mean 'not reported'."""
+    if val is None:
+        return True
+    try:
+        return math.isnan(float(val))
+    except (TypeError, ValueError):
+        return False
+
+
 def read_gamelog_stat(gl: Any, stat: str) -> Optional[float]:
     """Read a model stat from a GameLog ORM row / mapping."""
     resolved = resolve_stat(stat)
     if resolved.is_multi_source:
+        # A fumble component that is not reported contributes nothing to the total, as None
+        # always has. Returns None only when no component is reported at all.
         total = 0.0
         seen = False
         for col in FUMBLE_COMPONENT_COLS:
             val = getattr(gl, col, None) if not isinstance(gl, dict) else gl.get(col)
-            if val is not None:
+            if not _is_missing(val):
                 total += float(val)
                 seen = True
         return total if seen else None

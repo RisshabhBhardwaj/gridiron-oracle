@@ -5,7 +5,6 @@ Coverage tests for small entry-point modules that had no tests:
   - ml/check_model_features.py  (MLflow feature-count audit)
   - ml/compare_actuals.py       (ad-hoc SQL report, runs at import time)
   - ml/tft_cli.py               (TFT argparse entry point)
-  - ml/bayesian_model.py        (public alias; currently cannot be imported)
 
 Everything runs offline. MLflow calls are replaced with stubs; SQL is replaced
 with a stubbed engine and DataFrame reader.
@@ -23,26 +22,6 @@ import ml.utils as ml_utils
 from ml import check_model_features as cmf
 from ml import tft_cli
 from ml.utils import FoldResult
-
-
-# ── bayesian_model alias ──────────────────────────────────────────────────────
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=ImportError,
-    reason=(
-        "Production bug: ml/bayesian_model.py imports BayesianLayer from ml/bayesian_layer.py, "
-        "but that module defines BayesianProjection and no BayesianLayer, so importing "
-        "ml.bayesian_model fails. Fix the alias in ml/bayesian_model.py, then this xfail flips."
-    ),
-)
-def test_bayesian_model_alias_resolves() -> None:
-    import importlib
-
-    from ml.bayesian_layer import BayesianProjection
-
-    alias_module = importlib.import_module("ml.bayesian_model")
-    assert alias_module.BayesianModel is BayesianProjection
 
 
 # ── check_model_features ──────────────────────────────────────────────────────

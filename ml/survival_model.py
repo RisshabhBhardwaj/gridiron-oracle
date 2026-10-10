@@ -391,11 +391,16 @@ def build_survival_dataset(
             week   = int(row["week"])
             returned = any((player_id, season, w) in played_set for w in range(week + 1, 24))
 
+            # 0 is a real status (Out). Only a missing value (None or NaN) falls back to 2.
+            injury_status = row.get("injury_status_encoded")
+            if injury_status is None or pd.isna(injury_status):
+                injury_status = 2
+
             records.append({
                 "duration":              max(1, streak),
                 "event_observed":        int(returned),
                 "games_missed_streak":   streak,
-                "injury_status_encoded": int(row.get("injury_status_encoded") or 2),
+                "injury_status_encoded": int(injury_status),
                 "snap_pct_off":          float(row.get("snap_pct_off") or 0.6),
                 "age":                   float(row.get("age") or 26.0),
                 "position_encoded":      POSITION_ENCODING.get(
