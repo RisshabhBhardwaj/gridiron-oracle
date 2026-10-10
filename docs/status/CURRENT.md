@@ -1,6 +1,6 @@
 # Gridiron Oracle: current status
 
-As of 2026-10-07 (written during the documentation reset; verified against the code on that date unless marked unverified).
+As of 2026-10-07 (written during the documentation reset; verified against the code on that date unless marked unverified). Frontend lines updated 2026-10-10 on branch `agent/gor-frontend-02-design-system` (typecheck, tests and build run that day).
 Update this file at the end of every working session. See `_internal-docs/_platform/DOCS_STANDARD.md`.
 
 ## What works, what is partial, what is unverified
@@ -10,7 +10,7 @@ Checked on 2026-10-07 by running the tests, not by trusting older documents.
 | Check | Result |
 |---|---|
 | Backend tests (offline subset) | 1305 passed, 0 failed, 27 skipped |
-| Frontend typecheck, 34 tests, build | all pass |
+| Frontend typecheck, 77 tests, build | all pass (2026-10-10, branch `agent/gor-frontend-02-design-system`) |
 | C++ engine, 72 tests | all pass |
 | Lint (`ruff` 0.15.12) | clean |
 | Evidence manifest check | passes; every entry is marked "provisional" |
@@ -26,7 +26,7 @@ Checked on 2026-10-07 by running the tests, not by trusting older documents.
 
 **Not verified:** live deployment health, the Railway cron refresh, the Bayesian/Monte Carlo layer on the served path, engine connection to any live odds feed, accuracy of the drive simulator.
 
-**Known UI gaps:** the weekly "no forecast" banner has a hard-coded 2026 message; `Dashboard.tsx` and `SeasonProjections.tsx` are not reachable from any route; the player page shows "Book Line 0" when no line exists.
+**Known UI gaps (updated 2026-10-10):** fixed on the branch above, not yet merged: the "no forecast" banner uses the requested season and week; `Dashboard.tsx` and `SeasonProjections.tsx` are removed; the player page says "No line yet" instead of "Book Line 0" and no longer shows generated demo lines; Settings is view-only on the public site; opening player search no longer crashes the app; Current Season cards open the player page. Still open: the hand-rolled controls listed in `docs/DESIGN_SYSTEM.md`, jargon copy (`docs/USERS.md`), `ErrorBanner` still prints a developer command ("make up") and raw error text, `GameDetail` prints an internal game id, units on the player page are always "yds", and nothing consumes the saved Settings weights.
 
 
 ## In progress
@@ -37,18 +37,18 @@ None recorded.
 
 1. Commit a reproducer for the owner-verified 74/75 baseline-beating count: generate per-cell eval CSVs for the current candidate with `ml.eval_causal` and aggregate them. Update `scripts/summarize_causal_evals.py`, which is hard-coded to old `*_20260809.csv` file names and to `reports/eval_causal_stack_*.csv` files that no longer exist.
 2. Decide the fate of the prediction-surfaces rebuild plan (SP0/SP2 labels still appear in code; the plan itself is archived). Season/rest-of-season endpoints were described as fail-closed until playing-time (SP2); current behaviour not re-checked.
-3. Betting is in scope (decision 0003): verify the engine's live odds connection, show a real book line in the UI (it shows "Book Line 0" when none exists), and check that projection ranges are calibrated (an earlier note says season ranges were too narrow).
-4. Replace the hard-coded "2026 in-season projections are not yet available" banner (`frontend/src/components/shared/NoForecastBanner.tsx`) with year and state from the API.
+3. Betting is in scope (decision 0003): verify the engine's live odds connection, show a real book line in the UI (it shows "No line yet" until a live line exists), and check that projection ranges are calibrated (an earlier note says season ranges were too narrow).
+4. Done on the frontend branch (2026-10-10): the no-forecast banner takes the season and week from the request.
 5. Wire or remove the Settings weights (`user_config.json`): no consumer was found in projection code.
 6. Rewrite jargon UI copy (list in `docs/USERS.md`).
-7. Adopt the UI stack in `docs/DESIGN_SYSTEM.md` once the owner approves it.
+7. Continue the UI migration in `docs/DESIGN_SYSTEM.md` (approved 2026-10-10, decision 0004): the remaining hand-rolled controls are listed there with file and line.
 
 ## To-dos and reminders
 
 - Keep `docs/DATA_SOURCES.md` documenting `load_pfr_advstats` (a test enforces it).
 - Evidence entries in `releases/artifacts/MANIFEST.json` are all "provisional"; flip to frozen after a clean rebuild reproduces them.
 - `ml/experiments/team_game_model/win_probability_2025_*.json` are unlisted in the manifest (non-blocking note).
-- Unrouted pages `Dashboard.tsx` and `SeasonProjections.tsx`: route or remove.
+- The Settings page is view-only unless the build sets `VITE_SETTINGS_EDITABLE=true` (see `docs/runbooks/DEVELOPMENT.md`). The public Vercel build must not set it.
 
 ## Open questions
 

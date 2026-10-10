@@ -6,6 +6,10 @@
 export const CURRENT_SEASON = 2026
 export const CURRENT_WEEK = 1
 
+// The fantasy regular season. /projections/season rejects start_week > 18
+// (backend/app/api/predict.py, le=18), so no request may go past it.
+export const LAST_FANTASY_WEEK = 18
+
 export const POSITIONS = ['WR', 'RB', 'TE', 'QB'] as const
 export type Position = (typeof POSITIONS)[number]
 

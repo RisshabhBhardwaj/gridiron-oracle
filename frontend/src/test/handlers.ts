@@ -68,6 +68,9 @@ export const handlers = [
     }),
   ),
 
+  // No key configured on the server: the odds hook falls back to generated lines.
+  http.get('/api/odds', () => HttpResponse.json({ configured: false })),
+
   http.get('/api/settings', () =>
     HttpResponse.json(factories.settingsResponse()),
   ),

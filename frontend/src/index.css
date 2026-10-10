@@ -4,14 +4,54 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── CSS Design Tokens ─────────────────────────────────────────────────────── */
+/* ── Design tokens: the single source of truth for colour ──────────────────────
+ * Values are space-separated RGB channels so Tailwind can add opacity
+ * (bg-accent/15). tailwind.config.ts maps each name to a utility class.
+ * Change a colour here and nowhere else. Components never contain hex or rgb().
+ *
+ * Contrast on surface-raised: fg 16.9:1, fg-muted 6.0:1, fg-subtle 5.0:1,
+ * accent 10.0:1, info 7.3:1, negative 6.2:1, highlight 7.1:1, warning 10.7:1.
+ */
 :root {
-  --color-blue:   #00C2FF;
-  --color-green:  #00FFA3;
-  --color-amber:  #FFB800;
-  --color-red:    #FF3B5C;
-  --color-purple: #A855F7;
+  /* Surfaces */
+  --surface:         13 13 13;     /* page background */
+  --surface-raised:  20 20 20;     /* cards, panels */
+  --surface-overlay: 26 26 26;     /* hovered rows, selected nav, floating layers */
+  /* Borders */
+  --line:            38 38 38;
+  --line-strong:     48 48 48;
+  /* Text */
+  --fg:              243 245 247;
+  --fg-muted:        139 147 161;
+  --fg-subtle:       125 134 148;  /* placeholders, hints; raised from 95 104 117 (3.3:1) to 5.0:1 on surface-raised */
+  /* Brand and meaning */
+  --accent:          66 216 137;   /* brand, active, links */
+  --accent-fg:       13 13 13;     /* text on an accent background */
+  --positive:        66 216 137;   /* good, up, gain */
+  --negative:        255 92 119;   /* bad, down, loss, error */
+  --warning:         255 184 77;   /* caution, stale, middling */
+  --info:            89 166 255;   /* neutral data, notes */
+  --highlight:       183 137 255;  /* secondary data */
+  --shadow:          0 0 0;        /* shadow colour (black) */
+  /* Default tone for components that take a tone */
+  --tone:            var(--fg-muted);
 }
+
+/* ── Tones ─────────────────────────────────────────────────────────────────────
+ * Put one on a component's root, then use text-tone, border-tone/20, bg-tone/10,
+ * .glow-text, ... inside it. Plain CSS (not @layer) so they are always emitted,
+ * because components pick them at run time (tone-${name}).
+ */
+.tone-accent    { --tone: var(--accent); }
+.tone-positive  { --tone: var(--positive); }
+.tone-negative  { --tone: var(--negative); }
+.tone-warning   { --tone: var(--warning); }
+.tone-info      { --tone: var(--info); }
+.tone-highlight { --tone: var(--highlight); }
+.tone-muted     { --tone: var(--fg-muted); }
+
+/* Soft glow behind big numbers, in the current tone */
+.glow-text { text-shadow: 0 0 16px rgb(var(--tone) / 0.5); }
 
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 @layer base {
@@ -21,143 +61,89 @@
   }
 
   body {
-    @apply bg-oracle-dark text-oracle-white font-sans antialiased;
-    background: #0d0d0d;
+    @apply bg-surface text-fg font-sans antialiased;
     min-height: 100vh;
   }
 
   * {
-    @apply border-oracle-border;
+    @apply border-line;
   }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar         { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track   { background: #0d0d0d; }
-  ::-webkit-scrollbar-thumb   { background: #303030; border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: #42d88966; }
+  ::-webkit-scrollbar-track   { background: rgb(var(--surface)); }
+  ::-webkit-scrollbar-thumb   { background: rgb(var(--line-strong)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--accent) / 0.4); }
 }
 
-/* ── Component Utilities ───────────────────────────────────────────────────── */
+/* ── Component utilities ───────────────────────────────────────────────────── */
 @layer components {
 
-  /* Glass card */
-  .glass-card {
-    background: #141414;
-    border: 1px solid #262626;
-    box-shadow: none;
-  }
-
-  .glass-card-hover {
-    @apply glass-card;
-    transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease;
-  }
-  .glass-card-hover:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 32px rgba(0,0,0,0.28);
-  }
-
-  /* Neon borders */
-  .border-neon-blue   { border-color: rgba(0,194,255,0.4); }
-  .border-neon-green  { border-color: rgba(0,255,163,0.4); }
-  .border-neon-amber  { border-color: rgba(255,184,0,0.4); }
-  .border-neon-red    { border-color: rgba(255,59,92,0.4); }
-  .border-neon-purple { border-color: rgba(168,85,247,0.4); }
-
-  /* Position badge */
+  /* Position badge: give the element a tone-* class too (see POSITION_TONE) */
   .pos-badge {
     @apply inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold tracking-wider;
+    @apply bg-tone/15 text-tone border border-tone/30;
   }
-  .pos-wr { @apply pos-badge bg-oracle-blue/15 text-oracle-blue border border-oracle-blue/30; }
-  .pos-rb { @apply pos-badge bg-oracle-green/15 text-oracle-green border border-oracle-green/30; }
-  .pos-te { @apply pos-badge bg-oracle-purple/15 text-oracle-purple border border-oracle-purple/30; }
-  .pos-qb { @apply pos-badge bg-oracle-amber/15 text-oracle-amber border border-oracle-amber/30; }
 
-  /* Neon text */
-  .text-neon-blue   { color: #00C2FF; text-shadow: 0 0 20px rgba(0,194,255,0.6); }
-  .text-neon-green  { color: #00FFA3; text-shadow: 0 0 20px rgba(0,255,163,0.6); }
-  .text-neon-amber  { color: #FFB800; text-shadow: 0 0 20px rgba(255,184,0,0.6); }
-  .text-neon-red    { color: #FF3B5C; text-shadow: 0 0 20px rgba(255,59,92,0.6); }
-  .text-neon-purple { color: #A855F7; text-shadow: 0 0 20px rgba(168,85,247,0.6); }
+  /* Soft tinted corner on a stat card, in the current tone */
+  .corner-glow {
+    background: radial-gradient(circle at top right, rgb(var(--tone) / 0.3) 0%, transparent 70%);
+  }
 
-  /* Skeleton loader */
+  /* Loading placeholder */
   .skeleton {
-    background: linear-gradient(90deg, #0D1B30 25%, #112240 50%, #0D1B30 75%);
+    background: linear-gradient(90deg, rgb(var(--surface-overlay)) 25%, rgb(var(--line)) 50%, rgb(var(--surface-overlay)) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s ease-in-out infinite;
   }
 
-  /* Premium pill button */
-  .pill-btn {
-    @apply px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-200 border;
-  }
-  .pill-btn-active {
-    @apply pill-btn;
-    background: rgba(0,194,255,0.15);
-    border-color: rgba(0,194,255,0.5);
-    color: #00C2FF;
-    box-shadow: 0 0 12px rgba(0,194,255,0.2);
-  }
-  .pill-btn-inactive {
-    @apply pill-btn border-oracle-border text-oracle-muted;
-  }
-  .pill-btn-inactive:hover {
-    @apply text-oracle-white;
-    border-color: #1E3A5F;
-    background: rgba(255,255,255,0.04);
-  }
-
-  /* Custom range slider */
+  /* Native range slider (WhatIfStudio). Settings uses the shared Slider. */
   .oracle-slider {
-    @apply w-full appearance-none h-1.5 rounded-full cursor-pointer outline-none;
-    background: #1A2F4E;
+    @apply w-full appearance-none h-1.5 rounded-full cursor-pointer outline-none bg-surface-overlay;
   }
   .oracle-slider::-webkit-slider-thumb {
     appearance: none;
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #00C2FF;
-    box-shadow: 0 0 8px rgba(0,194,255,0.6);
+    background: rgb(var(--tone));
+    box-shadow: 0 0 8px rgb(var(--tone) / 0.6);
     cursor: pointer;
-    border: 2px solid #050B18;
+    border: 2px solid rgb(var(--surface));
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
   .oracle-slider::-webkit-slider-thumb:hover {
     transform: scale(1.2);
-    box-shadow: 0 0 16px rgba(0,194,255,0.8);
+    box-shadow: 0 0 16px rgb(var(--tone) / 0.8);
   }
   .oracle-slider::-moz-range-thumb {
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #00C2FF;
-    box-shadow: 0 0 8px rgba(0,194,255,0.6);
+    background: rgb(var(--tone));
+    box-shadow: 0 0 8px rgb(var(--tone) / 0.6);
     cursor: pointer;
-    border: 2px solid #050B18;
+    border: 2px solid rgb(var(--surface));
   }
 
-  /* Select dropdown */
+  /* Native select (pages not yet moved to the shared Select) */
   .oracle-select {
-    @apply bg-oracle-card border border-oracle-border text-oracle-white text-sm rounded-lg px-3 py-1.5;
-    @apply focus:outline-none focus:border-oracle-blue/60 focus:ring-1 focus:ring-oracle-blue/30;
+    @apply bg-surface-raised border border-line text-fg text-sm rounded-lg px-3 py-1.5;
+    @apply focus:outline-none focus:border-info/60 focus:ring-1 focus:ring-info/30;
     @apply transition-colors duration-150;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='%23607B9B' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    /* Chevron. An SVG data URI cannot read CSS variables, so this one grey is
+       the only colour value outside the token block; it matches --fg-muted. */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='%238B93A1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 8px center;
     background-size: 14px;
     padding-right: 28px;
   }
 
-  /* Section label */
+  /* Small caps label above a value */
   .section-label {
-    @apply text-xs font-semibold text-oracle-muted uppercase tracking-widest;
-  }
-
-  /* Stat number display */
-  .stat-number {
-    @apply font-display text-3xl;
-    line-height: 1;
+    @apply text-xs font-semibold text-fg-muted uppercase tracking-widest;
   }
 }
 
@@ -165,11 +151,6 @@
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-
-@keyframes count-up {
-  0%   { opacity: 0; transform: translateY(8px); }
-  100% { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-in {
@@ -184,4 +165,16 @@
 
 .animate-bar-fill {
   animation: bar-fill-in 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* People who ask their system for less motion get none, except the spinner,
+   which is the only sign that something is loading. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin { animation-duration: 1s !important; animation-iteration-count: infinite !important; }
 }

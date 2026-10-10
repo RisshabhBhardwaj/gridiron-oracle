@@ -12,6 +12,8 @@ make up                         # docker stack: Postgres, MLflow, API, frontend
 cd frontend && npm run dev      # or use .claude/launch.json
 ```
 
+The Settings page is view-only by default, because the public site's proxy refuses `PUT /api/settings` (`frontend/api/proxy-policy.js`). To edit settings against your own API, put `VITE_SETTINGS_EDITABLE=true` in `frontend/.env.local` and restart `npm run dev`.
+
 Tests and commands are listed in [AGENTS.md](../../AGENTS.md). On Apple Silicon set `KMP_DUPLICATE_LIB_OK=TRUE` and `OMP_NUM_THREADS=1` before ML code.
 
 Releases: [releases/README.md](../../releases/README.md). Evidence policy: `releases/artifacts/README.md`.

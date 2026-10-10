@@ -24,6 +24,6 @@ describe('DraftBoard', () => {
     await screen.findByText("Ja'Marr Chase")
     fireEvent.change(screen.getByRole('combobox', { name: 'Draft season' }), { target: { value: '2025' } })
     fireEvent.click(screen.getByRole('button', { name: 'WR' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'WR' })).toHaveClass('text-oracle-green'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'WR' })).toHaveAttribute('aria-pressed', 'true'))
   })
 })

@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SearchProvider } from '../context/SearchContext'
 import { CurrentSeason } from '../pages/CurrentSeason'
+
+function Here() {
+  const loc = useLocation()
+  return <p data-testid="here">{loc.pathname}{loc.search}</p>
+}
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -15,6 +20,7 @@ function renderWithProviders(ui: React.ReactElement) {
         <MemoryRouter initialEntries={['/projections']}>
           <Routes>
             <Route path="/projections" element={ui} />
+            <Route path="/player/:id" element={<Here />} />
           </Routes>
         </MemoryRouter>
       </SearchProvider>
@@ -57,5 +63,14 @@ describe('CurrentSeason', () => {
     await waitFor(() => {
       expect(screen.getByText('Start Week:')).toBeInTheDocument()
     })
+  })
+
+  it('opens the player page with the name, week, season and stat in the address', async () => {
+    // Regression: the card used to open /player/<id> alone, and the player page
+    // answered "No player selected".
+    renderWithProviders(<CurrentSeason />)
+    fireEvent.click(await screen.findByText('Justin Jefferson'))
+    const here = await screen.findByTestId('here')
+    expect(here).toHaveTextContent(/^\/player\/[^?]+\?week=\d+&season=\d+&stat=\w+&name=Justin%20Jefferson$/)
   })
 })
