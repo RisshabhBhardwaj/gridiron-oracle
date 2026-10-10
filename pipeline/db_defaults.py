@@ -7,8 +7,13 @@ In-compose services still use host `db` on 5432.
 
 from __future__ import annotations
 
-# Host machine → published compose port
-DEFAULT_HOST_DATABASE_URL = "postgresql://oracle:oracle@localhost:15439/oracle"
+import os
+
+# Host machine → published compose port. DATABASE_URL, when set, wins, so the
+# tests that import this constant honour the same override as the code.
+DEFAULT_HOST_DATABASE_URL = (
+    os.environ.get("DATABASE_URL") or "postgresql://oracle:oracle@localhost:15439/oracle"
+)
 
 # Inside the compose network
 DEFAULT_COMPOSE_DATABASE_URL = "postgresql://oracle:oracle@db:5432/oracle"
