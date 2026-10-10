@@ -11,14 +11,22 @@ Weights are fully user-configurable, validated to sum to 100%.
 
 from __future__ import annotations
 
+import contextlib
+import copy
+import fcntl
 import hashlib
 import json
 import logging
+import os
+import stat
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.rate_limit import limiter
@@ -26,7 +34,15 @@ from backend.app.core.rate_limit import limiter
 router = APIRouter(prefix="", tags=["settings"])
 logger = logging.getLogger(__name__)
 
-_CONFIG_PATH = Path(app_settings.settings_file)
+# Optional explicit override. When unset, the path is read from settings at
+# call time, so a SETTINGS_FILE change (or a test fixture) takes effect.
+_CONFIG_PATH: Optional[Path] = None
+
+
+def _config_path() -> Path:
+    if _CONFIG_PATH is not None:
+        return _CONFIG_PATH
+    return Path(app_settings.settings_file)
 
 
 # ---------------------------------------------------------------------------
@@ -79,11 +95,25 @@ class FeatureWeights(BaseModel):
         return self
 
 
+SettingsSource = Literal["file", "default_missing", "default_invalid"]
+
+
+class StoredConfig(BaseModel):
+    """Shape of user_config.json. Keys that are absent take the defaults."""
+    weights:             FeatureWeights = Field(default_factory=FeatureWeights)
+    fantasy_scoring:     Literal["ppr", "half_ppr", "standard"] = "ppr"
+    engine_exposure_cap: float = Field(0.25, ge=0.01, le=1.0)
+    weight_preset_name:  str = "Default"
+
+
 class SettingsResponse(BaseModel):
     weights:              FeatureWeights
     fantasy_scoring:      str    # "ppr" | "half_ppr" | "standard"
     engine_exposure_cap:  float  # max fraction of bankroll per bet
     weight_preset_name:   str
+    # Where the returned values came from. "default_*" means the stored file
+    # was not used and the defaults were returned instead.
+    settings_source:      SettingsSource
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -99,14 +129,9 @@ class SettingsUpdateRequest(BaseModel):
 
 @router.get("/settings", response_model=SettingsResponse)
 def get_settings() -> SettingsResponse:
-    """Retrieve the current weight configuration."""
-    cfg = _load_config()
-    return SettingsResponse(
-        weights=FeatureWeights(**cfg.get("weights", _DEFAULT_WEIGHTS)),
-        fantasy_scoring=cfg.get("fantasy_scoring", "ppr"),
-        engine_exposure_cap=cfg.get("engine_exposure_cap", 0.25),
-        weight_preset_name=cfg.get("weight_preset_name", "Default"),
-    )
+    """Retrieve the current weight configuration and where it came from."""
+    cfg, source = _read_config()
+    return _to_response(cfg, source)
 
 
 @router.put("/settings", response_model=SettingsResponse)
@@ -116,9 +141,12 @@ def update_settings(request: Request, req: SettingsUpdateRequest) -> SettingsRes
     Update the weight configuration.
 
     Weights must sum to 100%; validated by Pydantic before saving.
-    Returns the updated configuration.
+    Returns the updated configuration. settings_source reports where the
+    base the update was merged onto came from (the file, or defaults when
+    the file was missing or unusable). After a successful save the file
+    holds the result, so the next GET reports "file".
     """
-    cfg = _load_config()
+    cfg, source = _read_config()
 
     body_hash = hashlib.sha256(req.model_dump_json().encode()).hexdigest()[:16]
     logger.info(
@@ -145,32 +173,109 @@ def update_settings(request: Request, req: SettingsUpdateRequest) -> SettingsRes
 
     _save_config(cfg)
 
-    return SettingsResponse(
-        weights=FeatureWeights(**cfg["weights"]),
-        fantasy_scoring=cfg.get("fantasy_scoring", "ppr"),
-        engine_exposure_cap=cfg.get("engine_exposure_cap", 0.25),
-        weight_preset_name=cfg.get("weight_preset_name", "Default"),
-    )
+    return _to_response(cfg, source)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _default_config() -> dict:
+    return copy.deepcopy(_DEFAULT_CONFIG)
+
+
+def _read_config() -> tuple[dict, SettingsSource]:
+    """Return the stored config and where it came from.
+
+    Falls back to defaults when the file is missing ("default_missing"), or
+    unreadable, not valid JSON, not an object, or fails validation
+    ("default_invalid"). Keys the file holds beyond the known ones are kept.
+    """
+    path = _config_path()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return _default_config(), "default_missing"
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning("Cannot read %s: %s — using defaults", path, exc)
+        return _default_config(), "default_invalid"
+    try:
+        data = json.loads(raw)
+        stored = StoredConfig.model_validate(data)
+    except (ValueError, ValidationError) as exc:
+        logger.warning("Invalid settings in %s: %s — using defaults", path, exc)
+        return _default_config(), "default_invalid"
+    return {**data, **stored.model_dump()}, "file"
+
+
 def _load_config() -> dict:
-    """Load user_config.json, returning defaults if file is missing."""
-    if _CONFIG_PATH.exists():
-        try:
-            return json.loads(_CONFIG_PATH.read_text())
-        except Exception as exc:
-            logger.warning("Failed to parse %s: %s — using defaults", _CONFIG_PATH, exc)
-    return dict(_DEFAULT_CONFIG)
+    """Load user_config.json, returning defaults if the file is missing or invalid."""
+    return _read_config()[0]
+
+
+def _to_response(cfg: dict, source: SettingsSource) -> SettingsResponse:
+    return SettingsResponse(
+        weights=FeatureWeights(**cfg["weights"]),
+        fantasy_scoring=cfg["fantasy_scoring"],
+        engine_exposure_cap=cfg["engine_exposure_cap"],
+        weight_preset_name=cfg["weight_preset_name"],
+        settings_source=source,
+    )
 
 
 def _save_config(cfg: dict) -> None:
-    """Persist configuration to user_config.json."""
+    """Persist configuration to user_config.json (atomic, serialized by a lock)."""
+    path = _config_path()
     try:
-        _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+        _write_json_atomic(path, cfg)
     except Exception as exc:
-        logger.error("Failed to save %s: %s", _CONFIG_PATH, exc)
+        logger.error("Failed to save %s: %s", path, exc)
         raise HTTPException(status_code=500, detail="Failed to save settings") from exc
+
+
+@contextmanager
+def _exclusive_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive flock on a sibling lock file for the duration of the block."""
+    lock_path = path.with_name(path.name + ".lock")
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the flock
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Best-effort fsync of a directory so a completed rename survives a crash."""
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass  # some filesystems do not support directory fsync
+    finally:
+        os.close(fd)
+
+
+def _write_json_atomic(path: Path, cfg: dict) -> None:
+    """Replace path with cfg's JSON so readers see the old file or the new one, never a partial one."""
+    with _exclusive_lock(path):
+        try:
+            mode = stat.S_IMODE(path.stat().st_mode)
+        except FileNotFoundError:
+            mode = 0o644
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.chmod(tmp_name, mode)  # mkstemp creates 0600; keep the file's existing mode
+            os.replace(tmp_name, path)
+        except BaseException:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(tmp_name)
+            raise
+        _fsync_dir(path.parent)
