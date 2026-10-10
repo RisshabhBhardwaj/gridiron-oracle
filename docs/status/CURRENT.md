@@ -13,6 +13,7 @@ Update this file at the end of every working session. See `_internal-docs/_platf
 | Candidate: evidence manifest, gitleaks on `main..HEAD`, CI radon gate (`backend/app ml pipeline`) | pass |
 | Candidate: C++ engine | no engine files changed since `bee3338`; last full ctest run (72 pass) was on the subagent's build |
 | Candidate: pytest with the local Postgres up | 7 failed, 2 errors, all in DB-backed tests that also fail on `989e221`. The local DB has no games, pbp or 2026 rows. |
+| Candidate: `-m integration` against the local Postgres 18 (`gor-pg18`) | 96 passed, 15 skipped (2026 serving data not materialized), exit 0 |
 | `agent/gor-ml-04-forward-game-context` (77bcf7f): targeted forward-row and served-learner tests | 30 passed |
 
 Not merged to `main`. The merge was blocked by the auto-mode classifier. Nothing is pushed.
