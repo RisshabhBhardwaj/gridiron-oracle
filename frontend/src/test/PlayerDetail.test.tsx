@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from './handlers'
+import { factories } from './factories'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SearchProvider } from '../context/SearchContext'
@@ -139,5 +140,46 @@ describe('PlayerDetail', () => {
       expect(screen.getAllByText(/% edge/).length).toBeGreaterThan(0)
       expect(screen.queryByText('No line yet')).not.toBeInTheDocument()
     })
+  })
+
+  describe('values the model did not give', () => {
+    it('shows a dash and a reason for boom, bust and PPR, never 0', async () => {
+      server.use(
+        http.get('/api/predict', () =>
+          HttpResponse.json({
+            ...factories.predictResponse(),
+            boom_probability: null,
+            bust_probability: null,
+            projection: { ...factories.predictResponse().projection, ppr_points: null },
+          }),
+        ),
+      )
+      renderPlayer()
+      await screen.findByText('WK Proj')
+      for (const label of ['Boom %', 'Bust %', 'Fantasy PPR']) {
+        const card = screen.getByText(label).parentElement as HTMLElement
+        expect(within(card).getByText('—')).toBeInTheDocument()
+        expect(within(card).getByText('Not available for this stat')).toBeInTheDocument()
+      }
+    })
+  })
+
+  it('asks for rest-of-season from week 18, not week 19 (the API rejects 19)', async () => {
+    const startWeeks: string[] = []
+    server.use(
+      http.get('/api/projections/season/:season', ({ request }) => {
+        startWeeks.push(new URL(request.url).searchParams.get('start_week') ?? '')
+        return HttpResponse.json(factories.seasonProjectionsResponse())
+      }),
+    )
+    renderPlayer('/player/test-001?week=18&season=2025&stat=receiving_yards&name=Justin+Jefferson')
+    await waitFor(() => expect(startWeeks.length).toBeGreaterThan(0))
+    expect(startWeeks.every((w) => w === '18')).toBe(true)
+  })
+
+  it('explains an empty factor panel when no breakdown is published for the stat', async () => {
+    server.use(http.get('/api/explain/:player_id', () => HttpResponse.json({ detail: 'unavailable' }, { status: 503 })))
+    renderPlayer()
+    expect(await screen.findByText(/cannot show what drives this projection for this stat yet/i)).toBeInTheDocument()
   })
 })

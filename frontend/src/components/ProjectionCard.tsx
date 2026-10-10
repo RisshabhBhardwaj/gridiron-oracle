@@ -12,19 +12,34 @@ interface ProjectionCardProps {
   emptyText?: string
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+}
+
+/**
+ * Counts up to `target` as decoration. The number must reach the screen even when
+ * animation frames do not run (a reduced-motion setting, a backgrounded tab), so
+ * in those cases it is shown at once instead of sitting at a confident "0.0".
+ */
 function useCountUp(target: number, duration = 600): number {
-  const [current, setCurrent] = useState(0)
+  const [current, setCurrent] = useState(() => (prefersReducedMotion() ? target : 0))
   useEffect(() => {
+    if (prefersReducedMotion() || document.hidden) {
+      setCurrent(target)
+      return
+    }
     const start = performance.now()
+    let frame = 0
     const step = (now: number) => {
       const elapsed = now - start
       const progress = Math.min(elapsed / duration, 1)
       // Ease out cubic
       const eased = 1 - Math.pow(1 - progress, 3)
       setCurrent(target * eased)
-      if (progress < 1) requestAnimationFrame(step)
+      if (progress < 1) frame = requestAnimationFrame(step)
     }
-    requestAnimationFrame(step)
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
   }, [target, duration])
   return current
 }

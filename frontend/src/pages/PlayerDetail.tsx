@@ -14,7 +14,7 @@ import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { useSeasonProjections } from '@/hooks/useSeasonProjections'
-import { STATS, STAT_LABELS, CURRENT_SEASON } from '@/lib/constants'
+import { STATS, STAT_LABELS, CURRENT_SEASON, LAST_FANTASY_WEEK } from '@/lib/constants'
 import { useSearch } from '@/context/SearchContext'
 import { ApiError } from '@/lib/api-client'
 import { Panel } from '@/components/shared/Panel'
@@ -40,7 +40,10 @@ export function PlayerDetail() {
 
   const { data: oddsData } = useOdds({ playerNames: [name], stat, enabled: name.length > 0 })
 
-  const { data: seasonData } = useSeasonProjections({ season, startWeek: week + 1, positions: predictData?.position ? [predictData.position] : [] })
+  // Clamp: week 18 + 1 would ask for start_week=19, which the endpoint rejects, and
+  // the rest-of-season card would silently never appear.
+  const rosStartWeek = Math.min(week + 1, LAST_FANTASY_WEEK)
+  const { data: seasonData } = useSeasonProjections({ season, startWeek: rosStartWeek, positions: predictData?.position ? [predictData.position] : [] })
   const rosStatKey = stat as keyof import('@/types/api').SeasonPlayerProjection
   const rosProjectionData = seasonData?.projections?.find((p) => p.player_id === player_id)?.[rosStatKey] as import('@/types/api').SeasonStatProjection | undefined
   const rosProjection = rosProjectionData?.mean ?? null
@@ -118,7 +121,7 @@ export function PlayerDetail() {
               </h1>
               {predictData && (
                 <p className="text-xs text-fg-muted mt-0.5">
-                  Week {week} · {season} · {predictData.player_id}
+                  Week {week} · {season}
                 </p>
               )}
             </div>
@@ -208,23 +211,28 @@ export function PlayerDetail() {
 
             <ProjectionCard label="Floor (p10)" value={floor}      unit="yds" tone="negative" />
             <ProjectionCard label="Ceiling (p90)" value={ceiling}  unit="yds" tone="positive" />
+            {/* Pass null straight through. ProjectionCard shows a dash for it. Turning it
+                into 0 would turn "the model said nothing" into "0% bust risk". */}
             <ProjectionCard
               label="Boom %"
-              value={(predictData.boom_probability ?? 0) * 100}
+              value={predictData.boom_probability == null ? null : predictData.boom_probability * 100}
               unit="%"
               tone="positive"
+              subtext={predictData.boom_probability == null ? 'Not available for this stat' : undefined}
             />
             <ProjectionCard
               label="Bust %"
-              value={(predictData.bust_probability ?? 0) * 100}
+              value={predictData.bust_probability == null ? null : predictData.bust_probability * 100}
               unit="%"
               tone="negative"
+              subtext={predictData.bust_probability == null ? 'Not available for this stat' : undefined}
             />
             <ProjectionCard
               label="Fantasy PPR"
-              value={predictData.projection.ppr_points ?? 0}
+              value={predictData.projection.ppr_points}
               unit="pts"
               tone="highlight"
+              subtext={predictData.projection.ppr_points == null ? 'Not available for this stat' : undefined}
             />
           </div>
 
@@ -258,6 +266,14 @@ export function PlayerDetail() {
               {!explainLoading && explainData && explainData.top_factors.length === 0 && (
                 <p className="text-fg-muted text-sm py-8 text-center">
                   No SHAP factors available for this player / week.
+                </p>
+              )}
+              {/* The explain endpoint answers 503 when no breakdown is published for this
+                  stat. Without this the panel was a titled box with nothing in it. */}
+              {!explainLoading && !explainData && (
+                <p className="text-fg-muted text-sm py-8 text-center">
+                  We cannot show what drives this projection for this stat yet.
+                  Try another stat above.
                 </p>
               )}
             </Panel>
