@@ -435,7 +435,11 @@ export function CurrentSeason() {
                   key={player.player_id}
                   row={player}
                   statKey={statKey}
-                  onClick={() => navigate(`/player/${player.player_id}`)}
+                  onClick={() => navigate(
+                    // The player page needs the name, week, season and stat in its address;
+                    // without them it shows "No player selected". Same address the search builds.
+                    `/player/${player.player_id}?week=${selectedWeek}&season=${season}&stat=${statKey}&name=${encodeURIComponent(player.player_name)}`,
+                  )}
                 />
               ))}
             </div>
