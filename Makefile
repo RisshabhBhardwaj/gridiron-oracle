@@ -208,12 +208,12 @@ ci:
 
 .PHONY: complexity
 complexity:
-	# Hard gate: fail CI on rank F functions (CC ≥ 26). These should never exist.
+	# Hard gate: fail CI on rank F functions (radon CC > 40). These should never exist.
 	# Use `make complexity-report` to see all C/D/E violations for refactor tracking.
 	@output=$$($(COMPOSE) run --rm backend radon cc -n F backend/app ml pipeline); \
 	if [ -n "$$output" ]; then \
 		echo "$$output"; \
-		echo "Complexity gate FAILED: rank-F functions (CC ≥ 26) detected. Refactor before merging."; \
+		echo "Complexity gate FAILED: rank-F functions (radon CC > 40) detected. Refactor before merging."; \
 		exit 1; \
 	fi
 

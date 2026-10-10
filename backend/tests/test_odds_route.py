@@ -26,7 +26,7 @@ from backend.app.main import app
 
 client = TestClient(app, raise_server_exceptions=True)
 
-TEST_KEY = "odds-test-key-7f3a9c"
+TEST_KEY = "odds-test-key-7f3a9c"  # gitleaks:allow (test placeholder, not a credential)
 MARKET = "player_passing_yards"
 EVENTS = [{"id": "evt-1", "bookmakers": [{"key": "draftkings"}]}]
 

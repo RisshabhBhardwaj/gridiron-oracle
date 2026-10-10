@@ -83,7 +83,7 @@ jobs:
           output=$(radon cc -n F backend/app ml pipeline)
           if [ -n "$output" ]; then
             echo "$output"
-            echo "Complexity gate FAILED: rank-F functions (CC >= 26) detected."
+            echo "Complexity gate FAILED: rank-F functions (radon CC > 40) detected."
             exit 1
           fi
 
