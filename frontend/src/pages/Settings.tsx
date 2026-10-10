@@ -5,6 +5,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { Panel } from '@/components/shared/Panel'
 import { toneClass, type Tone } from '@/lib/tokens'
+import { isSettingsEditable } from '@/lib/config'
+import { ApiError } from '@/lib/api-client'
 import type { FeatureWeights, FantasyScoring } from '@/types/api'
 
 const DEFAULT_WEIGHTS: FeatureWeights = {
@@ -34,9 +36,20 @@ const SCORING_OPTIONS: { value: FantasyScoring; label: string; desc: string }[] 
   { value: 'standard', label: 'Standard', desc: 'No reception points' },
 ]
 
+/** Plain words for a failed save. Never show the server's own text. */
+function saveFailureMessage(error: Error): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return 'Your changes were not saved. This website does not allow changes to settings.'
+  }
+  return 'Your changes were not saved. Check your connection and try again.'
+}
+
 export function Settings() {
   const { data, isLoading, isError, error } = useSettings()
   const updateSettings = useUpdateSettings()
+  // The public site cannot save settings. Say so up front and turn the controls
+  // off, instead of letting someone change values and hit a refusal.
+  const editable = isSettingsEditable()
 
   const [localWeights, setLocalWeights] = useState<FeatureWeights>(DEFAULT_WEIGHTS)
   const [scoring, setScoring]           = useState<FantasyScoring>('ppr')
@@ -58,10 +71,12 @@ export function Settings() {
   }
 
   function handleSave() {
+    if (!editable) return
     updateSettings.mutate({ weights: localWeights, fantasy_scoring: scoring, engine_exposure_cap: exposureCap })
   }
 
   function handleReset() {
+    if (!editable) return
     setLocalWeights(DEFAULT_WEIGHTS)
     setScoring('ppr')
     setExposureCap(0.25)
@@ -78,8 +93,25 @@ export function Settings() {
         <h1 className="font-display text-5xl tracking-widest bg-gradient-to-br from-warning to-info bg-clip-text text-transparent">
           SETTINGS
         </h1>
-        <p className="text-sm text-fg-muted mt-1">Configure model weights and engine parameters</p>
+        <p className="text-sm text-fg-muted mt-1">
+          {editable ? 'Model weights and the bet-size limit' : 'The model weights and bet-size limit saved for this site'}
+        </p>
       </div>
+
+      {!editable && (
+        <div
+          id="settings-readonly-note"
+          role="note"
+          className="tone-info flex flex-col gap-1 rounded-xl p-4 text-sm bg-tone/[0.08] border border-tone/25"
+        >
+          <p className="font-semibold text-tone">You can look at these settings, but not change them here</p>
+          <p className="text-fg-muted leading-relaxed">
+            Changes are turned off on this website so that nobody can change the numbers for everyone else.
+            To try your own values, run your own copy of Gridiron Oracle. The setup steps are in the
+            project&apos;s development guide.
+          </p>
+        </div>
+      )}
 
       {/* Feature Weights */}
       <Panel title="Feature Weights">
@@ -118,7 +150,7 @@ export function Settings() {
                     style={{ width: `${pct}%` }}
                   />
                   <input
-                    type="range" min={0} max={100} step={0.5} value={value}
+                    type="range" min={0} max={100} step={0.5} value={value} disabled={!editable}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleWeightChange(key, parseFloat(e.target.value))}
                     className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
                     style={{ appearance: 'none', zIndex: 1 }}
@@ -143,10 +175,11 @@ export function Settings() {
             <button
               key={value}
               onClick={() => setScoring(value)}
+              disabled={!editable}
               aria-pressed={scoring === value}
               className={clsx(
                 toneClass('info'),
-                'flex flex-col gap-1 p-4 rounded-xl text-left transition-all duration-150 border',
+                'flex flex-col gap-1 p-4 rounded-xl text-left transition-all duration-150 border disabled:cursor-not-allowed',
                 scoring === value
                   ? 'bg-tone/10 border-tone/40 shadow-[0_0_16px_rgb(var(--tone)/0.1)]'
                   : 'bg-surface-overlay/30 border-white/[0.06] hover:border-white/15',
@@ -182,7 +215,7 @@ export function Settings() {
               style={{ width: `${exposureCap * 100}%` }}
             />
             <input
-              type="range" min={1} max={100} step={1}
+              type="range" min={1} max={100} step={1} disabled={!editable}
               value={Math.round(exposureCap * 100)}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExposureCap(parseFloat(e.target.value) / 100)}
               className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
@@ -198,10 +231,11 @@ export function Settings() {
       </Panel>
 
       {/* Actions */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleSave}
-          disabled={!totalValid || updateSettings.isPending}
+          disabled={!editable || !totalValid || updateSettings.isPending}
+          aria-describedby={editable ? undefined : 'settings-readonly-note'}
           className={clsx(
             toneClass('info'),
             'flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150 border disabled:opacity-40 disabled:cursor-not-allowed',
@@ -215,10 +249,14 @@ export function Settings() {
         </button>
         <button
           onClick={handleReset}
-          className="px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150 bg-surface-overlay/40 border border-white/[0.06] text-fg-muted hover:text-fg"
+          disabled={!editable}
+          className="px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-150 bg-surface-overlay/40 border border-white/[0.06] text-fg-muted hover:text-fg disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-fg-muted"
         >
           Reset to Defaults
         </button>
+        {!editable && (
+          <p className="text-xs text-fg-muted">Saving is turned off on this website.</p>
+        )}
       </div>
 
       {/* Feedback */}
@@ -231,7 +269,10 @@ export function Settings() {
         </div>
       )}
       {updateSettings.isError && updateSettings.error && (
-        <ErrorBanner error={updateSettings.error} />
+        <ErrorBanner
+          message={saveFailureMessage(updateSettings.error)}
+          onRetry={updateSettings.error instanceof ApiError && updateSettings.error.status === 403 ? undefined : handleSave}
+        />
       )}
     </div>
   )

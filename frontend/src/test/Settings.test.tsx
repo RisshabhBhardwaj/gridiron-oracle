@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -22,7 +22,13 @@ function renderSettings() {
   )
 }
 
-describe('Settings', () => {
+// The page is view-only unless the build sets VITE_SETTINGS_EDITABLE=true (the
+// public site never does). The editing behaviour is tested with it switched on.
+afterEach(() => { vi.unstubAllEnvs() })
+
+describe('Settings (editable build)', () => {
+  beforeEach(() => { vi.stubEnv('VITE_SETTINGS_EDITABLE', 'true') })
+
   it('default weights render (35, 20, 20, 10, 5, 5, 5 visible in inputs)', async () => {
     renderSettings()
     await waitFor(() =>
@@ -103,5 +109,70 @@ describe('Settings', () => {
     )
     const pprButton = screen.getByRole('button', { name: /^PPR 1pt per reception$/i })
     expect(pprButton).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+describe('Settings (public site, view-only)', () => {
+  it('shows the saved weights but explains that they cannot be changed', async () => {
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    expect(screen.getByText('100.0%')).toBeInTheDocument()
+    expect(screen.getByText('35.0%')).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent(/look at these settings, but not change them/i)
+    expect(screen.getByText(/saving is turned off on this website/i)).toBeInTheDocument()
+  })
+
+  it('disables Save, Reset, scoring buttons and every slider', async () => {
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    const save = screen.getByRole('button', { name: /save settings/i })
+    expect(save).toBeDisabled()
+    expect(save).toHaveAccessibleDescription(/look at these settings, but not change them/i)
+    expect(screen.getByRole('button', { name: /reset to defaults/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^PPR 1pt per reception$/i })).toBeDisabled()
+    for (const slider of screen.getAllByRole('slider')) expect(slider).toBeDisabled()
+  })
+
+  it('never sends a PUT', async () => {
+    let putCalled = false
+    server.use(
+      http.put('/api/settings', async () => {
+        putCalled = true
+        return HttpResponse.json(factories.settingsResponse())
+      }),
+    )
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(putCalled).toBe(false)
+  })
+})
+
+describe('Settings (editable build, server refuses the write)', () => {
+  beforeEach(() => { vi.stubEnv('VITE_SETTINGS_EDITABLE', 'true') })
+
+  it('explains a 403 in plain words and does not show the server text', async () => {
+    server.use(
+      http.put('/api/settings', () =>
+        HttpResponse.json({ detail: 'Settings are read-only on this site' }, { status: 403 }),
+      ),
+    )
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }))
+    expect(await screen.findByText(/your changes were not saved\. this website does not allow changes/i)).toBeInTheDocument()
+    expect(screen.queryByText('Settings are read-only on this site')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument()
+  })
+
+  it('offers a retry after any other failure', async () => {
+    server.use(http.put('/api/settings', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })))
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }))
+    expect(await screen.findByText(/check your connection and try again/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
+    expect(screen.queryByText('boom')).not.toBeInTheDocument()
   })
 })
