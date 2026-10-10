@@ -11,6 +11,8 @@ import logging
 import os
 from functools import lru_cache
 
+from ml.product_mode import resolve_product_mode
+
 _log = logging.getLogger(__name__)
 
 
@@ -25,7 +27,8 @@ class Settings:
     Optional:
         MLFLOW_TRACKING_URI: default http://localhost:15091 (host process)
         MODEL_VERSION:       tag stored in every /predict response
-        PRODUCT_MODE:        artifact_backed | graceful_fallback
+        PRODUCT_MODE:        artifact_backed (default) | graceful_fallback (explicit
+                             opt-in). Any other value raises ValueError.
         SETTINGS_FILE:       path to user_config.json (weight overrides)
         LOG_LEVEL:           default "INFO"
         CORS_ORIGINS:        comma-separated allowed origins
@@ -56,11 +59,8 @@ class Settings:
         self.model_version: str = os.environ.get(
             "MODEL_VERSION", "latest"
         )
-        self.product_mode: str = os.environ.get(
-            "PRODUCT_MODE", "artifact_backed"  # pragma: no mutate
-        ).strip().lower()
-        if self.product_mode not in {"artifact_backed", "graceful_fallback"}:  # pragma: no mutate
-            self.product_mode = "graceful_fallback"
+        # Fails closed: unknown values raise rather than falling back.
+        self.product_mode: str = resolve_product_mode()  # pragma: no mutate
         self.settings_file: str = os.environ.get(
             "SETTINGS_FILE", "user_config.json"
         )

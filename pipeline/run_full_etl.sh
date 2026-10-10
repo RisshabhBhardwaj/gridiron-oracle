@@ -26,12 +26,19 @@ FORWARD_SEASON=${FORWARD_SEASON:-}
 FORWARD_WEEK=${FORWARD_WEEK:-}
 FORWARD_AS_OF=${FORWARD_AS_OF:-}
 
+# PRODUCT_MODE defaults to artifact_backed (fail closed).  Any value other than
+# the two supported modes is refused, never treated as fallback.
+case "${PRODUCT_MODE:-artifact_backed}" in
+  artifact_backed|graceful_fallback) ;;
+  *) echo "ERROR: PRODUCT_MODE=${PRODUCT_MODE} is not valid. See ml/product_mode.py." >&2; exit 1 ;;
+esac
+
 # Artifact-backed runs are evidence-producing runs.  Do not continue with stale
-# or NULL feature groups after an enrichment failure; graceful fallback remains
-# available for local development without external credentials.
+# or NULL feature groups after an enrichment failure.  Local development opts in
+# to fallback by setting PRODUCT_MODE explicitly; it is never the default.
 require_artifact_source() {
   local label="$1"
-  if [ "${PRODUCT_MODE:-graceful_fallback}" = "artifact_backed" ]; then
+  if [ "${PRODUCT_MODE:-artifact_backed}" = "artifact_backed" ]; then
     echo "ERROR: $label failed in artifact_backed mode; refusing partial feature matrix." >&2
     exit 1
   fi

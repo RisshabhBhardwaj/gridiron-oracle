@@ -621,8 +621,12 @@ class TestStackingInferenceHelpers:
 
     # ── _run_stacking_step — no MLflow configured ────────────────────────────
 
-    def test_stacking_no_mlflow_returns_kalman_est(self):
+    # Each test below asserts the graceful Kalman fallback. The default is now
+    # artifact_backed (fail closed), so every test sets PRODUCT_MODE explicitly.
+
+    def test_stacking_no_mlflow_returns_kalman_est(self, monkeypatch):
         """Default runner (mlflow_tracking_uri='') returns kalman_est_{stat}."""
+        monkeypatch.setenv("PRODUCT_MODE", "graceful_fallback")  # explicit opt-in
         runner = _runner()  # mlflow_tracking_uri="" by default
         df = pd.DataFrame({
             "player_id": ["p1", "p2"],
@@ -631,16 +635,18 @@ class TestStackingInferenceHelpers:
         result = runner._run_stacking_step(df, "receiving_yards", "WR")
         assert list(result) == [55.0, 70.0]
 
-    def test_stacking_no_mlflow_missing_col_returns_zeros(self):
+    def test_stacking_no_mlflow_missing_col_returns_zeros(self, monkeypatch):
         """If kalman_est_{stat} absent and no MLflow → all-zeros."""
+        monkeypatch.setenv("PRODUCT_MODE", "graceful_fallback")  # explicit opt-in
         runner = _runner()
         df = pd.DataFrame({"player_id": ["p1", "p2"]})
         result = runner._run_stacking_step(df, "receiving_yards", "WR")
         assert list(result) == [0.0, 0.0]
 
-    def test_stacking_no_mlflow_never_imports_mlflow(self):
+    def test_stacking_no_mlflow_never_imports_mlflow(self, monkeypatch):
         """Ensure MLflow is never imported when tracking URI is empty."""
         import sys
+        monkeypatch.setenv("PRODUCT_MODE", "graceful_fallback")  # explicit opt-in
         runner = _runner()
         df = pd.DataFrame({"player_id": ["p1"], "kalman_est_passing_yards": [200.0]})
         # Removing mlflow from sys.modules must not cause any error.
@@ -654,12 +660,13 @@ class TestStackingInferenceHelpers:
 
     # ── _run_stacking_step — MLflow path falls back gracefully ───────────────
 
-    def test_stacking_mlflow_exception_falls_back_to_kalman(self):
+    def test_stacking_mlflow_exception_falls_back_to_kalman(self, monkeypatch):
         """If _load_and_run_stacking raises, fall back to kalman_est and warn."""
         import logging
         from unittest.mock import patch
         from ml.train import PipelineRunner
 
+        monkeypatch.setenv("PRODUCT_MODE", "graceful_fallback")  # explicit opt-in
         runner = PipelineRunner(mlflow_tracking_uri="http://fake:9999")
         df = pd.DataFrame({
             "player_id": ["p1"],
@@ -671,11 +678,12 @@ class TestStackingInferenceHelpers:
             result = runner._run_stacking_step(df, "receiving_yards", "WR")
         assert result[0] == 42.0
 
-    def test_stacking_mlflow_no_models_raises_then_falls_back(self):
+    def test_stacking_mlflow_no_models_raises_then_falls_back(self, monkeypatch):
         """RuntimeError from _load_and_run_stacking triggers kalman fallback."""
         from unittest.mock import patch
         from ml.train import PipelineRunner
 
+        monkeypatch.setenv("PRODUCT_MODE", "graceful_fallback")  # explicit opt-in
         runner = PipelineRunner(mlflow_tracking_uri="http://fake:9999")
         df = pd.DataFrame({
             "player_id": ["p1", "p2"],

@@ -88,6 +88,7 @@ import pandas as pd
 
 from backend.app.core.tracing import start_span
 from ml.artifact_manifest import ManifestError, get_manifest
+from ml.product_mode import ARTIFACT_BACKED, resolve_product_mode
 from ml.utils import FEATURE_COLS, suppress_training_warnings
 from ml.reliability import YARDAGE_STATS, split_conformal_interval
 
@@ -422,7 +423,7 @@ class PipelineRunner:
             # deep in conformal calibration.
             artifact_backed = (
                 not dry_run_mode
-                and os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed"
+                and resolve_product_mode() == ARTIFACT_BACKED
             )
             manifest_cells = get_manifest().stack_index if artifact_backed else None
 
@@ -564,8 +565,9 @@ class PipelineRunner:
 
         # Yardage intervals are calibrated from stacked OOF residuals.  This
         # widens/narrows posterior intervals using held-out empirical error,
-        # rather than trusting a parametric posterior alone.
-        if stat in YARDAGE_STATS:
+        # rather than trusting a parametric posterior alone.  Dry runs have no
+        # OOF-backed calibration source, so they keep the Bayesian intervals.
+        if stat in YARDAGE_STATS and not dry_run_mode:
             mc_df = self._apply_conformal_yardage_intervals(
                 mc_df, stacked_estimates, stat=stat, position=position,
             )
@@ -798,7 +800,9 @@ class PipelineRunner:
         Returns:
             np.ndarray of shape (n_players,) — stacked estimates.
         """
-        artifact_backed = os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed"
+        # Dry runs are synthetic and never touch MLflow, the DB or the manifest,
+        # so the artifact gate does not apply to them.
+        artifact_backed = not dry_run_mode and resolve_product_mode() == ARTIFACT_BACKED
 
         def fallback(reason: str) -> np.ndarray:
             """Return an explicitly marked graceful-mode fallback only."""
@@ -1185,7 +1189,7 @@ class PipelineRunner:
 
         if not actual_parts:
             message = f"No stacked OOF residuals for conformal {stat}/{position}"
-            if os.environ.get("PRODUCT_MODE", "graceful_fallback") == "artifact_backed":
+            if resolve_product_mode() == ARTIFACT_BACKED:
                 raise RuntimeError(message)
             logger.warning("%s; retaining Bayesian intervals in fallback mode", message)
             return mc_df

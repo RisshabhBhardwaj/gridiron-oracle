@@ -124,14 +124,16 @@ def test_alert_to_item_preserves_fields():
     assert item.value == 0.1234
 
 
-def test_settings_normalize_asyncpg_and_invalid_mode(monkeypatch):
+def test_settings_normalize_asyncpg_and_explicit_fallback_mode(monkeypatch):
     from backend.app.core.config import Settings
 
     monkeypatch.setenv(
         "DATABASE_URL",
         "postgresql+asyncpg://oracle:oracle@localhost:15439/oracle",
     )
-    monkeypatch.setenv("PRODUCT_MODE", "not-a-real-mode")
+    # PRODUCT_MODE is set explicitly because the default is now artifact_backed
+    # (fail closed). Unknown values raise; see test_product_mode_default.py.
+    monkeypatch.setenv("PRODUCT_MODE", " Graceful_Fallback ")
     monkeypatch.setenv("API_KEY", "  secret  ")
     monkeypatch.setenv("CORS_ORIGINS", "http://a.test,http://b.test")
     monkeypatch.setenv("OTEL_SERVICE_NAME", "gridiron-audit")
