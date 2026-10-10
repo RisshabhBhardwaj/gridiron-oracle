@@ -228,6 +228,18 @@ def test_upstream_error_status_is_passed_through_without_body(monkeypatch, upstr
     assert "invalid request" not in r.text
 
 
+def test_non_json_upstream_success_returns_502_not_500(monkeypatch):
+    _fake_upstream(
+        monkeypatch,
+        lambda request: httpx.Response(200, text="<html>maintenance</html>", request=request),
+    )
+
+    r = client.get("/odds", params={"markets": MARKET})
+
+    assert r.status_code == 502
+    assert r.json() == {"detail": "Odds API error: invalid JSON"}
+
+
 # ---------------------------------------------------------------------------
 # (f) Transport failure -> 502
 # ---------------------------------------------------------------------------
@@ -318,6 +330,16 @@ def test_request_without_x_api_key_is_rejected_when_api_key_is_set(monkeypatch):
     assert missing.status_code == 401
     assert wrong.status_code == 401
     fake.assert_not_called()
+
+
+def test_odds_api_key_is_read_from_env_stripped_and_defaults_empty(monkeypatch):
+    from backend.app.core.config import Settings
+
+    monkeypatch.setenv("ODDS_API_KEY", "  k  ")
+    assert Settings().odds_api_key == "k"
+
+    monkeypatch.delenv("ODDS_API_KEY")
+    assert Settings().odds_api_key == ""
 
 
 def test_request_with_x_api_key_reaches_the_route_when_api_key_is_set(monkeypatch):
