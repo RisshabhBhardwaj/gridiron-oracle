@@ -26,6 +26,14 @@ Also stored outside the tree (local recovery only — never push):
 | `backend/` | Old backend files |
 | `frontend/` | Placeholder |
 
+## Retired scripts (2026-10)
+
+Moved out of `scripts/` on 2026-10-10. No Makefile target, CI job, or doc runs them.
+
+| Folder | Description |
+|--------|-------------|
+| `archive/scripts-2026-10/` | One-time repairs and superseded tools. To restore one, `git mv` it back to `scripts/`. Their `ROOT` is `parents[1]`, so `PYTHONPATH=.` from the repo root is needed for imports, and default output paths (`ROOT / "reports"`) resolve under `archive/`. Do not run them against production without reading them first. |
+
 ## Restore private history (local only)
 
 ```bash

@@ -233,3 +233,21 @@ smoke:
 	# End-to-end smoke test. Requires `make up` first (stack must be running).
 	# Does NOT run in `make ci` automatically — call explicitly after `make up`.
 	bash e2e/smoke_test.sh
+
+# ── Wired one-off scripts (2026-10) ──────────────────────────────────────────
+# Usage and warnings for each target: docs/runbooks/scripts.md
+
+.PHONY: materialize-forward-projections
+materialize-forward-projections: ## WRITES projections and forecast_runs; needs PRODUCT_MODE=artifact_backed. Guards run after the write.
+	@test -n "$(SEASON)" -a -n "$(WEEK)" -a -n "$(FEATURE_RUN_ID)" -a -n "$$DATABASE_URL" || (echo "Usage: make materialize-forward-projections SEASON=2026 WEEK=1 FEATURE_RUN_ID=forward_features_... (DATABASE_URL must be set)"; exit 2)
+	$(PYTHON) scripts/materialize_forward_projections.py --season $(SEASON) --week $(WEEK) --feature-run-id $(FEATURE_RUN_ID) --database-url "$$DATABASE_URL"
+
+.PHONY: materialize-preseason-draft
+materialize-preseason-draft: ## Dry run unless APPLY=1, which WRITES draft_preseason_projections for SEASON and AS_OF.
+	@test -n "$(SEASON)" -a -n "$(AS_OF)" -a -n "$$DATABASE_URL" || (echo "Usage: make materialize-preseason-draft SEASON=2026 AS_OF=2026-09-01 [APPLY=1] (DATABASE_URL must be set)"; exit 2)
+	$(PYTHON) scripts/materialize_preseason_draft_projections.py --season $(SEASON) --as-of $(AS_OF) --database-url "$$DATABASE_URL" $(if $(filter 1,$(APPLY)),,--dry-run)
+
+.PHONY: verify-drive-transitions
+verify-drive-transitions: ## Read-only Q4 pass-rate check against pbp_plays and the fitted Markov model. Needs DATABASE_URL.
+	@test -n "$$DATABASE_URL" || (echo "Usage: make verify-drive-transitions (DATABASE_URL must be set)"; exit 2)
+	$(PYTHON) scripts/verify_drive_transitions.py

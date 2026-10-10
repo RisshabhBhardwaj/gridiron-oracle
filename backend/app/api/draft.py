@@ -23,11 +23,9 @@ _K_DST_NOTE = (
     "Projections are a pre-draft fixed-universe historical PPR prior; "
     "target-season OOF and actuals are refused. "
     "model_rank is the independent board (no market input); blended_rank averages it "
-    "with ADP. On the roster-aware walk-forward harness (reports/draft_walkforward.json, "
-    "reports/draft_board_experiments.json) the independent board beat ADP in 3 of 6 "
-    "seasons and the blend in 5 of 6, so blended_rank is the recommended sort. The "
-    "blend consumes market information and its edge over ADP is therefore a weaker "
-    "claim than an independent board's would be."
+    "with ADP and is the recommended sort. The blend consumes market information, so "
+    "it does not test the model alone. The walk-forward backtests cover too few seasons "
+    "to show that either board reliably beats ADP."
 )
 
 

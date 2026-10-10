@@ -33,6 +33,9 @@ def materialize(season: int, as_of: date, database_url: str, *, dry_run: bool = 
         projections = build_preseason_projections(players, logs, season=season)
         if dry_run:
             return len(projections)
+        if projections.empty:
+            # An empty universe would make keep=[] and DELETE the whole season/as_of slice.
+            raise RuntimeError(f"No preseason projections for {season}; refusing to replace the existing slice")
         with conn.cursor() as cur:
             # Re-running a run must *replace* it, not merge into it. Upsert-only
             # left every player the projection universe had since dropped -- a
