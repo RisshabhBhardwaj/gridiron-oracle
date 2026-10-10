@@ -30,6 +30,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.app.core.config import settings
+from backend.app.services.projection import load_approved_pipeline_run_ids
 
 router = APIRouter(prefix="", tags=["team_game"])
 
@@ -77,6 +78,7 @@ def _row_to_prediction(row: dict) -> TeamGamePrediction:
 
 @router.get("/team-games/{season}/{week}", response_model=TeamGameWeekResponse)
 def team_game_week(season: int, week: int) -> TeamGameWeekResponse:
+    approved = sorted(load_approved_pipeline_run_ids())
     try:
         conn = psycopg2.connect(settings.database_url)
     except Exception as exc:
@@ -88,10 +90,10 @@ def team_game_week(season: int, week: int) -> TeamGameWeekResponse:
                 SELECT game_id, team, opponent, season, week, is_home,
                        points, yards, pass_rate, win_probability, model_run_id
                 FROM team_game_predictions
-                WHERE season = %s AND week = %s
+                WHERE season = %s AND week = %s AND model_run_id = ANY(%s)
                 ORDER BY team
                 """,
-                (season, week),
+                (season, week, approved),
             )
             rows = [dict(r) for r in cur.fetchall()]
     finally:
@@ -111,6 +113,7 @@ def team_game_week(season: int, week: int) -> TeamGameWeekResponse:
 
 @router.get("/team-games/{season}/{week}/{team}", response_model=TeamGamePrediction)
 def team_game_for_team(season: int, week: int, team: str) -> TeamGamePrediction:
+    approved = sorted(load_approved_pipeline_run_ids())
     try:
         conn = psycopg2.connect(settings.database_url)
     except Exception as exc:
@@ -122,9 +125,9 @@ def team_game_for_team(season: int, week: int, team: str) -> TeamGamePrediction:
                 SELECT game_id, team, opponent, season, week, is_home,
                        points, yards, pass_rate, win_probability, model_run_id
                 FROM team_game_predictions
-                WHERE season = %s AND week = %s AND team = %s
+                WHERE season = %s AND week = %s AND team = %s AND model_run_id = ANY(%s)
                 """,
-                (season, week, team.upper()),
+                (season, week, team.upper(), approved),
             )
             row = cur.fetchone()
     finally:
@@ -288,6 +291,7 @@ def simulate_game_drives(
     import numpy as np
     from ml.drive_path import simulate_drive_path
 
+    approved = sorted(load_approved_pipeline_run_ids())
     try:
         conn = psycopg2.connect(settings.database_url)
     except Exception as exc:
@@ -300,9 +304,9 @@ def simulate_game_drives(
                 SELECT game_id, team, opponent, season, week, is_home,
                        points, yards, pass_rate, win_probability, model_run_id
                 FROM team_game_predictions
-                WHERE game_id = %s
+                WHERE game_id = %s AND model_run_id = ANY(%s)
                 """,
-                (game_id,),
+                (game_id, approved),
             )
             rows = [dict(r) for r in cur.fetchall()]
     finally:

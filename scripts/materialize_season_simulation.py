@@ -42,9 +42,11 @@ import psycopg2.extras
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from backend.app.services.projection import load_approved_pipeline_run_ids
 from ml.kalman_tracker import KALMAN_STATS, STAT_SOURCE_COL
 from ml.season_simulator import SeasonSimulator
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+from pipeline.run_guard import approved_array_literal, skip_rows_served_by_another_approved_run
 
 logger = logging.getLogger(__name__)
 
@@ -292,9 +294,11 @@ def materialize(
     conn = psycopg2.connect(database_url)
     try:
         with conn.cursor() as cur:
+            # Rows served under another approved run are never overwritten (see pipeline/run_guard.py).
+            approved = approved_array_literal(load_approved_pipeline_run_ids())
             psycopg2.extras.execute_values(
                 cur,
-                """
+                f"""
                 INSERT INTO season_simulations
                     (season, start_week, player_id, stat, player_name, position, team,
                      mean, p10, p50, p90, p_active, prior_games, prior_active_games,
@@ -309,13 +313,14 @@ def materialize(
                     depth_rank = EXCLUDED.depth_rank, degraded = EXCLUDED.degraded,
                     interval_method = EXCLUDED.interval_method,
                     pipeline_run_id = EXCLUDED.pipeline_run_id, created_at = now()
+                {skip_rows_served_by_another_approved_run("season_simulations", "pipeline_run_id", approved)}
                 """,
                 rows,
             )
             if week_rows:
                 psycopg2.extras.execute_values(
                     cur,
-                    """
+                    f"""
                     INSERT INTO season_simulation_weeks
                         (season, start_week, week, player_id, stat, mean, p10, p50, p90, pipeline_run_id)
                     VALUES %s
@@ -323,13 +328,14 @@ def materialize(
                         mean = EXCLUDED.mean, p10 = EXCLUDED.p10, p50 = EXCLUDED.p50,
                         p90 = EXCLUDED.p90, pipeline_run_id = EXCLUDED.pipeline_run_id,
                         created_at = now()
+                    {skip_rows_served_by_another_approved_run("season_simulation_weeks", "pipeline_run_id", approved)}
                     """,
                     week_rows,
                 )
             if win_rows:
                 psycopg2.extras.execute_values(
                     cur,
-                    """
+                    f"""
                     INSERT INTO season_team_wins
                         (season, start_week, team, wins_mean, wins_p10, wins_p90, pipeline_run_id)
                     VALUES %s
@@ -337,6 +343,7 @@ def materialize(
                         wins_mean = EXCLUDED.wins_mean, wins_p10 = EXCLUDED.wins_p10,
                         wins_p90 = EXCLUDED.wins_p90, pipeline_run_id = EXCLUDED.pipeline_run_id,
                         created_at = now()
+                    {skip_rows_served_by_another_approved_run("season_team_wins", "pipeline_run_id", approved)}
                     """,
                     win_rows,
                 )

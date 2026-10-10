@@ -9,7 +9,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
-from pipeline.schema import normalize_dsn
+from pipeline.schema import EXPLICIT_DB_URL, normalize_dsn
 
 config = context.config
 
@@ -20,11 +20,13 @@ target_metadata = None  # DDL is managed explicitly in revisions.
 
 
 def get_url() -> str:
-    # ``pipeline.schema.upgrade_head(--db-url …)`` sets the Alembic config
-    # option directly.  Respect it when DATABASE_URL is not supplied; the old
-    # implementation discarded it and always migrated the localhost default.
+    # Precedence: an explicit URL handed to pipeline.schema.upgrade_head/stamp_head
+    # (via Config.attributes) > DATABASE_URL > the alembic.ini option > the host default.
+    # The ini always carries sqlalchemy.url, so it must rank below DATABASE_URL for
+    # the CLI, and the explicit argument must rank above both.
     return normalize_dsn(
-        os.environ.get("DATABASE_URL")
+        config.attributes.get(EXPLICIT_DB_URL)
+        or os.environ.get("DATABASE_URL")
         or config.get_main_option("sqlalchemy.url")
         or DEFAULT_HOST_DATABASE_URL
     )

@@ -49,8 +49,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from backend.app.services.projection import load_approved_pipeline_run_ids  # noqa: E402
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, get_manifest  # noqa: E402
 from ml.scoring import SCORED_STATS, score_fantasy  # noqa: E402
+from pipeline.run_guard import approved_array_literal, skip_rows_served_by_another_approved_run  # noqa: E402
 from pipeline.schema import normalize_dsn  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -197,6 +199,7 @@ def _attach_derived_fantasy_projection(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _upsert(conn, df: pd.DataFrame) -> int:
+    """Write this run's rows. A row already served under another approved run is never changed."""
     sql = """
         INSERT INTO projections
             (player_id, game_id, season, week, stat, position,
@@ -232,6 +235,7 @@ def _upsert(conn, df: pd.DataFrame) -> int:
             posterior_samples = EXCLUDED.posterior_samples,
             max_train_season = EXCLUDED.max_train_season,
             interval_method = EXCLUDED.interval_method
+        __GUARD__
     """
     rows = []
     for r in df.itertuples(index=False):
@@ -266,7 +270,11 @@ def _upsert(conn, df: pd.DataFrame) -> int:
             }
         )
     with conn.cursor() as cur:
-        psycopg2.extras.execute_batch(cur, sql, rows, page_size=500)
+        guard = skip_rows_served_by_another_approved_run(
+            "projections", "pipeline_run_id",
+            approved_array_literal(load_approved_pipeline_run_ids()),
+        )
+        psycopg2.extras.execute_batch(cur, sql.replace("__GUARD__", guard), rows, page_size=500)
     conn.commit()
     return len(rows)
 

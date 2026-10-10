@@ -29,11 +29,14 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit, urlunsplit
 
+import numpy as np
 import pandas as pd
 import psycopg2
 import psycopg2.extras
 import pytest
+from fastapi import HTTPException
 
+from backend.app.api import team_game as team_game_api
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, SeasonResult, StepResult
 from pipeline.schema import normalize_dsn, upgrade_head
 from scripts.weekly_refresh import promote_run_id, run_weekly_refresh
@@ -84,26 +87,12 @@ def refresh_db():
     name = f"gor_refresh_it_{uuid.uuid4().hex[:10]}"
     admin.cursor().execute(f'CREATE DATABASE "{name}" TEMPLATE template0')
     url = _with_dbname(admin_url, name)
-    # alembic/env.py prefers $DATABASE_URL over the URL passed to upgrade_head,
-    # so point the environment at the throwaway database while migrating.
-    previous = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = url
-    try:
-        upgrade_head(url)
-    finally:
-        _restore_env("DATABASE_URL", previous)
+    upgrade_head(url)
     try:
         yield url
     finally:
         admin.cursor().execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.close()
-
-
-def _restore_env(key: str, value: str | None) -> None:
-    if value is None:
-        os.environ.pop(key, None)
-    else:
-        os.environ[key] = value
 
 
 @pytest.fixture
@@ -217,6 +206,87 @@ def _first_stack_row(season: int) -> dict:
     return {"player_id": str(row["player_id"]), "game_id": str(row["game_id"]), "week": int(row["week"])}
 
 
+@contextmanager
+def _season_sim_pass():
+    """Step 5 succeeds without fitting models, so the run can reach step 8."""
+    with patch("scripts.materialize_season_simulation.materialize") as sim:
+        yield sim
+
+
+@contextmanager
+def _acceptance_pass():
+    """Step 7 succeeds without reading realized points."""
+    with patch("scripts.verify_season_acceptance.main", return_value=0) as acceptance:
+        yield acceptance
+
+
+def _team_game_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Synthetic training and forward frames for step 6.
+
+    The real Ridge fit and the real team_game_predictions write run on these;
+    only the frame builders (database reads) and the walk-forward residual are replaced.
+    """
+    from ml.team_game_model import FEATURE_COLS
+
+    rng = np.random.default_rng(0)
+    n = 40
+    train = pd.DataFrame({c: rng.normal(size=n) for c in FEATURE_COLS})
+    train["points"] = rng.normal(24.0, 3.0, n)
+    train["total_yards"] = rng.normal(330.0, 40.0, n)
+    train["pass_rate"] = rng.uniform(0.4, 0.7, n)
+    train["season"] = 2025
+    forward_rows = []
+    for team, opponent, is_home in (("AAA", "BBB", 1), ("BBB", "AAA", 0)):
+        row = {c: 0.0 for c in FEATURE_COLS}
+        row.update(
+            game_id="2026_03_BBB_AAA", team=team, opponent=opponent,
+            season=2026, week=3, is_home=is_home,
+        )
+        forward_rows.append(row)
+    return train, pd.DataFrame(forward_rows)
+
+
+@contextmanager
+def _team_game_step_runs():
+    """Step 6 runs for real on the synthetic frames."""
+    train, forward = _team_game_frames()
+    with patch(
+        "scripts.materialize_team_game_predictions.build_team_game_frame", return_value=train
+    ), patch(
+        "scripts.materialize_team_game_predictions.build_team_game_forward_frame", return_value=forward
+    ), patch(
+        "scripts.materialize_team_game_predictions.compute_oof_residual_std", return_value=10.0
+    ):
+        yield
+
+
+def _seed_team_games(url: str, run_id: str, points: tuple[float, float]) -> None:
+    """Week 3 team-game rows for 2026_03_BBB_AAA, tagged with run_id."""
+    _execute(
+        url,
+        """
+        INSERT INTO team_game_predictions
+            (game_id, team, opponent, season, week, is_home, points, yards, pass_rate,
+             win_probability, model_run_id)
+        VALUES ('2026_03_BBB_AAA', 'AAA', 'BBB', 2026, 3, 1, %s, 330.0, 0.55, 0.6, %s),
+               ('2026_03_BBB_AAA', 'BBB', 'AAA', 2026, 3, 0, %s, 320.0, 0.50, 0.4, %s)
+        """,
+        (points[0], run_id, points[1], run_id),
+    )
+
+
+def _served_team_games(url: str, monkeypatch) -> list[tuple[str, str, float]]:
+    """(team, model_run_id, points) for week 3, read through the team-game API endpoint."""
+    monkeypatch.setattr(team_game_api.settings, "database_url", url)
+    try:
+        response = team_game_api.team_game_week(2026, 3)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return []
+        raise
+    return [(g.team, g.model_run_id, g.points) for g in response.games]
+
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 def test_failed_ingest_step_dead_letters_and_does_not_promote(db):
@@ -262,11 +332,6 @@ def test_missing_training_history_fails_loudly_at_season_simulation(db):
     assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (APPROVED,)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="weekly_refresh ignores the return code of step 4 (scripts/weekly_refresh.py:240); "
-    "fixing it changes which rows are promoted, so it is reported, not fixed",
-)
 def test_stack_materialization_refusal_stops_the_refresh(db, tmp_path, monkeypatch):
     manifest = json.loads((ROOT / "releases" / "current_baseline.json").read_text())
     stacks = manifest["artifacts"]["stacks"]
@@ -278,18 +343,55 @@ def test_stack_materialization_refusal_stops_the_refresh(db, tmp_path, monkeypat
     monkeypatch.setenv("BASELINE_MANIFEST_PATH", str(copy))
 
     _seed_schedule(db)
-    with _ingest_mocked(_clean_summary()):
+    _seed_approved_projection(db, player="SEED-APPROVED", game="2026_01_BBB_AAA", week=1)
+    with _ingest_mocked(_clean_summary()), _season_sim_pass() as sim, _team_game_step_runs(), _acceptance_pass() as acceptance:
         rc = run_weekly_refresh(db, season=2026)
 
     assert rc == 1
     assert [source for source, _ in _dead_letters(db)] == ["weekly_refresh/materialize_stack_projections"]
+    sim.assert_not_called()
+    acceptance.assert_not_called()
+    # Step 8 would delete every non-pending 2026 projection; the refusal must stop it first.
+    assert _query(db, "SELECT pipeline_run_id, projection FROM projections WHERE player_id = 'SEED-APPROVED'") == [
+        (APPROVED, 12.0)
+    ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="step 4 upserts over approved rows (scripts/materialize_stack_projections.py:216-229), "
-    "so a refresh that later dead-letters still re-tags served rows; reported, not fixed",
-)
+def test_successful_run_keeps_approved_2024_and_2026_projections(db):
+    """Steps 4, 8, 9 and 10 run for real on a successful refresh.
+
+    Step 4 writes the 2021-2025 stack artifacts. Step 9 prunes every projection
+    row whose run id is not in the keep set. Both an approved 2024 stack row and
+    an approved 2026 row must survive the whole run unchanged.
+    """
+    key = _first_stack_row(season=2024)
+    _execute(
+        db,
+        """
+        INSERT INTO projections (player_id, game_id, season, week, stat, position,
+                                 projection, pipeline_run_id, max_train_season)
+        VALUES (%s, %s, 2024, %s, 'fantasy_ppr', 'QB', 12.0, %s, 2023)
+        """,
+        (key["player_id"], key["game_id"], key["week"], STACK_APPROVED),
+    )
+    _seed_schedule(db)
+    _seed_approved_projection(db, player="SEED-APPROVED", game="2026_01_BBB_AAA", week=1)
+
+    with _ingest_mocked(_clean_summary()), _season_sim_pass(), _team_game_step_runs(), _acceptance_pass():
+        rc = run_weekly_refresh(db, season=2026)
+
+    assert rc == 0
+    assert _query(db, "SELECT pipeline_run_id, projection FROM projections WHERE player_id = 'SEED-APPROVED'") == [
+        (APPROVED, 12.0)
+    ]
+    assert _query(
+        db,
+        "SELECT pipeline_run_id, projection FROM projections "
+        "WHERE player_id = %s AND game_id = %s AND stat = 'fantasy_ppr'",
+        (key["player_id"], key["game_id"]),
+    ) == [(STACK_APPROVED, 12.0)]
+
+
 def test_dead_lettered_refresh_leaves_approved_projection_rows_approved(db):
     key = _first_stack_row(season=2024)
     _execute(
@@ -322,16 +424,13 @@ def test_acceptance_gate_fails_closed_for_an_unplayed_week_without_depth_charts(
     The projection service's depth-chart freshness gate raises 503 before any
     accuracy check runs. Step 7 turns that into a dead letter (weekly_refresh.py:306-309).
     """
-    import pipeline.db_defaults as db_defaults
-    from fastapi import HTTPException
-
     from scripts.verify_season_acceptance import main as verify_main
 
     _seed_schedule(db)
-    # verify_season_acceptance reads DEFAULT_HOST_DATABASE_URL, not the URL it is given
-    # (see scripts/verify_season_acceptance.py:40), so point that default at this database.
-    monkeypatch.setattr(db_defaults, "DEFAULT_HOST_DATABASE_URL", db)
-    monkeypatch.setattr(sys, "argv", ["verify_season_acceptance.py", "--season", "2026", "--start-week", "3"])
+    monkeypatch.setattr(
+        sys, "argv",
+        ["verify_season_acceptance.py", "--season", "2026", "--start-week", "3", "--database-url", db],
+    )
     with pytest.raises(HTTPException) as excinfo:
         verify_main()
     assert excinfo.value.status_code == 503
@@ -415,3 +514,114 @@ def test_promote_and_prune_steps_on_the_real_database(db):
     assert _query(db, "SELECT pipeline_run_id FROM projections WHERE season = 2026") == [(APPROVED,)]
     assert deleted["projections (season >= 2024)"] == 1  # the junk row only
     assert _scalar(db, "SELECT COUNT(*) FROM staging_nflreadpy") == 2  # rosters + unprocessed
+
+
+def test_unmet_season_acceptance_returns_nonzero(db, tmp_path, monkeypatch):
+    """acceptance.met == False must fail the verifier (scripts/verify_season_acceptance.py)."""
+    import pipeline.db_defaults as db_defaults
+    from scripts.verify_season_acceptance import main as verify_main
+
+    # Realized points equal the player index, every projection band is [0, 0.5]:
+    # rank correlation is perfect but interval coverage is 1/30, outside 75-85%.
+    _seed_schedule(db)
+    _execute(
+        db,
+        "INSERT INTO players (id, full_name, position, team) "
+        "SELECT 'P' || i, 'Player ' || i, 'WR', 'AAA' FROM generate_series(0, 29) AS i",
+    )
+    _execute(
+        db,
+        "INSERT INTO game_logs (player_id, game_id, season, week, fantasy_points_ppr) "
+        "SELECT 'P' || i, '2026_03_BBB_AAA', 2026, 3, i FROM generate_series(0, 29) AS i",
+    )
+    projected = [
+        {
+            "player_id": f"P{i}", "player_name": f"Player {i}", "position": "WR", "degraded": False,
+            "fantasy_ppr": {"mean": float(i), "p10": 0.0, "p90": 0.5},
+        }
+        for i in range(30)
+    ]
+    monkeypatch.setattr(db_defaults, "DEFAULT_HOST_DATABASE_URL", db)
+    monkeypatch.setattr(sys, "argv", [
+        "verify_season_acceptance.py", "--season", "2026", "--start-week", "3",
+        "--out", str(tmp_path / "season_acceptance.json"),
+    ])
+    with patch("backend.app.services.projection.ProjectionService") as service:
+        service.return_value.get_season_projections.return_value = projected
+        rc = verify_main()
+
+    assert rc == 1
+
+
+def test_team_game_api_serves_only_approved_rows(db, monkeypatch):
+    _seed_schedule(db)
+    _seed_team_games(db, APPROVED, points=(24.0, 21.0))
+    _execute(
+        db,
+        "UPDATE team_game_predictions SET model_run_id = %s WHERE team = 'BBB'",
+        (PENDING,),
+    )
+
+    assert _served_team_games(db, monkeypatch) == [("AAA", APPROVED, 24.0)]
+
+
+def test_failed_run_leaves_api_visible_team_game_rows_unchanged(db, monkeypatch):
+    """Step 6 must not overwrite approved team-game rows, and a failed run must not promote anything."""
+    _seed_schedule(db)
+    _seed_team_games(db, APPROVED, points=(24.0, 21.0))
+    before = _served_team_games(db, monkeypatch)
+    assert before == [("AAA", APPROVED, 24.0), ("BBB", APPROVED, 21.0)]
+
+    # Step 7 runs for real and fails on the unplayed week's depth-chart gate.
+    with _ingest_mocked(_clean_summary()), _season_sim_pass(), _team_game_step_runs():
+        rc = run_weekly_refresh(db, season=2026)
+
+    assert rc == 1
+    assert [source for source, _ in _dead_letters(db)] == ["weekly_refresh/verify_acceptance"]
+    assert _served_team_games(db, monkeypatch) == before
+
+
+def test_successful_run_promotes_team_game_rows_for_the_api(db, monkeypatch):
+    _seed_schedule(db)
+
+    with _ingest_mocked(_clean_summary()), _season_sim_pass(), _team_game_step_runs(), _acceptance_pass():
+        rc = run_weekly_refresh(db, season=2026)
+
+    assert rc == 0
+    served = _served_team_games(db, monkeypatch)
+    assert [team for team, _, _ in served] == ["AAA", "BBB"]
+    assert {run_id for _, run_id, _ in served} == {APPROVED}
+
+
+def test_step7_reads_the_refresh_database_url_not_the_host_default(db, monkeypatch):
+    """Step 7 must use the DSN the refresh was given, not the host default (scripts/verify_season_acceptance.py:40,55)."""
+    import pipeline.db_defaults as db_defaults
+
+    _seed_schedule(db)
+    monkeypatch.setattr(
+        db_defaults, "DEFAULT_HOST_DATABASE_URL", "postgresql://nobody:nothing@127.0.0.1:1/absent"
+    )
+    with _ingest_mocked(_clean_summary()), _season_sim_pass(), _team_game_step_runs():
+        rc = run_weekly_refresh(db, season=2026)
+
+    assert rc == 1
+    dead = _dead_letters(db)
+    assert [source for source, _ in dead] == ["weekly_refresh/verify_acceptance"]
+    assert "Depth chart freshness gate failed for season=2026" in dead[0][1]
+
+
+def test_upgrade_head_explicit_url_wins_over_database_url_env(monkeypatch):
+    """An explicit URL passed to upgrade_head must beat DATABASE_URL (alembic/env.py:22-30)."""
+    admin_url = _admin_url()
+    admin = psycopg2.connect(admin_url, connect_timeout=3)
+    admin.autocommit = True
+    name = f"gor_refresh_it_{uuid.uuid4().hex[:10]}"
+    admin.cursor().execute(f'CREATE DATABASE "{name}" TEMPLATE template0')
+    url = _with_dbname(admin_url, name)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://nobody:nothing@127.0.0.1:1/absent")
+    try:
+        upgrade_head(url)
+        assert _scalar(url, "SELECT COUNT(*) FROM alembic_version") == 1
+    finally:
+        admin.cursor().execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+        admin.close()
