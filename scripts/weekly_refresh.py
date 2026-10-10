@@ -186,7 +186,7 @@ def run_weekly_refresh(
         if start_week > 18:
             logger.info("Season %d has completed all 18 weeks. Nothing new to refresh.", season)
             return 0
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -207,7 +207,7 @@ def run_weekly_refresh(
         failure = _orchestrator_failure(orch_res)
         if failure is not None:
             raise RuntimeError(f"Orchestrator run failed: {failure}")
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -218,7 +218,7 @@ def run_weekly_refresh(
         logger.info("Step 3: Refreshing fantasy_player_ids bridge...")
         n_ids = upsert_playerids(dsn)
         logger.info("Bridge upserted %d player ID records.", n_ids)
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -240,7 +240,7 @@ def run_weekly_refresh(
             mat_stack_main()
         finally:
             sys.argv = old_argv
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -263,7 +263,7 @@ def run_weekly_refresh(
             database_url=dsn,
             pipeline_run_id=pending_run_id,
         )
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -279,7 +279,7 @@ def run_weekly_refresh(
             database_url=dsn,
             pipeline_run_id=pending_run_id,
         )
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -303,7 +303,7 @@ def run_weekly_refresh(
                 raise RuntimeError(f"verify_season_acceptance returned non-zero exit code: {rc}")
         finally:
             sys.argv = old_argv
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED (acceptance check aborted promotion): %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
@@ -323,7 +323,7 @@ def run_weekly_refresh(
                 )
             conn.commit()
         logger.info("Atomic promotion complete.")
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
