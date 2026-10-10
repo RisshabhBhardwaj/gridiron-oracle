@@ -19,6 +19,7 @@ class FakeCursor:
         self._conn = conn
         self.cursor_factory = cursor_factory
         self.rowcount: int = 0
+        self.description: Optional[list[tuple[str]]] = None
         self._rows: list[Any] = []
 
     def __enter__(self) -> "FakeCursor":
@@ -35,10 +36,13 @@ class FakeCursor:
                 raise exc
         self._rows = []
         self.rowcount = 0
-        for needle, rows, rowcount in self._conn.responses:
+        self.description = None
+        for needle, rows, rowcount, columns in self._conn.responses:
             if needle in normalized:
                 self._rows = [_copy_row(r) for r in rows]
                 self.rowcount = len(self._rows) if rowcount is None else rowcount
+                if columns is not None:
+                    self.description = [(c,) for c in columns]
                 break
 
     def fetchall(self) -> list[Any]:
@@ -61,16 +65,21 @@ class FakeConn:
         self.statements: list[tuple[str, Any]] = []
         # Each batch handed to execute_values: (normalized sql, list of row tuples).
         self.values_calls: list[tuple[str, list[Any]]] = []
-        # (needle, rows to return, rowcount override or None), matched in order.
-        self.responses: list[tuple[str, Any, Optional[int]]] = []
+        # Row lists handed to psycopg2.extras.execute_batch by a test that patches it.
+        self.batches: list[list[Any]] = []
+        # (needle, rows, rowcount override or None, column names or None), first match wins.
+        self.responses: list[tuple[str, Any, Optional[int], Optional[tuple[str, ...]]]] = []
         # needle -> exception raised when a statement containing needle runs.
         self.raise_on: dict[str, BaseException] = {}
         self.cursors: list[FakeCursor] = []
         # DSNs passed to connect() when this conn is handed out by FakeConnFactory.
         self.connect_dsns: list[str] = []
 
-    def respond(self, needle: str, rows: Any = (), rowcount: Optional[int] = None) -> None:
-        self.responses.append((needle, list(rows), rowcount))
+    def respond(
+        self, needle: str, rows: Any = (), rowcount: Optional[int] = None,
+        columns: Optional[tuple[str, ...]] = None,
+    ) -> None:
+        self.responses.append((needle, list(rows), rowcount, columns))
 
     def cursor(self, cursor_factory: Any = None, **_: Any) -> FakeCursor:
         cur = FakeCursor(self, cursor_factory)
