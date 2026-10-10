@@ -155,7 +155,7 @@ export function PlayerDetail() {
       {/* Error — distinguish the honest "no forecast yet" 404 from a real failure */}
       {predictError && predictErr && (
         predictErr instanceof ApiError && predictErr.status === 404 && predictErr.structuredDetail?.forecast_available === false ? (
-          <NoForecastBanner message={predictErr.structuredDetail.message as string | undefined} />
+          <NoForecastBanner season={season} week={week} playerName={name} />
         ) : (
           <ErrorBanner error={predictErr} onRetry={() => void predictRefetch()} />
         )

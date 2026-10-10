@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
+import { apiClient, ApiError } from '@/lib/api-client'
 import type { PredictResponse } from '@/types/api'
 
 interface UsePredictParams {
@@ -19,5 +19,9 @@ export function usePredict({ player, week, season, stat, enabled = true }: UsePr
     },
     enabled: enabled && player.length > 0,
     staleTime: 5 * 60 * 1000,
+    // A 404 is the honest "no forecast yet" answer. Asking again will not change
+    // it and only keeps the spinner up for the length of the retry back-off.
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && error.status === 404) && failureCount < 2,
   })
 }

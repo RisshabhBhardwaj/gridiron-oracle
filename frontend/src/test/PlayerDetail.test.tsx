@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
+import { server } from './handlers'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SearchProvider } from '../context/SearchContext'
 import { PlayerDetail } from '../pages/PlayerDetail'
+import { PlayerSearch } from '../components/PlayerSearch'
 
 function renderPlayer(path = '/player/test-001?week=5&season=2025&stat=receiving_yards&name=Justin+Jefferson') {
   const queryClient = new QueryClient({
@@ -13,6 +16,7 @@ function renderPlayer(path = '/player/test-001?week=5&season=2025&stat=receiving
     <QueryClientProvider client={queryClient}>
       <SearchProvider>
         <MemoryRouter initialEntries={[path]}>
+          <PlayerSearch />
           <Routes>
             <Route path="/player/:player_id" element={<PlayerDetail />} />
           </Routes>
@@ -57,4 +61,39 @@ describe('PlayerDetail', () => {
     })
   })
 
+  describe('when there is no forecast yet (the API answers 404 with forecast_available=false)', () => {
+    function noForecast() {
+      server.use(
+        http.get('/api/predict', () =>
+          HttpResponse.json(
+            {
+              detail: {
+                forecast_available: false,
+                message: "No approved projection for player='Justin Jefferson' week=5 season=2027. The weekly forecast surface is not yet live.",
+              },
+            },
+            { status: 404 },
+          ),
+        ),
+      )
+    }
+
+    it('names the season and week that were asked for, not a hard-coded year', async () => {
+      noForecast()
+      renderPlayer('/player/test-001?week=5&season=2027&stat=receiving_yards&name=Justin+Jefferson')
+      expect(await screen.findByText('No forecast yet for Week 5, 2027')).toBeInTheDocument()
+      expect(screen.getByText(/Week 5 projection for Justin Jefferson in 2027/)).toBeInTheDocument()
+      expect(screen.queryByText(/2026/)).not.toBeInTheDocument()
+    })
+
+    it('does not show the server message, and offers two next steps', async () => {
+      noForecast()
+      renderPlayer('/player/test-001?week=5&season=2025&stat=receiving_yards&name=Justin+Jefferson')
+      await screen.findByText('No forecast yet for Week 5, 2025')
+      expect(screen.queryByText(/player='/)).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /open the draft board/i })).toHaveAttribute('href', '/draft')
+      fireEvent.click(screen.getByRole('button', { name: /search for another player/i }))
+      expect(await screen.findByPlaceholderText(/search players/i)).toBeInTheDocument()
+    })
+  })
 })
