@@ -1,7 +1,7 @@
 # 0006: Forward rows take game context from the target game
 
 Type: Decision
-Status: Accepted for the code; served numbers change only after a materialize or refresh run with production data
+Status: Partly superseded (2026-10-10). The target-game context part stands. The median fallback below was rejected by the owner and is replaced by decision 0008 (line snapshots), which is approved but not yet implemented.
 Last verified against code: 2026-10-10
 Date: recorded 2026-10-10
 
@@ -15,7 +15,7 @@ A pre-kickoff row (`build_forward_week`, `pipeline/feature_engineer.py`) copied 
 
 ## Choice
 Option 2, plus a fallback for missing lines:
-- A missing target total or spread takes the training median: total 45.0, spread 2.5 (`_FWD_LINE_FALLBACK`).
+- A missing target total or spread takes the training median: total 45.0, spread 2.5 (`_FWD_LINE_FALLBACK`). SUPERSEDED by decision 0008.
 - The cached training matrices (1,960 games, 2019-2025) have no missing lines. LightGBM maps an unseen NaN to 0, which would read as a 0-point total, so a missing forward line must not stay null.
 - The served learner discloses `causal_20260821_fixed`. `tests/test_served_learner.py` reads the pin from `releases/current_baseline.json`.
 
@@ -23,5 +23,5 @@ Option 2, plus a fallback for missing lines:
 Lines, rest and venue are schedule facts for the target game, so the target game is the only correct source. Option 3 needs its own decision because it changes what the model sees for opponent-based features.
 
 ## Caveats
-- The fallback values are a choice. Owner to confirm before the VPS materialize run.
+- The median fallback was rejected on 2026-10-10. Replace it per decision 0008.
 - Tests run without a database. The forward-row tests are fake-connection unit tests. A real materialize on production data is still needed to measure the change.
