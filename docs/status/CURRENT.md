@@ -1,72 +1,83 @@
 # Gridiron Oracle: current status
 
-As of 2026-10-10. Checked against the code by running the gates on the branches named below. Items marked unverified were not run here.
+As of 2026-10-11. Checked by running the gates on the commit named below. Items marked unverified were not run.
 Update this file at the end of every working session. See `_internal-docs/_platform/DOCS_STANDARD.md`.
+Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-2026-10-11.md` (local, not committed).
 
-## What works, what is partial, what is unverified
+## State of `main`
 
-| Check | Result (2026-10-10) |
+`main` is at the integrated head `82517f0` (local, fast-forwarded from `integration/gor-2026-10-10-r3`, now deleted). It holds the ML known-bug fixes, refresh correctness, the frontend design system, the audit blocker fixes, the forward-row target-game context, and the owner decisions record (0008). **Nothing is pushed.** `main` is ahead of `origin/main`. Pushing deploys production: Railway services `api` and `weekly-refresh` auto-deploy from `main`.
+
+## What works (verified on 82517f0, 2026-10-11)
+
+| Check | Result |
 |---|---|
-| Candidate `integration/gor-2026-10-10-r2` (133d4b5): CI-equivalent pytest, no DB | 2107 passed, 30 skipped, coverage 80.81% (exit 0) |
-| Candidate: ruff | clean |
-| Candidate: frontend typecheck, 77 tests, build | all pass |
-| Candidate: evidence manifest, gitleaks on `main..HEAD`, CI radon gate (`backend/app ml pipeline`) | pass |
-| Candidate: C++ engine | no engine files changed since `bee3338`; last full ctest run (72 pass) was on the subagent's build |
-| Candidate: pytest with the local Postgres up | 7 failed, 2 errors, all in DB-backed tests that also fail on `989e221`. The local DB has no games, pbp or 2026 rows. |
-| Candidate: `-m integration` against the local Postgres 18 (`gor-pg18`) | 96 passed, 15 skipped (2026 serving data not materialized), exit 0 |
-| `agent/gor-ml-04-forward-game-context` (77bcf7f): targeted forward-row and served-learner tests | 30 passed |
+| Backend, CI-equivalent (no DB): pytest with coverage | 2144 passed, 31 skipped, coverage 81.09% (exit 0) |
+| Ruff | clean |
+| Radon rank F in CI scope (`backend/app ml pipeline`) | none |
+| Frontend typecheck, tests, build | typecheck clean, 13 files / 77 tests pass, build OK |
+| Gitleaks, `main..HEAD` | no leaks |
+| Evidence manifest and serving manifest | OK (32 pinned cells match SHA-256) |
+| Engine (C++) | unchanged since 2026-10-10; ctest not rerun on this head |
+| Backend `-m integration` against local Postgres 18 | 96 passed, 15 skipped (no 2026 serving data locally), exit 0 (earlier run on the candidate) |
+| CI on GitHub | **not run.** No branch has been pushed. |
 
-Not merged to `main`. The merge was blocked by the auto-mode classifier. Nothing is pushed.
+Local DB note: with the local Postgres up (`gor-pg18`), 7 failed and 2 errors in data-dependent tests also fail on `989e221`. The local DB has no games, pbp or 2026 rows. Not caused by these changes.
 
-**Model quality.**
-- Owner-verified claim: on causal out-of-fold evaluation (15 stat/position cells, seasons 2021 to 2025), the model beat both the naive (last season) and trailing-3-games baselines in 74 of 75 cell-seasons. **Reproduction artifact not committed.** A per-cell eval CSV set for the current candidate is not in the repo.
-- How to reproduce: for each cell, run `python -m ml.eval_causal --oof <pinned stack CSV from releases/current_baseline.json> --stat <stat> --position <pos> --out <csv>` (needs the database for baselines), then count rows where `beats_naive` and `beats_trailing3` are both true per cell-season. `scripts/summarize_causal_evals.py` does that aggregation but is hard-coded to older file names.
-- History: in August 2026 an audit found a data leak; one report records the earlier headline falling from 74/75 to 15/75 after the fix, and the manifest labels all evidence "provisional". The 74/75 figure above is the owner-verified result on the rebuilt candidate.
-- Committed, directly readable: `reports/marcel_vs_stack.json` (fantasy points only) has 16 scored position-season cells; the model beat naive and trailing-3 in all 16 and the Marcel baseline in 15.
+## Built, on `main`
 
-**Partly built:** season projections; the draft board (served on an 8-team league, see open questions); the Settings page (saved weights have no consumer in the projection code).
+- Audit blocker fixes: the API-key middleware checks the routed path (a crafted Host header could bypass it; reproduced, now 401); the materializer no longer needs `.git` (uses the platform commit variable, else `unknown`); the Vercel odds handler refuses non-GET.
+- Learner disclosure: `ml/served_learner.py` discloses the pinned `causal_20260821_fixed` (was a stale set).
+- Forward rows take lines, rest, venue and lines-derived script columns from the target game (decision 0006, median fallback now superseded).
+- Refresh correctness and known ML bug fixes from the candidate (see git log).
+- Public Settings read-only (decision 0007); Base UI primitives (decision 0004).
+- Production data: a read-only pg_dump was restored locally as database `gor_prod_20261010` in `gor-pg18`. It is a cut: `games` 2019 to 2026 (2232 rows, 193 with null total line), `pbp_plays` 2019 to 2026, `game_logs`, `feature_matrix`, `depth_charts` 2024 to 2026 only, `projections` 2024 to 2025, `team_game_predictions` 2026. Training history for 2019 to 2025 is in `ml/cache/*.parquet`.
 
-**Not verified:** live deployment health; the Railway cron refresh; in-season weekly refresh (step 7 acceptance rejects unplayed windows, and 2026 stack artifacts are not pinned); the Bayesian/Monte Carlo layer on the served path; engine connection to any live odds feed; accuracy of the drive simulator; GitHub Actions itself (none of the branches has run on GitHub).
+## Unfinished work (committed WIP, NOT gated, NOT merged)
 
-**Known UI gaps:** on the candidate, not on `main`. Still open: the hand-rolled controls listed in `docs/DESIGN_SYSTEM.md`, jargon copy (`docs/USERS.md`), `ErrorBanner` prints a developer command and raw error text, `GameDetail` prints an internal game id, units on the player page are always "yds".
+These branches hold partial work. Each has a worktree-free resume path: `git worktree add /private/tmp/gor-wt/<name> <branch>`.
 
-## In progress
+| Branch | Head | What is there | What is missing |
+|---|---|---|---|
+| `agent/gor-ml-05-causal-fixes` | 286e7b8 | C1: Elo implied probability from pregame snapshot (52e8cde). C2: enrich_elo capped at LAST_COMPLETE_SEASON (3321b21). WIP: OOF/tft/utils changes. | Gate. Run-id uniqueness is only partly done (tft/utils WIP; lgbm, xgb and stacking not confirmed). Optuna, conformal and NaN-target fixes approved but not done. |
+| `agent/gor-fwd-06-prior-games` | 234bae5 | Forward rows built from real prior games (WIP in `build_forward_week`). | Test file rewrite and gate. Decision 0006 rule still applies to lines. |
+| `agent/gor-ops-02` | 8e04b0b | Q3 guard refuses forward builds for played weeks (c656de2). Weekly enrichment scoped to its season (26c68e3). WIP: H-4 source-failure handling in `normalize.py`, `nflreadpy_adapter.py`, new test. | H-3, H-5 (partly), H-6 check, C-1 forward-week acceptance gate. Gate. |
+| `agent/gor-weights-08-wire` | f0346a9 | `ml/bucket_weights.py` only. | Wiring to the API and UI, native-model export (needs the rerun), tests. |
 
-- Candidate `integration/gor-2026-10-10-r2` (133d4b5) is the merge of the ready branches: ML known bugs, refresh correctness, frontend design system. Excludes forward rows, availability commit `04033cf`, and the two leftover branches.
-- `agent/gor-ml-04-forward-game-context` (77bcf7f, off the candidate): serves the approved learner (`causal_20260821_fixed`) and takes lines, rest and venue for forward rows from the target game. Missing lines take training medians. See decision 0006. Full gate not yet run on it.
-- Phase 2 audit passes A/B/C (required by the brief): not started.
+Not started (no commits): the line snapshot table (decision 0008 item 3); the security stream items A-03 (remove `/alerts/ws`), A-04 (non-root container), A-05 (pinned requirements), A-06 (localhost-only ports, Postgres 18 in `infra/`); the odds cutover to `odds.py` with a budget guard; Tailwind 4 and the remaining hand-rolled controls.
 
 ## Next steps (priority order)
 
-1. Owner confirms the open items below. Nothing merges to `main` until then.
-2. Confirm the missing-line fallback (45.0 total, 2.5 spread) before the VPS materialize run (decision 0006).
-3. Run the Phase 2 audit passes on the candidate plus `ml-04` and record evidence under `.agent-work/gridiron/audit/`.
-4. Commit a reproducer for the owner-verified 74/75 count: per-cell eval CSVs from `ml.eval_causal`, aggregated by an updated `scripts/summarize_causal_evals.py`.
-5. Wire or remove the Settings weights (`user_config.json`). No projection code reads them. The design file lists the options.
-6. Verify the engine's live odds connection and show a real book line in the UI (it shows "No line yet" until a live line exists).
-7. Refresh cannot run in season until the step 7 acceptance design and 2026 stack artifacts are decided.
-8. Rewrite jargon UI copy (list in `docs/USERS.md`).
+1. Gate and merge the four WIP branches above, one at a time, each with the full gate. Resolve conflicts in `build_forward_week` (fwd-06 and ops-02 both touch it).
+2. Implement the approved line-snapshot design (decision 0008, item 3), replacing the median fallback in `pipeline/feature_engineer.py`.
+3. Implement the three approved training fixes: Optuna validation on an earlier season (`ml/catboost_model.py` ~L307-312); conformal intervals on prior seasons only (`ml/train.py` ~L1177); NaN fumble target (`pipeline/feature_engineer.py` ~L322).
+4. Run the Elo rerun and refreeze (owner-approved). Inputs: `ml/cache/*.parquet` for 2019 to 2025 and the `games` table. Then `make freeze-baseline`. Long job: give the owner the command or run in background with a log.
+5. Wire the Settings weights (decision 0008, item 6): native-model export during the rerun, a group-weight layer with identity at default weights, and the `fantasy_scoring` and `kelly_fraction` mappings.
+6. Remaining security items (A-03 to A-06) and the odds cutover with a budget guard (decision 0008, item 9).
+7. Frontend: Tailwind 4, remaining hand-rolled controls, copy and error-message fixes (decision 0008, item 13).
+8. Push only when you approve it. Then turn on branch protection with the required checks, after GitHub CI is green on the pushed head.
 
 ## To-dos and reminders
 
 - Keep `docs/DATA_SOURCES.md` documenting `load_pfr_advstats` (a test enforces it).
-- Evidence entries in `releases/artifacts/MANIFEST.json` are all "provisional"; flip to frozen after a clean rebuild reproduces them.
-- `ml/experiments/team_game_model/win_probability_2025_*.json` are unlisted in the manifest (non-blocking note).
+- Evidence entries in `releases/artifacts/MANIFEST.json` are "provisional"; flip to frozen after a clean rebuild reproduces them.
+- The baseline JSON and nine baseline files still contain absolute `/Users/...` paths. Fix them only by re-freezing with the repo-relative writer (`scripts/freeze_baseline.py`), never by hand.
 - `scripts/generate_sleeper_draft_profiles.py` `build_profiles` is rank F (CC > 40). Outside the CI gate, which scans `backend/app ml pipeline` only.
-- The Settings page is view-only unless the build sets `VITE_SETTINGS_EDITABLE=true` (see `docs/runbooks/DEVELOPMENT.md`). The public Vercel build must not set it.
-- Branch protection is not set on `main`. The owner must add required checks in GitHub.
+- The Settings page is view-only unless the build sets `VITE_SETTINGS_EDITABLE=true`. The public Vercel build must not set it.
+- The Sleeper league this app models is "La Hospitale" (8 teams). Its profile data is in the restored `sleeper_league_*` tables.
 
 ## Open questions
 
-- League format. The code and the Sleeper profile generator model an 8-team league: `ml/vor.py` (`LEAGUE_TEAMS = 8`), `backend/app/api/mock_draft.py` (rejects anything but 8 managers), the DraftBoard UI (8 leaguemates), and `scripts/generate_sleeper_draft_profiles.py` (8 owners). The owner's stated format is 18 teams. The owner must say whether the 18-team league is a different league or the product should move to 18. Moving to 18 needs 18 manager profiles and changes the served draft board. Also unconfirmed: TE count (working assumption 1 TE), and whether K and DEF enter the board (the model excludes them by design).
+- K and DEF are in the league's starting lineup but not modelled (out of scope by design). Confirm the owner wants that to stay.
 - Is `verify_db.py` wanted? It was archived on 2026-10-07 as unreferenced.
 
-## Decisions made
+## Decisions
 
 - [0001 Causal walk-forward evaluation](../decisions/0001-causal-walk-forward-evaluation.md)
 - [0002 Artifact-backed, fail-closed serving](../decisions/0002-artifact-backed-fail-closed-serving.md)
 - [0003 Betting and Kelly sizing stay in scope](../decisions/0003-betting-and-kelly-sizing-in-scope.md)
 - [0004 shadcn on Base UI](../decisions/0004-shadcn-on-base-ui.md)
 - [0005 SP0-SP4 rebuild plan retired; built pieces kept](../decisions/0005-sp0-sp2-plan-retired.md)
-- [0006 Forward rows take game context from the target game](../decisions/0006-forward-rows-take-target-game-context.md)
+- [0006 Forward rows take game context from the target game](../decisions/0006-forward-rows-take-target-game-context.md) (median fallback superseded)
 - [0007 Public Settings are read-only](../decisions/0007-public-settings-read-only.md)
+- [0008 Owner decisions of 2026-10-10 and their status](../decisions/0008-owner-decisions-2026-10-10.md)
