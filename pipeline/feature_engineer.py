@@ -573,6 +573,23 @@ CREATE INDEX IF NOT EXISTS idx_feature_matrix_player_season
 # Any field added to FeatureRow is automatically included here and in DB writes.
 _FM_COLS: list[str] = [f.name for f in dc_fields(FeatureRow)]
 
+# Forward rows take these columns from the target game, never from the player's
+# prior-season row, whose values describe a different game: the lines, rest,
+# venue, and the script expectations derived from the lines. All other columns
+# keep their existing source (see build_forward_week).
+_FWD_TARGET_GAME_COLS: frozenset[str] = frozenset({
+    "game_total_line", "spread_line",
+    "days_rest", "is_short_week", "is_bye_prior",
+    "is_dome", "surface_turf",
+    "neutral_script_flag", "expected_pass_attempts", "expected_pass_rate",
+})
+
+# Training data (cached feature matrices, 2019-2025, 1,960 games) has no missing
+# lines, so a forward line that is missing is out of distribution. LightGBM maps
+# an unseen NaN to 0, which would read as a 0-point total. A missing forward line
+# therefore takes the training median.
+_FWD_LINE_FALLBACK: dict[str, float] = {"game_total_line": 45.0, "spread_line": 2.5}
+
 
 # ── Parallel helper (module-level for joblib pickle-ability) ──────────────────
 
@@ -731,7 +748,8 @@ class FeatureEngineer:
         Historical feature building requires completed game logs.  This path is
         intentionally separate: it uses a depth-chart snapshot no newer than
         ``as_of``, retains only a player's latest *prior-season* feature state,
-        and clears every target label.
+        and clears every target label. Game context (lines, rest, venue) comes
+        from the target game (``_FWD_TARGET_GAME_COLS``).
         """
         if as_of.tzinfo is None:
             raise ValueError("as_of must be timezone-aware")
@@ -796,8 +814,12 @@ class FeatureEngineer:
             prior = priors.get(str(row["player_id"]))
             if prior:
                 for name in _FM_COLS:
-                    if name not in identity and not name.startswith("actual_"):
+                    if (name not in identity and not name.startswith("actual_")
+                            and name not in _FWD_TARGET_GAME_COLS):
                         values[name] = prior.get(name)
+            for name, fallback in _FWD_LINE_FALLBACK.items():
+                if values[name] is None:
+                    values[name] = fallback
             values.update({
                 "player_id": str(row["player_id"]), "game_id": str(row["game_id"]),
                 "season": season, "week": week, "position": row["position"], "team": team,

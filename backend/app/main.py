@@ -86,7 +86,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        if settings.api_key and request.url.path not in _AUTH_EXEMPT_PATHS:
+        # scope["path"] is the path the router dispatches on. request.url.path is
+        # rebuilt from the Host header, so a crafted Host could make the two differ.
+        path = request.scope["path"]
+        if settings.api_key and path not in _AUTH_EXEMPT_PATHS:
             provided = request.headers.get("X-API-Key", "")
             if not hmac.compare_digest(provided, settings.api_key):
                 return JSONResponse(
@@ -96,7 +99,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
             # Extra guard for write endpoints: require X-Admin-Key when configured.
             if (
-                request.url.path in _ADMIN_PATHS
+                path in _ADMIN_PATHS
                 and request.method not in _READ_METHODS
                 and settings.admin_api_key
             ):

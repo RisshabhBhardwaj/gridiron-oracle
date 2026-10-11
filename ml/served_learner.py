@@ -7,7 +7,9 @@ from functools import lru_cache
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
-_DEFAULT = _ROOT / "releases" / "candidates" / "causal_20260810" / "CONSTRAINED_STACK_SELECTION.json"
+# The pinned candidate set in releases/current_baseline.json. Keep in step with
+# the baseline's selection_policy artifact; tests/test_served_learner.py checks it.
+_DEFAULT = _ROOT / "releases" / "candidates" / "causal_20260821_fixed" / "CONSTRAINED_STACK_SELECTION.json"
 
 
 @lru_cache(maxsize=4)
