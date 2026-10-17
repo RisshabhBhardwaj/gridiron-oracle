@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
+import { Search } from 'lucide-react'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { useSeasonProjections } from '@/hooks/useSeasonProjections'
 import { useSearch } from '@/context/SearchContext'
@@ -13,8 +14,8 @@ import { positionTone, toneClass } from '@/lib/tokens'
 // the old destinations.
 const QUICK_LINKS = [
   { to: '/projections', label: 'Current Season', meta: 'Weekly boards, team wins, and game forecasts' },
-  { to: '/season', label: 'Season Review', meta: 'Predicted vs. actual accuracy' },
-  { to: '/backtest', label: 'Backtesting', meta: 'Accuracy and calibration' },
+  { to: '/season', label: 'Season Review', meta: 'How our projections compared with reality' },
+  { to: '/backtest', label: 'Backtesting', meta: 'Past results, season by season' },
 ]
 
 export function Home() {
@@ -97,9 +98,7 @@ export function Home() {
               focused ? 'border-accent/50 shadow-[0_0_0_3px_rgb(var(--accent)/0.08)]' : 'border-line',
             )}
           >
-            <svg className="h-5 w-5 flex-shrink-0 text-fg-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 21l-5.2-5.2m1.7-5.1a6.8 6.8 0 11-13.6 0 6.8 6.8 0 0113.6 0z" />
-            </svg>
+            <Search className="size-5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
             <input
               ref={inputRef}
               value={query}

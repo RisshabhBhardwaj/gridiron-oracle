@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ArrowRight, CircleHelp } from 'lucide-react'
 import { useSearch } from '@/context/SearchContext'
 
 interface NoForecastBannerProps {
@@ -32,10 +33,7 @@ export function NoForecastBanner({ season, week, playerName }: NoForecastBannerP
 
       {/* Icon */}
       <div className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg mt-0.5 bg-tone/[0.14] border border-tone/30">
-        <svg className="w-5 h-5 text-tone" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-        </svg>
+        <CircleHelp className="size-5 text-tone" aria-hidden="true" />
       </div>
 
       {/* Text */}
@@ -53,9 +51,7 @@ export function NoForecastBanner({ season, week, playerName }: NoForecastBannerP
             className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:brightness-110 active:scale-[0.98] bg-tone/15 border border-tone/[0.35] text-tone"
           >
             Open the draft board
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
+            <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
           <button
             type="button"

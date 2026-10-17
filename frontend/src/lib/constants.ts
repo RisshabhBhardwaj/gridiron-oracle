@@ -56,6 +56,15 @@ export const STAT_LABELS: Record<string, string> = {
   ppr_points: 'Fantasy Points (PPR)',
 }
 
+// Unit shown next to a projected number. Yardage stats read in yards,
+// fantasy composites in points; counts (receptions, TDs, attempts, …) stand
+// alone, so a "yds" that meant receptions can never ship again.
+export function statUnit(stat: string): string | undefined {
+  if (stat.endsWith('_yards')) return 'yds'
+  if (stat === 'fantasy_ppr' || stat === 'ppr_points') return 'pts'
+  return undefined
+}
+
 // Exactly the 4 stats populated in season_simulation_weeks
 export const SEASON_SIM_STATS = [
   'fantasy_ppr',

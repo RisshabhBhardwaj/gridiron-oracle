@@ -25,9 +25,9 @@ describe('GameDetail', () => {
 
     await waitFor(() => {
       expect(screen.getByText('GB @ MIN')).toBeInTheDocument()
-      expect(screen.getByText(/Final Simulated Result/i)).toBeInTheDocument()
-      expect(screen.getByText('MIN Wins')).toBeInTheDocument()
-      expect(screen.getByText('Drive Sequence Timeline')).toBeInTheDocument()
+      expect(screen.getByText(/Simulated result/i)).toBeInTheDocument()
+      expect(screen.getByText('MIN win')).toBeInTheDocument()
+      expect(screen.getByText('Drives')).toBeInTheDocument()
       expect(screen.getByText('Drive 1')).toBeInTheDocument()
       expect(screen.getByText('Drive 2')).toBeInTheDocument()
     })
@@ -44,7 +44,7 @@ describe('GameDetail', () => {
     fireEvent.click(drive2Btn)
 
     await waitFor(() => {
-      expect(screen.getByText('TOUCHDOWN 🏈')).toBeInTheDocument()
+      expect(screen.getByText('Touchdown')).toBeInTheDocument()
     })
   })
 })

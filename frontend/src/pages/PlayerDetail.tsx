@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import clsx from 'clsx'
+import { ChevronLeft } from 'lucide-react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { usePredict } from '@/hooks/usePredict'
 import { useExplain } from '@/hooks/useExplain'
@@ -14,7 +15,7 @@ import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { useSeasonProjections } from '@/hooks/useSeasonProjections'
-import { STATS, STAT_LABELS, CURRENT_SEASON, LAST_FANTASY_WEEK } from '@/lib/constants'
+import { STATS, STAT_LABELS, CURRENT_SEASON, LAST_FANTASY_WEEK, statUnit } from '@/lib/constants'
 import { useSearch } from '@/context/SearchContext'
 import { ApiError } from '@/lib/api-client'
 import { Panel } from '@/components/shared/Panel'
@@ -103,9 +104,7 @@ export function PlayerDetail() {
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-fg-muted hover:text-fg text-xs font-medium mb-4 transition-colors group"
         >
-          <svg className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <ChevronLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" aria-hidden="true" />
           Back
         </button>
 
@@ -176,9 +175,9 @@ export function PlayerDetail() {
 
           {/* Metric cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <ProjectionCard label="WK Proj"  value={projection} unit="yds" tone="info" />
+            <ProjectionCard label="WK Proj"  value={projection} unit={statUnit(stat)} tone="info" />
             {rosProjection !== null ? (
-              <ProjectionCard label="ROS Proj" value={rosProjection} unit="yds" tone="highlight" />
+              <ProjectionCard label="ROS Proj" value={rosProjection} unit={statUnit(stat)} tone="highlight" />
             ) : null}
             
             {/* Book Line Card (if available) */}
@@ -195,7 +194,9 @@ export function PlayerDetail() {
                   <span className="font-display text-4xl leading-none text-fg">
                     {bookLine.toFixed(1)}
                   </span>
-                  <span className="text-xs font-medium text-fg/50">yds</span>
+                  {statUnit(stat) && (
+                    <span className="text-xs font-medium text-fg/50">{statUnit(stat)}</span>
+                  )}
                 </div>
                 <span className="text-xs font-bold text-tone">
                   {edgePos ? '+' : ''}{edge?.toFixed(1)}% edge
@@ -211,8 +212,8 @@ export function PlayerDetail() {
               />
             )}
 
-            <ProjectionCard label="Floor (p10)" value={floor}      unit="yds" tone="negative" />
-            <ProjectionCard label="Ceiling (p90)" value={ceiling}  unit="yds" tone="positive" />
+            <ProjectionCard label="Bad week (1 in 10)" value={floor}      unit={statUnit(stat)} tone="negative" />
+            <ProjectionCard label="Great week (1 in 10)" value={ceiling}  unit={statUnit(stat)} tone="positive" />
             {/* Pass null straight through. ProjectionCard shows a dash for it. Turning it
                 into 0 would turn "the model said nothing" into "0% bust risk". */}
             <ProjectionCard
@@ -240,11 +241,11 @@ export function PlayerDetail() {
 
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Panel title="Confidence Interval">
-              <PercentileFan p10={floor} p50={projection} p90={ceiling} label={STAT_LABELS[stat] ?? stat} />
+            <Panel title="Likely range">
+              <PercentileFan p10={floor} p50={projection} p90={ceiling} label={STAT_LABELS[stat] ?? stat} unit={statUnit(stat)} />
             </Panel>
 
-            <Panel title="Factor Attributions (SHAP)">
+            <Panel title="What drives this projection">
               {explainLoading && (
                 <div className="flex justify-center py-8">
                   <LoadingSpinner size="md" />
@@ -255,11 +256,11 @@ export function PlayerDetail() {
                   <SHAPChart factors={explainData.top_factors} height={280} />
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
                     <span className="px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08]">
-                      Attribution: {explainData.attribution_source.replaceAll('_', ' ')}
+                      {explainData.attribution_source === 'real_shap' ? 'Full breakdown' : 'Simplified explanation'}
                     </span>
                     {explainData.attribution_source !== 'real_shap' && (
                       <span>
-                        Explanation uses fallback attribution logic rather than a fully loaded SHAP artifact.
+                        A simplified explanation, not the full breakdown.
                       </span>
                     )}
                   </div>
@@ -267,7 +268,7 @@ export function PlayerDetail() {
               )}
               {!explainLoading && explainData && explainData.top_factors.length === 0 && (
                 <p className="text-fg-muted text-sm py-8 text-center">
-                  No SHAP factors available for this player / week.
+                  No explanation available for this player and week yet.
                 </p>
               )}
               {/* The explain endpoint answers 503 when no breakdown is published for this
@@ -281,19 +282,19 @@ export function PlayerDetail() {
             </Panel>
           </div>
 
-          {/* Kalman estimates */}
+          {/* Skill estimates */}
           {(predictData.kalman_ability_estimate != null || predictData.confidence_score != null) && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {predictData.kalman_ability_estimate != null && (
                 <ProjectionCard
-                  label="Kalman Ability"
+                  label="Underlying skill estimate"
                   value={predictData.kalman_ability_estimate}
                   tone="info"
                 />
               )}
               {predictData.kalman_uncertainty != null && (
                 <ProjectionCard
-                  label="Kalman σ"
+                  label="Skill uncertainty"
                   value={predictData.kalman_uncertainty}
                   tone="muted"
                 />

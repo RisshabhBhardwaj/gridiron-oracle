@@ -6,6 +6,7 @@ interface PercentileFanProps {
   p50: number
   p90: number | null
   label?: string
+  unit?: string
 }
 
 function EdgeBox({ tone, name, value, note }: { tone: Tone; name: string; value: number; note: string }) {
@@ -18,7 +19,7 @@ function EdgeBox({ tone, name, value, note }: { tone: Tone; name: string; value:
   )
 }
 
-export function PercentileFan({ p10, p50, p90, label }: PercentileFanProps) {
+export function PercentileFan({ p10, p50, p90, label, unit }: PercentileFanProps) {
   if (p10 == null || p90 == null) {
     return (
       <div className="flex flex-col gap-2">
@@ -40,7 +41,7 @@ export function PercentileFan({ p10, p50, p90, label }: PercentileFanProps) {
 
       {/* Three stat boxes */}
       <div className="grid grid-cols-3 gap-3">
-        <EdgeBox tone="negative" name="Floor" value={p10} note="p10" />
+        <EdgeBox tone="negative" name="Bad week" value={p10} note="1 week in 10" />
 
         {/* Projection */}
         <div
@@ -57,18 +58,18 @@ export function PercentileFan({ p10, p50, p90, label }: PercentileFanProps) {
           <span className="glow-text relative z-10 font-display text-4xl text-tone">
             {p50.toFixed(1)}
           </span>
-          <span className="relative z-10 text-[10px] text-tone/50">p50</span>
+          <span className="relative z-10 text-[10px] text-tone/50">typical</span>
         </div>
 
-        <EdgeBox tone="positive" name="Ceiling" value={p90} note="p90" />
+        <EdgeBox tone="positive" name="Great week" value={p90} note="1 week in 10" />
       </div>
 
       {/* Gradient range bar */}
       <div className="flex flex-col gap-2">
         <div className="flex justify-between text-xs text-fg-muted">
-          <span>Floor (p10)</span>
-          <span className="font-medium text-fg">Range: {totalWidth.toFixed(1)} yds</span>
-          <span>Ceiling (p90)</span>
+          <span>Bad week</span>
+          {unit && <span className="font-medium text-fg">Range: {totalWidth.toFixed(1)} {unit}</span>}
+          <span>Great week</span>
         </div>
 
         <div className="relative h-3 rounded-full overflow-visible bg-surface-overlay/80">

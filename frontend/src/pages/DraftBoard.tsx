@@ -1,14 +1,34 @@
 import { useMemo, useState, useEffect } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useDraftBoard } from '@/hooks/useDraftBoard'
 import { useMockDraftProfiles, useMockDraftPick } from '@/hooks/useMockDraft'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { SkeletonCard } from '@/components/shared/LoadingSpinner'
 import { POSITIONS } from '@/lib/constants'
 import { PositionBadge } from '@/components/PositionBadge'
+import { positionTone } from '@/lib/tokens'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { DraftBoardPlayer, PickedItem } from '@/types/api'
 
 type Mode = 'board' | 'mock'
 type SortKey = 'adp' | 'model_rank' | 'value_vs_adp' | 'model_fantasy_ppr'
+
+const SEASON_ITEMS = [2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019].map((s) => ({
+  value: String(s),
+  label: String(s),
+}))
+const SLOT_ITEMS = Array.from({ length: 8 }, (_, i) => ({
+  value: String(i + 1),
+  label: `Slot ${i + 1}`,
+}))
+const SORT_ITEMS: Array<{ value: SortKey; label: string }> = [
+  { value: 'adp', label: 'ADP' },
+  { value: 'model_rank', label: 'Model rank' },
+  { value: 'value_vs_adp', label: 'Value vs ADP' },
+  { value: 'model_fantasy_ppr', label: 'Model PPR' },
+]
 
 export function DraftBoard() {
   const [mode, setMode] = useState<Mode>('board')
@@ -177,33 +197,17 @@ export function DraftBoard() {
           </div>
           <p className="max-w-2xl text-xs text-fg-muted mt-1">
             {mode === 'board'
-              ? 'Preseason Full PPR projections vs available ADP source. Ranked via 8-team VOR.'
+              ? 'Preseason Full PPR projections vs available ADP source. Ranked by value over a replacement player in an 8-team league.'
               : 'Simulate live snake drafts against real manager reach tendencies & historical timing.'}
           </p>
         </div>
 
-        <div className="flex items-center rounded-lg bg-surface-overlay p-1 border border-line">
-          <button
-            onClick={() => setMode('board')}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-              mode === 'board'
-                ? 'bg-accent text-accent-fg shadow'
-                : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            Draft Board
-          </button>
-          <button
-            onClick={() => setMode('mock')}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-              mode === 'mock'
-                ? 'bg-accent text-accent-fg shadow'
-                : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            Mock Draft Mode
-          </button>
-        </div>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+          <TabsList aria-label="Draft mode">
+            <TabsTrigger value="board">Draft Board</TabsTrigger>
+            <TabsTrigger value="mock">Mock Draft Mode</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Mock Draft Manager Order Configuration */}
@@ -219,19 +223,27 @@ export function DraftBoard() {
               </p>
             )}
             <div className="flex items-center gap-3">
-              <label className="text-xs text-fg-muted">Your Draft Slot:</label>
-              <select
-                value={userSlot}
+              <span className="text-xs text-fg-muted" id="slot-label">Your Draft Slot:</span>
+              <Select
+                items={SLOT_ITEMS.map((item) => ({
+                  ...item,
+                  label: item.value === String(userSlot) ? `${item.label} (You)` : item.label,
+                }))}
+                value={String(userSlot)}
+                onValueChange={(v) => { if (v) setUserSlot(Number(v)) }}
                 disabled={isDraftActive}
-                onChange={(e) => setUserSlot(Number(e.target.value))}
-                className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-2.5 py-1 text-fg"
               >
-                {Array.from({ length: 8 }, (_, i) => i + 1).map((s) => (
-                  <option key={s} value={s}>
-                    Slot {s} {s === userSlot ? '(You)' : ''}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-labelledby="slot-label" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SLOT_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.value === String(userSlot) ? `${item.label} (You)` : item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
               {!isDraftActive ? (
                 <button
@@ -273,16 +285,18 @@ export function DraftBoard() {
                         <button
                           onClick={() => moveManager(idx, 'up')}
                           disabled={idx === 0}
+                          aria-label={`Move ${prof?.display_name || oid} earlier`}
                           className="hover:text-fg disabled:opacity-20"
                         >
-                          ‹
+                          <ChevronLeft className="size-3.5" aria-hidden="true" />
                         </button>
                         <button
                           onClick={() => moveManager(idx, 'down')}
                           disabled={idx === 7}
+                          aria-label={`Move ${prof?.display_name || oid} later`}
                           className="hover:text-fg disabled:opacity-20"
                         >
-                          ›
+                          <ChevronRight className="size-3.5" aria-hidden="true" />
                         </button>
                       </div>
                     )}
@@ -311,7 +325,7 @@ export function DraftBoard() {
                 <span className="font-mono font-bold">Pick #{currentPickNo} (Round {currentRound}):</span>
                 <span>
                   {isUserTurn
-                    ? '🎯 YOUR TURN! Select a player below to draft.'
+                    ? 'Your turn! Pick a player below to draft.'
                     : `On the clock: ${currentManagerName} (Slot ${currentSlot})`}
                 </span>
               </div>
@@ -331,61 +345,58 @@ export function DraftBoard() {
 
       {/* Controls Bar */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-xs text-fg-muted">
-          Draft season
-          <select
-            className="ml-2 rounded-md border border-line bg-surface-raised px-2 py-1.5 text-sm text-fg"
-            aria-label="Draft season"
-            value={season}
-            onChange={(e) => setSeason(Number(e.target.value))}
+        <div className="flex items-center gap-2 text-xs text-fg-muted">
+          <span id="draft-season-label">Draft season</span>
+          <Select
+            items={SEASON_ITEMS}
+            value={String(season)}
+            onValueChange={(v) => { if (v) setSeason(Number(v)) }}
           >
-            {[2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019].map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => setPosition(null)}
-            aria-pressed={position == null}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-              position == null ? 'bg-accent/20 text-accent' : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            ALL
-          </button>
-          {POSITIONS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPosition(p)}
-              aria-pressed={position === p}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                position === p ? 'bg-accent/20 text-accent' : 'text-fg-muted hover:text-fg'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
+            <SelectTrigger aria-labelledby="draft-season-label" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SEASON_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <label className="text-xs text-fg-muted">
-          Sort
-          <select
-            className="ml-2 rounded-md border border-line bg-surface-raised px-2 py-1.5 text-sm text-fg"
+        <ToggleGroup
+          aria-label="Position filter"
+          value={position === null ? ['ALL'] : [position]}
+          onValueChange={(next) => {
+            // Clicking the pressed filter keeps it (single-choice, always one on).
+            if (next.length === 0) return
+            setPosition(next[0] === 'ALL' ? null : next[0])
+          }}
+        >
+          <ToggleGroupItem value="ALL">ALL</ToggleGroupItem>
+          {POSITIONS.map((p) => (
+            <ToggleGroupItem key={p} value={p} tone={positionTone(p)}>
+              {p}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+
+        <div className="flex items-center gap-2 text-xs text-fg-muted">
+          <span id="sort-label">Sort</span>
+          <Select
+            items={SORT_ITEMS}
             value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            onValueChange={(v) => { if (v) setSortKey(v as SortKey) }}
           >
-            <option value="adp">ADP</option>
-            <option value="model_rank">Model rank</option>
-            <option value="value_vs_adp">Value vs ADP</option>
-            <option value="model_fantasy_ppr">Model PPR</option>
-          </select>
-        </label>
+            <SelectTrigger aria-labelledby="sort-label" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <button
           type="button"

@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { Panel } from '@/components/shared/Panel'
 import { Slider } from '@/components/ui/slider'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { toneClass, type Tone } from '@/lib/tokens'
 import { isSettingsEditable } from '@/lib/config'
 import { ApiError } from '@/lib/api-client'
@@ -17,7 +18,7 @@ const DEFAULT_WEIGHTS: FeatureWeights = {
 }
 
 const WEIGHT_META: Record<keyof FeatureWeights, { label: string; icon: LucideIcon; tone: Tone }> = {
-  kalman_form:       { label: 'Kalman Form (Player Ability)', icon: TrendingUp, tone: 'info' },
+  kalman_form:       { label: 'Recent form', icon: TrendingUp, tone: 'info' },
   seasonal_baseline: { label: 'Seasonal Baseline',            icon: CalendarDays, tone: 'positive' },
   matchup:           { label: 'Matchup Quality',              icon: Swords,  tone: 'warning' },
   weather_venue:     { label: 'Weather & Venue',              icon: CloudSun,  tone: 'highlight' },
@@ -165,38 +166,33 @@ export function Settings() {
 
       {/* Fantasy Scoring */}
       <Panel title="Fantasy Scoring Format">
-        <div className="grid grid-cols-3 gap-3">
+        <RadioGroup
+          value={scoring}
+          onValueChange={(v) => { if (editable && v) setScoring(v as FantasyScoring) }}
+          disabled={!editable}
+          aria-label="Fantasy scoring format"
+          className="grid grid-cols-3 gap-3"
+        >
           {SCORING_OPTIONS.map(({ value, label, desc }) => (
-            <button
+            <RadioGroupItem
               key={value}
-              onClick={() => setScoring(value)}
-              disabled={!editable}
-              aria-pressed={scoring === value}
-              className={clsx(
-                toneClass('info'),
-                'flex flex-col gap-1 p-4 rounded-xl text-left transition-all duration-150 border disabled:cursor-not-allowed',
-                scoring === value
-                  ? 'bg-tone/10 border-tone/40 shadow-[0_0_16px_rgb(var(--tone)/0.1)]'
-                  : 'bg-surface-overlay/30 border-white/[0.06] hover:border-white/15',
-              )}
-            >
-              <span className={clsx('text-sm font-bold', scoring === value ? 'text-tone' : 'text-fg-muted')}>
-                {label}
-              </span>
-              <span className="text-[10px] text-fg-muted">{desc}</span>
-            </button>
+              value={value}
+              label={label}
+              description={desc}
+              variant="card"
+            />
           ))}
-        </div>
+        </RadioGroup>
       </Panel>
 
       {/* Engine Exposure Cap */}
-      <Panel title="Engine Exposure Cap">
+      <Panel title="Max bet size">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-fg font-medium">Max bankroll fraction per bet</p>
+              <p className="text-sm text-fg font-medium">Largest slice of the bankroll allowed on one bet</p>
               <p className="text-[10px] text-fg-muted mt-0.5">
-                Fractional Kelly: default 25% — 94% log-growth, 50% vol of full Kelly
+                Lower is safer. The default is 25%.
               </p>
             </div>
             <span className={clsx(toneClass('warning'), 'glow-text font-display text-3xl text-tone')}>

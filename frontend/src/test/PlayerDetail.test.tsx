@@ -49,16 +49,16 @@ describe('PlayerDetail', () => {
 
   it('renders SHAPChart with plain-English factor labels visible', async () => {
     renderPlayer()
-    // The SHAP section heading confirms explain data was fetched and chart rendered.
+    // The section heading confirms explain data was fetched and chart rendered.
     // recharts renders labels in SVG <text> nodes; we verify the section heading
     // and that no loading spinner is displayed for that section.
     await waitFor(() =>
-      expect(screen.getByText('Factor Attributions (SHAP)')).toBeInTheDocument(),
+      expect(screen.getByText('What drives this projection')).toBeInTheDocument(),
     )
-    // Explain data loaded: the "No SHAP factors available" message should NOT appear
+    // Explain data loaded: the "no explanation" message should NOT appear
     await waitFor(() => {
       expect(
-        screen.queryByText(/No SHAP factors available/i),
+        screen.queryByText(/no explanation available/i),
       ).not.toBeInTheDocument()
     })
   })

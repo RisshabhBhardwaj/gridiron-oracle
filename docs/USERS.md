@@ -32,6 +32,12 @@ Last verified against code: 2026-10-07 (routes and copy read; no user research e
 Money or time saved, league outcomes, user retention. No usage tracking or result capture was found.
 
 ## Jargon in the UI (file:line, suggested wording)
+
+Status 2026-10-17 (`agent/gor-frontend-odds`, unmerged): every row below is
+fixed in the UI — ErrorBanner no longer shows commands or raw errors, GameDetail
+no longer shows the game id, player-page units follow the stat, and the panel,
+card and table wordings use the suggested plain words. The table is kept as the
+record of what changed.
 | Where | Now | Suggest |
 |---|---|---|
 | `frontend/src/pages/Settings.tsx:13` | Kalman Form (Player Ability) | Recent form |

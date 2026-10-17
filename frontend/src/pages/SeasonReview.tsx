@@ -7,6 +7,14 @@ import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { positionTone, toneClass, type Tone } from '@/lib/tokens'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+
+const SEASON_ITEMS = [
+  { value: '2025', label: '2025 Season' },
+  { value: '2024', label: '2024 Season' },
+]
+const STAT_ITEMS = BACKTEST_STATS.map((s) => ({ value: s, label: STAT_LABELS[s] || s }))
 
 function MetricCard({
   title,
@@ -58,12 +66,6 @@ export function SeasonReview() {
     return backtest.by_season.filter((m) => m.season === selectedSeason)
   }, [backtest, selectedSeason])
 
-  const togglePosition = (pos: string) => {
-    setSelectedPositions((prev) =>
-      prev.includes(pos) ? (prev.length === 1 ? prev : prev.filter((p) => p !== pos)) : [...prev, pos],
-    )
-  }
-
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -78,31 +80,36 @@ export function SeasonReview() {
             </span>
           </div>
           <p className="text-xs text-fg-muted mt-1">
-            Predicted vs. realized outcome audit and uncertainty calibration over historical game logs.
+            How our past projections compared with what actually happened.
           </p>
         </div>
 
-        {/* Season selector limited to historical ground truth 2024-2025 */}
+        {/* Season selector limited to historical results 2024-2025 */}
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-fg-muted">Evaluation Season:</label>
-          <select
-            value={selectedSeason}
-            onChange={(e) => setSelectedSeason(Number(e.target.value))}
-            className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-3 py-1.5 text-fg"
+          <span className="text-xs font-medium text-fg-muted" id="season-label">Season:</span>
+          <Select
+            items={SEASON_ITEMS}
+            value={String(selectedSeason)}
+            onValueChange={(v) => { if (v) setSelectedSeason(Number(v)) }}
           >
-            <option value={2025}>2025 Season</option>
-            <option value={2024}>2024 Season</option>
-          </select>
+            <SelectTrigger aria-labelledby="season-label" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SEASON_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      {/* Data Floor / Ground-truth Notice */}
+      {/* Results notice */}
       <div className="p-4 rounded-xl bg-surface-overlay/60 border border-line/80 flex items-start gap-3">
-        <span className="text-info text-base font-bold">ℹ</span>
         <div className="text-xs text-fg-muted leading-relaxed">
-          <span className="font-semibold text-fg">Evaluation Data Floor: </span>
-          Accuracy evaluation benchmarks fitted projections against realized ground-truth in <code className="text-fg">game_logs</code> (2024–2025 only). 
-          Forward projections for the current season{currentSeason ? ` (${currentSeason})` : ''} live on the <strong className="text-accent">Current Season</strong> page.
+          <span className="font-semibold text-fg">Past results only (2024–2025): </span>
+          These scores compare our projections against what actually happened in those seasons.
+          This season{currentSeason ? ` (${currentSeason})` : ''} is on the <strong className="text-accent">Current Season</strong> page.
         </div>
       </div>
 
@@ -111,38 +118,35 @@ export function SeasonReview() {
       {/* Control bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-surface-raised/40 p-4 rounded-xl border border-line/40">
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-fg-muted">Target Stat:</label>
-          <select
+          <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
+          <Select
+            items={STAT_ITEMS}
             value={selectedStat}
-            onChange={(e) => setSelectedStat(e.target.value)}
-            className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-2.5 py-1.5 text-fg"
+            onValueChange={(v) => { if (v) setSelectedStat(v) }}
           >
-            {BACKTEST_STATS.map((s) => (
-              <option key={s} value={s}>
-                {STAT_LABELS[s] || s}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STAT_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {POSITIONS.map((pos) => {
-            const active = selectedPositions.includes(pos)
-            return (
-              <button
-                key={pos}
-                onClick={() => togglePosition(pos)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition-colors ${
-                  active
-                    ? 'bg-accent text-accent-fg border-transparent'
-                    : 'border-line text-fg-muted hover:border-line-strong'
-                }`}
-              >
-                {pos}
-              </button>
-            )
-          })}
-        </div>
+        <ToggleGroup
+          multiple
+          aria-label="Positions"
+          value={selectedPositions}
+          onValueChange={(next) => { if (next.length > 0) setSelectedPositions(next) }}
+        >
+          {POSITIONS.map((pos) => (
+            <ToggleGroupItem key={pos} value={pos} tone={positionTone(pos)}>
+              {pos}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
 
       {/* Main Content */}
@@ -155,21 +159,21 @@ export function SeasonReview() {
           {/* Top Aggregate Metrics */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
-              title="Mean Absolute Error (MAE)"
+              title="Average miss"
               value={backtest?.overall_mae != null ? backtest.overall_mae.toFixed(2) : '—'}
-              subtitle="Average prediction error magnitude"
+              subtitle="Mean absolute error, in points"
               tone="info"
             />
             <MetricCard
-              title="Root Mean Squared Error (RMSE)"
+              title="Big-miss penalty"
               value={backtest?.overall_rmse != null ? backtest.overall_rmse.toFixed(2) : '—'}
-              subtitle="Penalizes large deviations"
+              subtitle="Root mean squared error; large misses count extra"
               tone="positive"
             />
             <MetricCard
-              title="Continuous Ranked Prob Score (CRPS)"
+              title="Range quality"
               value={backtest?.overall_crps != null ? backtest.overall_crps.toFixed(2) : '—'}
-              subtitle="Probabilistic distribution quality"
+              subtitle="How well the predicted range matched reality"
               tone="highlight"
             />
             <MetricCard
@@ -184,7 +188,7 @@ export function SeasonReview() {
           <div className="rounded-xl overflow-hidden bg-panel-gradient border border-white/[0.06]">
             <div className="p-4 border-b border-line/50 flex items-center justify-between">
               <h2 className="text-sm font-bold text-fg">
-                Positional Performance Audit ({selectedSeason})
+                By position ({selectedSeason})
               </h2>
               <span className="text-xs text-fg-muted">Stat: {STAT_LABELS[selectedStat] || selectedStat}</span>
             </div>
@@ -195,12 +199,12 @@ export function SeasonReview() {
                   <tr className="border-b border-line/60 bg-surface-overlay/40 text-fg-muted font-medium">
                     <th className="px-4 py-3">Position</th>
                     <th className="px-4 py-3">Games</th>
-                    <th className="px-4 py-3">Stack MAE</th>
-                    <th className="px-4 py-3">Stack RMSE</th>
-                    <th className="px-4 py-3">Stack CRPS</th>
-                    <th className="px-4 py-3">Naive MAE</th>
-                    <th className="px-4 py-3">80% Coverage</th>
-                    <th className="px-4 py-3">Gain vs Baseline</th>
+                    <th className="px-4 py-3">Our average miss</th>
+                    <th className="px-4 py-3">Our big-miss penalty</th>
+                    <th className="px-4 py-3">Our range quality</th>
+                    <th className="px-4 py-3">Simple-method average miss</th>
+                    <th className="px-4 py-3">In-range rate</th>
+                    <th className="px-4 py-3">Better than simple method</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/30">

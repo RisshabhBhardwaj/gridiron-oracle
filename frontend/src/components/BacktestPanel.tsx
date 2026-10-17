@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import type { BacktestResponse } from '@/types/api'
+import { STAT_LABELS } from '@/lib/constants'
 import { toneClass, type Tone } from '@/lib/tokens'
 
 interface BacktestPanelProps { data: BacktestResponse }
@@ -55,25 +56,25 @@ export function BacktestPanel({ data }: BacktestPanelProps) {
       <MetricCard
         label="MAE"
         value={safeFixed(data.overall_mae, 2)}
-        subtext="Mean Absolute Error"
+        subtext="Average miss, in points"
         tone="info"
       />
       <MetricCard
         label="RMSE"
         value={safeFixed(data.overall_rmse, 2)}
-        subtext="Root Mean Squared Error"
+        subtext="Large misses count extra"
         tone="info"
       />
       <MetricCard
         label="CRPS"
         value={safeFixed(data.overall_crps, 3)}
-        subtext="Probabilistic accuracy"
+        subtext="How well the predicted range matched reality"
         tone="highlight"
       />
       <MetricCard
         label="Brier Score"
         value={safeFixed(data.brier_score, 3)}
-        subtext={data.metric_notes?.brier_score ?? 'Binary-event calibration when available'}
+        subtext={data.metric_notes?.brier_score ?? 'Probability accuracy (lower is better)'}
         tone="highlight"
       />
       <MetricCard
@@ -85,7 +86,7 @@ export function BacktestPanel({ data }: BacktestPanelProps) {
       <MetricCard
         label="Sharpe Ratio"
         value={safeFixed(data.sharpe_ratio, 2)}
-        subtext={data.metric_notes?.sharpe_ratio ?? 'Risk-adjusted return'}
+        subtext={data.metric_notes?.sharpe_ratio ?? 'Return per unit of risk'}
         tone={sharpeTone}
       />
       <MetricCard
@@ -97,7 +98,7 @@ export function BacktestPanel({ data }: BacktestPanelProps) {
       <MetricCard
         label="Seasons"
         value={data.seasons.length > 0 ? data.seasons.join(', ') : '—'}
-        subtext={`${data.stat} · ${data.positions.join('/')} · ${data.data_source}`}
+        subtext={`${STAT_LABELS[data.stat] ?? data.stat} · ${data.positions.join(', ')}`}
       />
     </div>
   )
