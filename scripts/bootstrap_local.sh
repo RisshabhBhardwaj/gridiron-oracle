@@ -13,7 +13,7 @@ python3.11 -m venv "${VENV_DIR}"
 source "${VENV_DIR}/bin/activate"
 
 python -m pip install --upgrade pip
-python -m pip install -r "${ROOT_DIR}/backend/requirements.txt"
+python -m pip install -r "${ROOT_DIR}/backend/requirements-dev.txt"
 npm --prefix "${ROOT_DIR}/frontend" ci
 
 printf '\nBootstrap complete.\n'

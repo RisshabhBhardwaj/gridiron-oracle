@@ -48,6 +48,20 @@ RUN chmod +x /app/entrypoint.sh
 # Build C++ engine
 RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
 
+# Drop build tools from the runtime layer. curl stays: the compose
+# healthcheck probes /health with it. git is safe to remove — the
+# materializer reads the platform commit variable, never `.git`.
+RUN apt-get purge -y build-essential cmake git \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Run as non-root (audit A-04). 8000 is unprivileged, so uvicorn needs no
+# capabilities. /app stays owned by appuser so entrypoint.sh can seed
+# SETTINGS_FILE on a fresh volume.
+RUN useradd --system --uid 10001 --create-home appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 # Seeds SETTINGS_FILE onto its volume when empty, then execs uvicorn.
 # Railway injects $PORT; falls back to 8000 for local docker-compose.
