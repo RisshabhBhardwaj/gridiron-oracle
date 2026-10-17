@@ -66,6 +66,7 @@ import psycopg2.extras
 from psycopg2.extras import execute_values
 
 from scraper.adapters.nflreadpy_adapter import _coerce_row, _psycopg2_dsn
+from pipeline.line_snapshots import causal_line_for
 from ml.kalman_tracker import KalmanFeatureEngineer
 # This threshold is legal only for *completed prior games* used in form
 # estimation.  It must never decide whether the target game enters a model.
@@ -584,11 +585,12 @@ _FWD_TARGET_GAME_COLS: frozenset[str] = frozenset({
     "neutral_script_flag", "expected_pass_attempts", "expected_pass_rate",
 })
 
-# Training data (cached feature matrices, 2019-2025, 1,960 games) has no missing
-# lines, so a forward line that is missing is out of distribution. LightGBM maps
-# an unseen NaN to 0, which would read as a 0-point total. A missing forward line
-# therefore takes the training median.
-_FWD_LINE_FALLBACK: dict[str, float] = {"game_total_line": 45.0, "spread_line": 2.5}
+# A missing forward line is out of distribution for the trained models
+# (training never saw a missing line, and LightGBM would map an unseen NaN to
+# 0, which reads as a 0-point total). It therefore resolves through the causal
+# line history: the latest snapshot known before as-of, else a line implied by
+# pregame Elo only (decision 0008, item 3). See pipeline/line_snapshots.py and
+# build_forward_week below. There is no fixed median fallback.
 
 
 # ── Parallel helper (module-level for joblib pickle-ability) ──────────────────
@@ -671,7 +673,9 @@ class FeatureEngineer:
                     gl.passing_air_yards, gl.receiving_yards_after_catch,
                     gl.offense_pct,
                     g.home_team, g.away_team, g.roof, g.surface,
-                    g.temp, g.wind, g.total_line, g.spread_line,
+                    g.temp, g.wind,
+                    COALESCE(snap.total_line, g.total_line) AS total_line,
+                    COALESCE(snap.spread_line, g.spread_line) AS spread_line,
                     g.home_rest, g.away_rest,
                     g.precipitation_bucket,
                     psp.height_inches AS player_height,
@@ -683,6 +687,19 @@ class FeatureEngineer:
                     pf.opp_pressure_rate_pbp
                 FROM game_logs gl
                 JOIN games g ON gl.game_id = g.id
+                -- Causal line input (decision 0008, item 3): prefer the latest
+                -- snapshot captured before kickoff over the games row, which a
+                -- later refresh may have overwritten with a post-kickoff move.
+                -- Games with no snapshot yet (all history predates snapshots)
+                -- read the stored closing line exactly as before.
+                LEFT JOIN LATERAL (
+                    SELECT ls.total_line, ls.spread_line
+                    FROM game_line_snapshots ls
+                    WHERE ls.game_id = g.id
+                      AND (g.kickoff_at IS NULL OR ls.captured_at < g.kickoff_at)
+                    ORDER BY ls.captured_at DESC
+                    LIMIT 1
+                ) snap ON TRUE
                 LEFT JOIN players p ON gl.player_id = p.id
                 LEFT JOIN player_season_profiles psp
                   ON psp.player_id = gl.player_id AND psp.effective_season = gl.season
@@ -742,6 +759,7 @@ class FeatureEngineer:
 
     def build_forward_week(
         self, *, season: int, week: int, as_of: datetime,
+        line_elo: Any = None,
     ) -> int:
         """Build pre-kickoff feature rows from only an as-of roster snapshot.
 
@@ -750,6 +768,12 @@ class FeatureEngineer:
         ``as_of``, retains only a player's latest *prior-season* feature state,
         and clears every target label. Game context (lines, rest, venue) comes
         from the target game (``_FWD_TARGET_GAME_COLS``).
+
+        A line the target game does not carry resolves through the causal line
+        history (latest snapshot known before ``as_of``, else a pregame-Elo
+        implied line — decision 0008, item 3), never a fixed median.
+        ``line_elo`` injects the fitted Elo system (tests); when omitted the
+        shared ``get_elo_system()`` singleton is used.
         """
         if as_of.tzinfo is None:
             raise ValueError("as_of must be timezone-aware")
@@ -758,7 +782,7 @@ class FeatureEngineer:
             cur.execute(
                 """
                 SELECT g.id AS game_id, g.home_team, g.away_team, g.roof, g.surface,
-                       g.total_line, g.spread_line, g.home_rest, g.away_rest,
+                       g.total_line, g.spread_line, g.home_rest, g.away_rest, g.kickoff_at,
                        dc.player_id, dc.position, dc.team, p.height AS player_height,
                        p.weight AS player_weight, p.draft_round, p.draft_number
                 FROM games g
@@ -795,6 +819,9 @@ class FeatureEngineer:
             priors = {str(row["player_id"]): dict(row) for row in cur.fetchall()}
 
         feature_rows: list[FeatureRow] = []
+        # One causal line lookup per game (not per player): the snapshot/Elo
+        # resolution is identical for every row of the same game.
+        _causal_lines_by_game: dict[str, Any] = {}
         identity = {"player_id", "game_id", "season", "week", "position", "team", "opponent_team", "is_home", "as_of"}
         for row in candidates:
             team = str(row["team"])
@@ -817,9 +844,26 @@ class FeatureEngineer:
                     if (name not in identity and not name.startswith("actual_")
                             and name not in _FWD_TARGET_GAME_COLS):
                         values[name] = prior.get(name)
-            for name, fallback in _FWD_LINE_FALLBACK.items():
-                if values[name] is None:
-                    values[name] = fallback
+            if values["game_total_line"] is None or values["spread_line"] is None:
+                game_id = str(row["game_id"])
+                causal = _causal_lines_by_game.get(game_id)
+                if causal is None:
+                    causal = causal_line_for(
+                        self._conn,
+                        game_id=game_id,
+                        as_of=as_of,
+                        home_team=str(row["home_team"]),
+                        away_team=str(row["away_team"]),
+                        season=season,
+                        week=week,
+                        kickoff_at=row.get("kickoff_at"),
+                        elo=line_elo,
+                    )
+                    _causal_lines_by_game[game_id] = causal
+                if values["game_total_line"] is None:
+                    values["game_total_line"] = causal.total_line
+                if values["spread_line"] is None:
+                    values["spread_line"] = causal.spread_line
             values.update({
                 "player_id": str(row["player_id"]), "game_id": str(row["game_id"]),
                 "season": season, "week": week, "position": row["position"], "team": team,
