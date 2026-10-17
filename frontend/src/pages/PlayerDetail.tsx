@@ -174,6 +174,13 @@ export function PlayerDetail() {
       {predictData && (
         <div className="flex flex-col gap-5 animate-fade-in">
 
+          {/* Adjusted numbers are marked: a weight change is a what-if, not a retest */}
+          {predictData.weighting === 'user' && (
+            <p role="note" className="text-xs text-fg-muted leading-relaxed">
+              Adjusted for your saved weights — a what-if, not checked against past results.
+            </p>
+          )}
+
           {/* Metric cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <ProjectionCard label="WK Proj"  value={projection} unit="yds" tone="info" />
@@ -230,7 +237,11 @@ export function PlayerDetail() {
               subtext={predictData.bust_probability == null ? 'Not available for this stat' : undefined}
             />
             <ProjectionCard
-              label="Fantasy PPR"
+              label={
+                predictData.fantasy_scoring === 'half_ppr' ? 'Fantasy Half-PPR'
+                : predictData.fantasy_scoring === 'standard' ? 'Fantasy Standard'
+                : 'Fantasy PPR'
+              }
               value={predictData.projection.ppr_points}
               unit="pts"
               tone="highlight"

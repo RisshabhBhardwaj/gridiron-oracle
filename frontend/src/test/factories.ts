@@ -51,6 +51,9 @@ function makePlayer(overrides?: Partial<WeekPlayerProjection>): WeekPlayerProjec
     fantasy_ceiling: 24.7,
     model_version: 'v1.0.0-test',
     data_freshness: freshTimestamp(),
+    weighting: 'default',
+    weights_reason: 'defaults',
+    fantasy_scoring: 'ppr',
     ...overrides,
   }
 }
@@ -177,6 +180,9 @@ export const factories = {
       attribution_source: 'model_artifact',
       model_version: 'v1.0.0-test',
       data_freshness: ts,
+      weighting: 'default',
+      weights_reason: 'defaults',
+      fantasy_scoring: 'ppr',
     }
   },
 
@@ -301,6 +307,7 @@ export const factories = {
       fantasy_scoring: 'ppr',
       engine_exposure_cap: 0.25,
       weight_preset_name: 'Default',
+      settings_source: 'file',
     }
   },
 

@@ -209,4 +209,33 @@ describe('PlayerDetail', () => {
     await user.keyboard('{ArrowDown}{Enter}')
     await waitFor(() => expect(stats.length).toBeGreaterThan(2))
   })
+
+  describe('weighting label (weights-08 item 6)', () => {
+    it('says nothing about weights for a default response and keeps the PPR label', async () => {
+      renderPlayer()
+      await waitFor(() => expect(screen.getByText(/WK Proj/i)).toBeInTheDocument())
+      expect(screen.queryByRole('note')).not.toBeInTheDocument()
+      expect(screen.getByText('Fantasy PPR')).toBeInTheDocument()
+    })
+
+    it('marks user-weighted numbers as a what-if', async () => {
+      server.use(
+        http.get('/api/predict', () =>
+          HttpResponse.json({ ...factories.predictResponse(), weighting: 'user', weights_reason: null }),
+        ),
+      )
+      renderPlayer()
+      expect(await screen.findByRole('note')).toHaveTextContent(/adjusted for your saved weights/i)
+    })
+
+    it('names the scoring on the fantasy card when it is not PPR', async () => {
+      server.use(
+        http.get('/api/predict', () =>
+          HttpResponse.json({ ...factories.predictResponse(), fantasy_scoring: 'half_ppr' }),
+        ),
+      )
+      renderPlayer()
+      expect(await screen.findByText('Fantasy Half-PPR')).toBeInTheDocument()
+    })
+  })
 })

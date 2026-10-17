@@ -59,6 +59,24 @@ STANDARD_PPR = LeagueRules()
 HALF_PPR = LeagueRules(pts_per_reception=0.5)
 STANDARD_NON_PPR = LeagueRules(pts_per_reception=0.0)
 
+#: Settings `fantasy_scoring` value -> scoring rules. The naming trap is
+#: real: Settings "standard" means no reception points (STANDARD_NON_PPR),
+#: not STANDARD_PPR.
+SCORING_RULES: dict[str, LeagueRules] = {
+    "ppr": STANDARD_PPR,
+    "half_ppr": HALF_PPR,
+    "standard": STANDARD_NON_PPR,
+}
+
+
+def rules_for_scoring(name: str) -> LeagueRules:
+    """Return the LeagueRules for a Settings `fantasy_scoring` value.
+
+    Raises KeyError for anything outside ppr | half_ppr | standard, so a
+    misspelled scoring can never silently score as PPR.
+    """
+    return SCORING_RULES[name]
+
 # component stat name -> LeagueRules field name
 _STAT_TO_RULE_FIELD: dict[str, str] = {
     "receptions": "pts_per_reception",

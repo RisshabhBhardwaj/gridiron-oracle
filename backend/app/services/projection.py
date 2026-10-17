@@ -220,6 +220,12 @@ class ProjectionResult:
     degraded:                bool = False
     pipeline_run_id:         Optional[str] = None
     served_learner:          str = "unknown"
+    # Settings layer (weights-08 stream): "user" only when a saved weight
+    # moved the numbers, otherwise "default" with a reason. fantasy_scoring
+    # records which scoring the fantasy fields are in.
+    weighting:               str = "default"
+    weights_reason:          Optional[str] = None
+    fantasy_scoring:         str = "ppr"
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +294,24 @@ class ProjectionService:
 
             kalman_est, kalman_var = self._load_kalman(player_id, week, season, stat)
 
+            from backend.app.services.weighting import load_user_settings
+
+            settings_cfg = load_user_settings()
+            player_components = None
+            if (settings_cfg.get("fantasy_scoring") or "ppr") != "ppr":
+                player_components = self._load_component_stats(
+                    player_id, week, season,
+                )
+            weighted = self._apply_settings_layer(
+                row=row,
+                player_id=player_id,
+                week=week,
+                season=season,
+                stat=stat,
+                component_stats=player_components,
+                settings=settings_cfg,
+            )
+
             return ProjectionResult(
                 player_id=player_id,
                 player_name=player_name_resolved or player_name,
@@ -296,16 +320,16 @@ class ProjectionService:
                 week=week,
                 season=season,
                 stat=stat,
-                projection=_f(row.get("projection", 0.0)),
-                floor=_interval_value(row, "floor"),
-                ceiling=_interval_value(row, "ceiling"),
+                projection=weighted.projection,
+                floor=weighted.floor,
+                ceiling=weighted.ceiling,
                 interval_method=_interval_method(row),
                 degraded=bool(row.get("degraded", False)),
                 pipeline_run_id=row.get("pipeline_run_id"),
                 served_learner=_served_learner(stat, position or row.get("position") or ""),
                 boom_probability=_opt(row.get("boom_probability")),
                 bust_probability=_opt(row.get("bust_probability")),
-                fantasy_projection=_opt(row.get("fantasy_projection")),
+                fantasy_projection=weighted.fantasy_projection,
                 fantasy_floor=_interval_value(row, "fantasy_floor"),
                 fantasy_ceiling=_interval_value(row, "fantasy_ceiling"),
                 kalman_ability_estimate=kalman_est,
@@ -314,6 +338,9 @@ class ProjectionService:
                 prop_comparison=None,  # populated by API layer if odds available
                 data_freshness=self._data_freshness(player_id, week, season),
                 model_version=self._model_version,
+                weighting=weighted.weighting,
+                weights_reason=weighted.weights_reason,
+                fantasy_scoring=weighted.fantasy_scoring,
             )
 
     # ------------------------------------------------------------------
@@ -379,9 +406,33 @@ class ProjectionService:
         except Exception:
             freshness = datetime.now(timezone.utc)
 
+        from backend.app.services.weighting import load_user_settings
+
+        settings_cfg = load_user_settings()
+        # Non-PPR fantasy re-scoring needs every component stat for these
+        # players; load them in one query. At ppr (the default) this stays
+        # None and no extra query runs.
+        week_components: Optional[dict[str, dict[str, float]]] = None
+        if (settings_cfg.get("fantasy_scoring") or "ppr") != "ppr" and rows:
+            week_components = self._load_week_component_stats(
+                week, season, [str(raw[0]) for raw in rows],
+            )
         results = []
         for raw in rows:
             r = dict(zip(cols, raw))
+            player_components = (
+                week_components.get(str(r["player_id"]))
+                if week_components is not None else None
+            )
+            weighted = self._apply_settings_layer(
+                row=r,
+                player_id=str(r["player_id"]),
+                week=week,
+                season=season,
+                stat=stat,
+                component_stats=player_components,
+                settings=settings_cfg,
+            )
             results.append(ProjectionResult(
                 player_id=r["player_id"],
                 player_name=r.get("full_name") or r["player_id"],
@@ -390,15 +441,15 @@ class ProjectionService:
                 week=week,
                 season=season,
                 stat=stat,
-                projection=_f(r.get("projection", 0.0)),
-                floor=_interval_value(r, "floor"),
-                ceiling=_interval_value(r, "ceiling"),
+                projection=weighted.projection,
+                floor=weighted.floor,
+                ceiling=weighted.ceiling,
                 interval_method=_interval_method(r),
                 pipeline_run_id=r.get("pipeline_run_id"),
                 served_learner=_served_learner(stat, r.get("position") or ""),
                 boom_probability=_opt(r.get("boom_probability")),
                 bust_probability=_opt(r.get("bust_probability")),
-                fantasy_projection=_opt(r.get("fantasy_projection")),
+                fantasy_projection=weighted.fantasy_projection,
                 fantasy_floor=_interval_value(r, "fantasy_floor"),
                 fantasy_ceiling=_interval_value(r, "fantasy_ceiling"),
                 kalman_ability_estimate=None,
@@ -407,6 +458,9 @@ class ProjectionService:
                 prop_comparison=None,
                 data_freshness=freshness,
                 model_version=self._model_version,
+                weighting=weighted.weighting,
+                weights_reason=weighted.weights_reason,
+                fantasy_scoring=weighted.fantasy_scoring,
             ))
         return results
 
@@ -1188,6 +1242,80 @@ class ProjectionService:
         except Exception as exc:
             logger.debug("_load_projection_row error: %s", exc)
             return None
+
+    def _apply_settings_layer(
+        self,
+        *,
+        row: dict,
+        player_id: str,
+        week: int,
+        season: int,
+        stat: str,
+        component_stats: Optional[dict[str, float]] = None,
+        settings: Optional[dict] = None,
+    ):
+        """Run one served row through the user's Settings (weights-08 item 6).
+
+        Returns a ``WeightedRow``. At default weights and ppr scoring the
+        numbers are exactly the stored ones with weighting ``"default"``.
+        """
+        from backend.app.services.weighting import apply_settings_to_row
+
+        return apply_settings_to_row(
+            projection=_f(row.get("projection", 0.0)),
+            floor=_interval_value(row, "floor"),
+            ceiling=_interval_value(row, "ceiling"),
+            fantasy_projection=_opt(row.get("fantasy_projection")),
+            component_stats=component_stats,
+            player_id=player_id,
+            week=week,
+            season=season,
+            stat=stat,
+            settings=settings,
+        )
+
+    def _load_component_stats(
+        self, player_id: str, week: int, season: int
+    ) -> Optional[dict[str, float]]:
+        """All component-stat projections for one player/week, if any rows exist."""
+        batch = self._load_week_component_stats(week, season, [player_id])
+        return batch.get(player_id)
+
+    def _load_week_component_stats(
+        self, week: int, season: int, player_ids: list[str]
+    ) -> dict[str, dict[str, float]]:
+        """Map player_id -> {stat: projection} for one week (approved runs only)."""
+        import psycopg2
+
+        out: dict[str, dict[str, float]] = {}
+        if not player_ids:
+            return out
+        try:
+            approved = list(load_approved_pipeline_run_ids())
+            conn = psycopg2.connect(self._db_url)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT player_id, stat, projection
+                FROM   projections
+                WHERE  week = %s AND season = %s
+                  AND  player_id = ANY(%s)
+                  AND  pipeline_run_id = ANY(%s)
+                ORDER BY created_at DESC
+                """,
+                [week, season, list(player_ids), approved],
+            )
+            for pid, stat_name, value in cur.fetchall():
+                if value is None:
+                    continue
+                # Most recent row wins (matches _load_projection_row).
+                out.setdefault(str(pid), {}).setdefault(
+                    str(stat_name), float(value)
+                )
+            conn.close()
+        except Exception as exc:
+            logger.debug("_load_week_component_stats error: %s", exc)
+        return out
 
     def _load_kalman(
         self, player_id: str, week: int, season: int, stat: str
