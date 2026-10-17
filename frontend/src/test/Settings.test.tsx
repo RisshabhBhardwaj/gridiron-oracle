@@ -151,6 +151,42 @@ describe('Settings (public site, view-only)', () => {
   })
 })
 
+describe('Settings (saved-settings provenance)', () => {
+  function serveSettingsSource(source: string) {
+    server.use(
+      http.get('/api/settings', () =>
+        HttpResponse.json({ ...factories.settingsResponse(), settings_source: source }),
+      ),
+    )
+  }
+
+  it('says nothing about provenance when the values were read from the file', async () => {
+    serveSettingsSource('file')
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    // The loading spinner also carries role="status", so scope to the banner id.
+    expect(document.getElementById('settings-source-note')).toBeNull()
+  })
+
+  it('says the defaults are shown when no settings were saved yet', async () => {
+    serveSettingsSource('default_missing')
+    renderSettings()
+    expect(await screen.findByText(/no saved settings exist yet/i)).toBeInTheDocument()
+  })
+
+  it('says the defaults are shown when the saved settings could not be read', async () => {
+    serveSettingsSource('default_invalid')
+    renderSettings()
+    expect(await screen.findByText(/could not be read/i)).toBeInTheDocument()
+  })
+
+  it('explains that adjusted numbers are a what-if, not checked past results', async () => {
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    expect(screen.getByText(/they are a what-if/i)).toBeInTheDocument()
+  })
+})
+
 describe('Settings (editable build, server refuses the write)', () => {
   beforeEach(() => { vi.stubEnv('VITE_SETTINGS_EDITABLE', 'true') })
 

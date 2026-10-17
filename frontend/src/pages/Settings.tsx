@@ -118,9 +118,29 @@ export function Settings() {
         </div>
       )}
 
+      {/* Saved-settings provenance: say so when these are defaults, not saved values */}
+      {data && data.settings_source !== 'file' && (
+        <div
+          id="settings-source-note"
+          role="status"
+          className="tone-warning flex flex-col gap-1 rounded-xl p-4 text-sm bg-tone/[0.08] border border-tone/25"
+        >
+          <p className="text-fg-muted leading-relaxed">
+            {data.settings_source === 'default_missing'
+              ? 'No saved settings exist yet, so you are seeing the defaults.'
+              : 'The saved settings could not be read, so you are seeing the defaults. Saving will replace them with what you see here.'}
+          </p>
+        </div>
+      )}
+
       {/* Feature Weights */}
       <Panel title="Feature Weights">
         <div className="flex flex-col gap-5">
+          <p className="text-xs text-fg-muted leading-relaxed">
+            Raise an area to count it more in the numbers, lower it to count it less.
+            Numbers changed this way are marked as adjusted. They are a what-if —
+            they have not been checked against past games.
+          </p>
           {/* Total indicator */}
           <div className={clsx(toneClass(totalValid ? 'positive' : 'negative'), 'flex items-center justify-between p-3 rounded-lg bg-tone/[0.06] border border-tone/20')}>
             <span className="text-xs text-fg-muted">Total weight</span>

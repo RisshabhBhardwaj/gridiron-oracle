@@ -58,6 +58,11 @@ export interface PredictResponse {
   attribution_source: string
   model_version: string
   data_freshness: string
+  // Settings layer (weights-08 item 6): "user" only when a saved weight
+  // moved the numbers; otherwise "default".
+  weighting: string
+  weights_reason: string | null
+  fantasy_scoring: FantasyScoring
 }
 
 export interface WeekPlayerProjection {
@@ -84,6 +89,9 @@ export interface WeekPlayerProjection {
   fantasy_ceiling: number | null
   model_version: string
   data_freshness: string
+  weighting: string
+  weights_reason: string | null
+  fantasy_scoring: FantasyScoring
 }
 
 export interface WeekProjectionsResponse {
@@ -372,11 +380,14 @@ export interface FeatureWeights {
 
 export type FantasyScoring = 'ppr' | 'half_ppr' | 'standard'
 
+export type SettingsSource = 'file' | 'default_missing' | 'default_invalid'
+
 export interface SettingsResponse {
   weights: FeatureWeights
   fantasy_scoring: FantasyScoring
   engine_exposure_cap: number
   weight_preset_name: string
+  settings_source: SettingsSource
 }
 
 export interface SettingsUpdateRequest {

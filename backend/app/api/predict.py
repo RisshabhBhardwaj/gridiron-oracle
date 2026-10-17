@@ -100,6 +100,12 @@ class PredictResponse(BaseModel):
     attribution_source:      str = "unavailable"
     model_version:           str
     data_freshness:          datetime
+    # Settings layer (weights-08 item 6): "user" only when a saved weight
+    # moved the numbers; otherwise "default" with a reason. fantasy_scoring
+    # records which scoring the fantasy fields are in.
+    weighting:               str = "default"
+    weights_reason:          Optional[str] = None
+    fantasy_scoring:         str = "ppr"
 
 
 class WeekPlayerProjection(BaseModel):
@@ -127,6 +133,9 @@ class WeekPlayerProjection(BaseModel):
     fantasy_ceiling:    Optional[float] = None
     model_version:      str
     data_freshness:     datetime
+    weighting:          str = "default"
+    weights_reason:     Optional[str] = None
+    fantasy_scoring:    str = "ppr"
 
 
 class WeekProjectionsResponse(BaseModel):
@@ -284,6 +293,9 @@ def predict(
         attribution_source=attribution_source,
         model_version=result.model_version,
         data_freshness=result.data_freshness,
+        weighting=result.weighting,
+        weights_reason=result.weights_reason,
+        fantasy_scoring=result.fantasy_scoring,
     )
 
 
@@ -330,6 +342,9 @@ def projections_for_week(
             fantasy_ceiling=r.fantasy_ceiling,
             model_version=r.model_version,
             data_freshness=r.data_freshness,
+            weighting=r.weighting,
+            weights_reason=r.weights_reason,
+            fantasy_scoring=r.fantasy_scoring,
         )
         for r in results
     ]
