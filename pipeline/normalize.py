@@ -103,6 +103,7 @@ from scraper.adapters.nflreadpy_adapter import (
     SnapCountRow,
     _coerce_row,
     _psycopg2_dsn,
+    _safe_pg_json,
 )
 from pipeline.line_snapshots import SNAPSHOT_INSERT_SQL, snapshot_batch
 from pipeline.staging_retention import HIGH_VOLUME_SOURCE_TYPES
@@ -881,8 +882,16 @@ class Normalizer:
         return lookup
 
     def _upsert_game_logs(self, log_dicts: list[dict], summary: NormalizeSummary) -> int:
-        if not log_dicts:
-            return 0
+        """
+        Upsert game_logs in batches of BATCH_SIZE. Returns the number of rows written.
+
+        A batch that violates a constraint (FK, unique, bad value) is retried row by
+        row in savepoints, so one bad row costs that row and not the batch. Each row
+        that cannot be written is dead-lettered with its payload, in the same
+        transaction, and counted in summary.errors, which fails the normalize step.
+        The caller marks the batch's staging rows consumed only after this returns,
+        so a payload is never deleted before its dead_letter row is committed.
+        """
         cols = [
             "player_id", "game_id", "season", "week", "season_type",
             "team", "opponent_team", "position",
@@ -896,17 +905,7 @@ class Normalizer:
             "receiving_epa", "racr", "target_share", "air_yards_share", "wopr",
             "offense_snaps", "offense_pct", "fantasy_points", "fantasy_points_ppr",
         ]
-        # Process in batches, catch FK violations row-by-row on failure
-        upserted = 0
-        batch: list[tuple] = []
-
-        def _flush(b: list[tuple]) -> int:
-            assert self._conn
-            try:
-                with self._conn.cursor() as cur:
-                    execute_values(
-                        cur,
-                        """
+        insert_sql = """
                         INSERT INTO game_logs (
                             player_id, game_id, season, week, season_type,
                             team, opponent_team, position,
@@ -963,19 +962,49 @@ class Normalizer:
                             offense_pct        = EXCLUDED.offense_pct,
                             fantasy_points     = EXCLUDED.fantasy_points,
                             fantasy_points_ppr = EXCLUDED.fantasy_points_ppr
-                        """,
-                        b,
-                    )
+        """
+
+        def _insert(cur, rows: list[tuple]) -> None:
+            execute_values(cur, insert_sql, rows)
+
+        def _write_individually(b: list[tuple[dict, tuple]]) -> int:
+            """Retry each row in its own savepoint. Failing rows are dead-lettered."""
+            written = 0
+            assert self._conn
+            for log, row in b:
+                with self._conn.cursor() as cur:
+                    cur.execute("SAVEPOINT game_log_row")
+                    try:
+                        _insert(cur, [row])
+                        cur.execute("RELEASE SAVEPOINT game_log_row")
+                        written += 1
+                    except (psycopg2.IntegrityError, psycopg2.DataError) as exc:
+                        cur.execute("ROLLBACK TO SAVEPOINT game_log_row")
+                        cur.execute("RELEASE SAVEPOINT game_log_row")
+                        self._dead_letter_game_log(log, f"{type(exc).__name__}: {exc}")
+                        summary.errors += 1
+            self._conn.commit()
+            return written
+
+        def _flush(b: list[tuple[dict, tuple]]) -> int:
+            assert self._conn
+            try:
+                with self._conn.cursor() as cur:
+                    _insert(cur, [row for _, row in b])
                 self._conn.commit()
                 return len(b)
-            except psycopg2.IntegrityError as exc:
+            except (psycopg2.IntegrityError, psycopg2.DataError) as exc:
                 self._conn.rollback()
-                logger.warning("game_logs batch FK violation, skipping batch (%s)", exc)
-                summary.errors += len(b)
-                return 0
+                logger.warning(
+                    "game_logs batch of %d violated a constraint (%s); retrying row by row",
+                    len(b), exc,
+                )
+                return _write_individually(b)
 
+        upserted = 0
+        batch: list[tuple[dict, tuple]] = []
         for log in log_dicts:
-            batch.append(tuple(log.get(c) for c in cols))
+            batch.append((log, tuple(log.get(c) for c in cols)))
             if len(batch) >= BATCH_SIZE:
                 upserted += _flush(batch)
                 batch.clear()
@@ -984,6 +1013,27 @@ class Normalizer:
             upserted += _flush(batch)
 
         return upserted
+
+    def _dead_letter_game_log(self, log: dict, error: str) -> None:
+        """
+        Queue one game_logs row that could not be written into dead_letter. The
+        caller commits. A failure here propagates, so the step fails and the staging
+        row is not consumed.
+        """
+        assert self._conn
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dead_letter
+                    (source, error_message, raw_payload, ingested_at)
+                VALUES (%s, %s, %s, NOW())
+                """,
+                (
+                    "normalize/game_logs",
+                    f"player_id={log.get('player_id')} game_id={log.get('game_id')}: {error}",
+                    _safe_pg_json(log),
+                ),
+            )
 
     # ── Source-level processors ───────────────────────────────────────────
 

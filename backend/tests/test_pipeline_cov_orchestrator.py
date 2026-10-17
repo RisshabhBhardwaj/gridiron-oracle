@@ -473,62 +473,83 @@ def test_live_season_feature_failure_is_recorded_and_dead_lettered(
 
 # ── global enrichment ─────────────────────────────────────────────────────────
 
-def test_run_global_enrichment_runs_elo_then_pbp_and_exports_database_url(monkeypatch):
-    order: list[str] = []
+def _patch_enrichment(monkeypatch, elo_fn, pbp_fn):
     import pipeline.enrich_elo_embeddings as elo
     import pipeline.pbp_pipeline as pbp
 
-    monkeypatch.setattr(elo, "main", lambda: order.append("elo"))
-    monkeypatch.setattr(pbp, "main", lambda: order.append("pbp"))
+    monkeypatch.setattr(elo, "run_elo_enrichment", elo_fn)
+    monkeypatch.setattr(pbp, "main", pbp_fn)
+
+
+def test_run_global_enrichment_runs_elo_then_pbp_for_the_requested_seasons(monkeypatch):
+    order: list[tuple] = []
+    _patch_enrichment(
+        monkeypatch,
+        lambda seasons=None: order.append(("elo", seasons)),
+        lambda seasons=None: (order.append(("pbp", seasons)), [])[1],
+    )
     monkeypatch.setenv("DATABASE_URL", "tmp")
     monkeypatch.delenv("DATABASE_URL")
 
-    orch_mod._run_global_enrichment(DB_URL)
+    steps = orch_mod._run_global_enrichment(DB_URL, [2026])
 
-    assert order == ["elo", "pbp"]
+    assert order == [("elo", [2026]), ("pbp", [2026])]
     assert os.environ["DATABASE_URL"] == DB_URL
+    assert [(s.name, s.ok) for s in steps] == [("enrich_elo", True), ("pbp_pipeline", True)]
 
 
 def test_run_global_enrichment_keeps_an_existing_database_url(monkeypatch):
-    import pipeline.enrich_elo_embeddings as elo
-    import pipeline.pbp_pipeline as pbp
-
-    monkeypatch.setattr(elo, "main", lambda: None)
-    monkeypatch.setattr(pbp, "main", lambda: None)
+    _patch_enrichment(monkeypatch, lambda seasons=None: None, lambda seasons=None: [])
     monkeypatch.setenv("DATABASE_URL", "postgresql://already-set")
 
-    orch_mod._run_global_enrichment(DB_URL)
+    orch_mod._run_global_enrichment(DB_URL, [2026])
 
     assert os.environ["DATABASE_URL"] == "postgresql://already-set"
 
 
-def test_run_global_enrichment_elo_failure_dead_letters_and_pbp_still_runs(
+def test_run_global_enrichment_elo_failure_is_a_failed_step_and_pbp_still_runs(
     monkeypatch, dead_letters
 ):
-    import pipeline.enrich_elo_embeddings as elo
-    import pipeline.pbp_pipeline as pbp
-
     ran: list[str] = []
-    monkeypatch.setattr(elo, "main", lambda: (_ for _ in ()).throw(RuntimeError("elo broke")))
-    monkeypatch.setattr(pbp, "main", lambda: ran.append("pbp"))
+
+    def elo_broke(seasons=None):
+        raise RuntimeError("elo broke")
+
+    _patch_enrichment(monkeypatch, elo_broke, lambda seasons=None: (ran.append("pbp"), [])[1])
     monkeypatch.setenv("DATABASE_URL", DB_URL)
 
-    orch_mod._run_global_enrichment(DB_URL)
+    steps = orch_mod._run_global_enrichment(DB_URL, [2026])
 
     assert ran == ["pbp"]
+    assert [(s.name, s.ok, s.error) for s in steps] == [
+        ("enrich_elo", False, "elo broke"),
+        ("pbp_pipeline", True, None),
+    ]
     assert dead_letters == [("orchestrator/enrich_elo_embeddings", "elo broke", 0)]
 
 
-def test_run_global_enrichment_pbp_failure_dead_letters(monkeypatch, dead_letters):
-    import pipeline.enrich_elo_embeddings as elo
-    import pipeline.pbp_pipeline as pbp
-
-    monkeypatch.setattr(elo, "main", lambda: None)
-    monkeypatch.setattr(pbp, "main", lambda: (_ for _ in ()).throw(RuntimeError("pbp broke")))
+def test_run_global_enrichment_pbp_failed_seasons_fail_the_step(monkeypatch, dead_letters):
+    _patch_enrichment(monkeypatch, lambda seasons=None: None, lambda seasons=None: [2026])
     monkeypatch.setenv("DATABASE_URL", DB_URL)
 
-    orch_mod._run_global_enrichment(DB_URL)
+    steps = orch_mod._run_global_enrichment(DB_URL, [2026])
 
+    pbp_step = steps[-1]
+    assert pbp_step.name == "pbp_pipeline" and pbp_step.ok is False
+    assert "[2026]" in pbp_step.error
+    assert dead_letters == [], "pbp writes its own per-season dead_letter row"
+
+
+def test_run_global_enrichment_pbp_exception_fails_the_step_and_dead_letters(monkeypatch, dead_letters):
+    def pbp_broke(seasons=None):
+        raise RuntimeError("pbp broke")
+
+    _patch_enrichment(monkeypatch, lambda seasons=None: None, pbp_broke)
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+
+    steps = orch_mod._run_global_enrichment(DB_URL, [2026])
+
+    assert steps[-1].ok is False and steps[-1].error == "pbp broke"
     assert dead_letters == [("orchestrator/pbp_pipeline", "pbp broke", 0)]
 
 
@@ -573,17 +594,35 @@ def test_run_live_isolates_season_failures_and_runs_global_enrichment_once(monke
             n_players=1 if ok else 0, n_games=1 if ok else 0, n_feature_rows=2 if ok else 0,
         )
 
-    enrich: list[str] = []
+    enrich: list[tuple] = []
     monkeypatch.setattr(orch_mod, "_live_season", fake_live)
-    monkeypatch.setattr(orch_mod, "_run_global_enrichment", lambda url: enrich.append(url))
+    monkeypatch.setattr(
+        orch_mod, "_run_global_enrichment", lambda url, seasons: (enrich.append((url, seasons)), [])[1]
+    )
 
     summary = Orchestrator(db_url=DB_URL).run(seasons=[2024, 2025], dry_run=False, sources=["rosters"])
 
     assert calls == [(2024, ["rosters"]), (2025, ["rosters"])]  # 2024 failure does not stop 2025
-    assert enrich == [DB_URL]
+    assert enrich == [(DB_URL, [2024, 2025])]  # enrichment is scoped to the requested seasons
     assert [sr.season for sr in summary.season_results] == [2024, 2025]
     assert summary.total_players == 1
     assert summary.end_time is not None
+
+
+def test_run_live_carries_a_failed_enrichment_step_onto_the_summary(monkeypatch):
+    def fake_live(season, db_url, sources=None):
+        return SeasonResult(
+            season=season, dry_run=False,
+            steps=[StepResult(name="ingest", elapsed_s=0.0, ok=True)],
+        )
+
+    failed = [StepResult(name="enrich_elo", elapsed_s=0.0, ok=False, error="elo broke")]
+    monkeypatch.setattr(orch_mod, "_live_season", fake_live)
+    monkeypatch.setattr(orch_mod, "_run_global_enrichment", lambda url, seasons: failed)
+
+    summary = Orchestrator(db_url=DB_URL).run(seasons=[2026], dry_run=False)
+
+    assert summary.global_steps == failed
 
 
 # ── printing ──────────────────────────────────────────────────────────────────

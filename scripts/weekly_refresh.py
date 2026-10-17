@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from ml import season_constants
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
 from pipeline.schema import normalize_dsn
@@ -70,25 +71,59 @@ def _orchestrator_failure(summary: OrchestratorSummary) -> str | None:
             if not step.ok:
                 detail = step.error or "failed without an error message"
                 return f"season={season_result.season} step={step.name}: {detail}"
+    for step in summary.global_steps:
+        if not step.ok:
+            detail = step.error or "failed without an error message"
+            return f"run-level step={step.name}: {detail}"
     return None
 
 
-def resolve_season_and_week(cur, default_season: int = 2026) -> tuple[int, int, int]:
+def current_season() -> int:
+    """
+    The season the weekly refresh targets, from ml/season_constants.py.
+
+    The weekly job refreshes the season after the last complete one. The two
+    constants must agree on that, so a bump of only one of them fails here
+    instead of refreshing the wrong season.
+    """
+    current = season_constants.CURRENT_SEASON
+    last_complete = season_constants.LAST_COMPLETE_SEASON
+    if current != last_complete + 1:
+        raise RuntimeError(
+            f"CURRENT_SEASON={current} must equal LAST_COMPLETE_SEASON+1 "
+            f"({last_complete + 1}); update ml/season_constants.py before refreshing."
+        )
+    return current
+
+
+def _require_approved_run_id(approved_run_id: str, season: int) -> None:
+    """Raise unless the manifest approves approved_run_id, the set step 9 keeps."""
+    keep_ids = load_keep_run_ids()
+    if approved_run_id not in keep_ids:
+        raise RuntimeError(
+            f"{approved_run_id} is not in projection_policy.approved_pipeline_run_ids of "
+            f"releases/current_baseline.json, so season {season} cannot be promoted. "
+            "Approve the run id through the release process first."
+        )
+
+
+def resolve_season_and_week(cur, season: int | None = None) -> tuple[int, int, int]:
     """
     Resolve (season, completed_week, start_week) based on kickoffs in games table.
     """
+    season = current_season() if season is None else season
     cur.execute(
         """
         SELECT COALESCE(MAX(week), 0)
         FROM games
         WHERE season = %s AND kickoff_at < NOW()
         """,
-        (default_season,),
+        (season,),
     )
     row = cur.fetchone()
     completed_week = int(row[0]) if row and row[0] is not None else 0
     start_week = completed_week + 1
-    return default_season, completed_week, start_week
+    return season, completed_week, start_week
 
 
 def promote_run_id(
@@ -163,11 +198,13 @@ def log_database_size(cur) -> None:
 
 def run_weekly_refresh(
     database_url: str,
-    season: int = 2026,
+    season: int | None = None,
     dry_run: bool = False,
 ) -> int:
     dsn = normalize_dsn(database_url)
     t_start = time.monotonic()
+    if season is None:
+        season = current_season()
     logger.info("Starting weekly refresh sequence for season=%d (dry_run=%s)", season, dry_run)
 
     # 1. Resolve current completed week & start_week
@@ -196,6 +233,17 @@ def run_weekly_refresh(
 
     pending_run_id = f"weekly_auto_{season}_pending"
     approved_run_id = f"weekly_auto_{season}"
+
+    # Fail closed before any write. Step 8 promotes to approved_run_id and step 9
+    # deletes every row whose id is not in the manifest, so a season the manifest
+    # does not approve would be promoted and then pruned.
+    step_name = "approval_check"
+    try:
+        _require_approved_run_id(approved_run_id, season)
+    except (Exception, SystemExit) as exc:
+        logger.error("[%s] FAILED: %s", step_name, exc)
+        _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        return 1
 
     # 2. Ingest weekly sources via Orchestrator
     step_name = "orchestrator_ingest"
@@ -292,16 +340,54 @@ def run_weekly_refresh(
     try:
         logger.info("Step 7: Verifying season acceptance (season=%d, start_week=%d)...", season, start_week)
         from scripts.verify_season_acceptance import main as verify_main
+        # C-1: the statistical gate scores the pending candidate against realized
+        # points, which do not exist for a forward (unplayed) week — its join is
+        # always empty there, so it can never pass and would block every promotion.
+        # For a forward week the structural gate applies instead: the pending run
+        # must have produced rows for the target week on every surface. The
+        # statistical gate still runs whenever the window has realized data.
+        with psycopg2.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM game_logs
+                        WHERE season = %s AND week BETWEEN %s AND %s
+                    )
+                    """,
+                    (season, start_week, 18),
+                )
+                row = cur.fetchone()
+                has_realized = bool(row[0]) if row else False
         old_argv = sys.argv
-        sys.argv = [
-            "verify_season_acceptance.py",
-            "--season",
-            str(season),
-            "--start-week",
-            str(start_week),
-            "--database-url",
-            dsn,
-        ]
+        if has_realized:
+            sys.argv = [
+                "verify_season_acceptance.py",
+                "--season",
+                str(season),
+                "--start-week",
+                str(start_week),
+                "--database-url",
+                dsn,
+            ]
+        else:
+            logger.info(
+                "Step 7: start_week=%d has no realized game_logs; running the forward-week "
+                "structural gate on %s instead of the statistical gate.",
+                start_week, pending_run_id,
+            )
+            sys.argv = [
+                "verify_season_acceptance.py",
+                "--season",
+                str(season),
+                "--start-week",
+                str(start_week),
+                "--structural-only",
+                "--pipeline-run-id",
+                pending_run_id,
+                "--database-url",
+                dsn,
+            ]
         try:
             rc = verify_main()
             if rc != 0:
@@ -335,6 +421,16 @@ def run_weekly_refresh(
 
     # 9. Retention & pruning
     step_name = "retention_and_pruning"
+    # Fail closed: the prune below deletes every row whose id is not kept. If the
+    # run just promoted is not in the keep set, that delete would remove it.
+    try:
+        keep_ids = load_keep_run_ids()
+        if approved_run_id not in keep_ids:
+            raise RuntimeError(f"{approved_run_id} is not in the keep set; refusing to prune")
+    except (Exception, SystemExit) as exc:
+        logger.error("[%s] FAILED: %s", step_name, exc)
+        _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        return 1
     try:
         logger.info("Step 9: Running staging retention and pipeline run pruning...")
         with psycopg2.connect(dsn) as conn:
@@ -386,8 +482,8 @@ def main() -> int:
     parser.add_argument(
         "--season",
         type=int,
-        default=2026,
-        help="Season to refresh (default: 2026)",
+        default=None,
+        help="Season to refresh (default: CURRENT_SEASON from ml/season_constants.py)",
     )
     parser.add_argument(
         "--dry-run",

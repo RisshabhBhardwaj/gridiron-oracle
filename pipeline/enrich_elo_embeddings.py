@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import psycopg2
@@ -46,10 +47,14 @@ def _get_conn():
 
 # ── Step 1: Elo Enrichment ─────────────────────────────────────────────────────
 
-def enrich_elo(conn) -> None:
+def enrich_elo(conn, seasons: Optional[list[int]] = None) -> None:
     """
     Fit TeamEloSystem on all game_logs results, then UPDATE feature_matrix
     with the 6 Elo columns for every (player, game) row.
+
+    ``seasons`` limits the feature_matrix UPDATE to those seasons. The fit still
+    reads the full game history, because Elo is a running rating. Passing None
+    updates every season (the full ETL).
 
     Strategy:
         - Pull one row per game (distinct game_id + team combos) from game_logs,
@@ -126,13 +131,15 @@ def enrich_elo(conn) -> None:
     logger.info("Elo ratings saved → %s", elo_path)
 
     # ── Load full feature_matrix for enrichment ────────────────────────────────
-    logger.info("Loading feature_matrix for Elo enrichment...")
-    cur.execute("""
+    logger.info("Loading feature_matrix for Elo enrichment (seasons=%s)...", seasons or "all")
+    scope_sql = "" if seasons is None else "AND season = ANY(%s)"
+    scope_params = () if seasons is None else (list(seasons),)
+    cur.execute(f"""
         SELECT player_id, game_id, season, week,
                team, opponent_team
         FROM feature_matrix
-        WHERE team IS NOT NULL
-    """)
+        WHERE team IS NOT NULL {scope_sql}
+    """, scope_params)
     fm_rows = cur.fetchall()
     fm_cols = [d[0] for d in cur.description]
     fm_df = pd.DataFrame(fm_rows, columns=fm_cols)
@@ -240,6 +247,20 @@ def _safe_float(v) -> float | None:
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
+
+def run_elo_enrichment(seasons: Optional[list[int]] = None) -> None:
+    """
+    Elo columns only, for the given seasons (used by the orchestrator).
+
+    Skips enrich_embeddings: that step raises by design until dated causal
+    embeddings exist, so calling main() from a pipeline run would fail every time.
+    """
+    conn = _get_conn()
+    try:
+        enrich_elo(conn, seasons=seasons)
+    finally:
+        conn.close()
+
 
 def main() -> None:
     logger.info("=" * 60)

@@ -292,7 +292,10 @@ class TestForwardWeekUsesCausalLines:
 
         fe = FeatureEngineer("postgresql://unused")
         conn = FakeConn()
-        conn.respond("JOIN LATERAL", candidates)
+        conn.respond("AS played", [{"played": False}])
+        conn.respond("FROM depth_charts", candidates)
+        conn.respond("FROM player_season_profiles", [])
+        conn.respond("FROM game_logs", [])
         conn.respond("FROM feature_matrix", priors)
         conn.respond("game_line_snapshots", [])
         fe._conn = conn
