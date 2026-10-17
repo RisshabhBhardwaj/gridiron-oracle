@@ -67,6 +67,7 @@ from psycopg2.extras import execute_values
 
 from scraper.adapters.nflreadpy_adapter import _coerce_row, _psycopg2_dsn
 from ml.kalman_tracker import KalmanFeatureEngineer
+from ml.stat_resolution import read_gamelog_stat
 # This threshold is legal only for *completed prior games* used in form
 # estimation.  It must never decide whether the target game enters a model.
 FORM_MIN_PRIOR_SNAP_PCT = 0.34
@@ -96,7 +97,7 @@ from pipeline.features.buckets import (
     compute_progression_priors,
     _safe_div as _safe_div,  # re-exported for legacy tests/importers
     _safe_float,
-    _sum_fumbles,
+    _sum_fumbles as _sum_fumbles,  # re-exported for legacy tests/importers
 )
 
 _FORWARD_POSITIONS = ("QB", "RB", "WR", "TE")
@@ -318,8 +319,14 @@ def build_feature_row(
         actual_receptions=target_row.get("receptions"),
         actual_receiving_tds=target_row.get("receiving_tds"),
         actual_targets=target_row.get("targets"),
+        # Fumble total shares its implementation with backtest scoring
+        # (ml.stat_resolution.read_gamelog_stat): an unreported component —
+        # None or NaN — contributes nothing, and the total is None only when
+        # nothing was reported at all. The previous _sum_fumbles summed NaN
+        # into the total, so those rows trained as NaN (dropped) while the
+        # backtest scored them as partial sums.
         actual_fumbles=_safe_float(
-            _sum_fumbles(target_row)
+            read_gamelog_stat(target_row, "fumbles")
         ),
         actual_sacks_taken=None,
         actual_qb_hits_taken=None,

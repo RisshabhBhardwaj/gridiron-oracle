@@ -54,16 +54,87 @@ FORBIDDEN_MODEL_FIELDS = frozenset({
 
 
 def _spec_for(name: str) -> FeatureSpec:
-    """Return the explicit legal source class for a registered feature name."""
+    """Return the explicit legal source class for a registered feature name.
+
+    Fail-closed: a name with no explicit entry raises instead of silently
+    joining PRIOR_GAMES. A new feature must earn its classification here
+    before any model frame may carry it.
+    """
     if name in FORBIDDEN_MODEL_FIELDS:
         return FeatureSpec(name, AsOf.ILLEGAL, "removed or disabled pending a causal source")
-    if name in {"height", "weight"}:
+    if name in _SEASON_PROFILE_FEATURES:
         return FeatureSpec(name, AsOf.SEASON_PROFILE, "player_season_profiles.effective_season")
-    if name == "depth_chart_rank":
-        return FeatureSpec(name, AsOf.PRIOR_GAMES, "lagged depth_charts; week N uses chart week < N")
-    if name in {"game_total_line", "spread_line", "is_home", "days_rest", "is_short_week", "is_bye_prior", "is_dome", "surface_turf", "rule_coeff", "draft_round"}:
-        return FeatureSpec(name, AsOf.PREGAME, "schedule, venue, or immutable draft fact")
-    return FeatureSpec(name, AsOf.PRIOR_GAMES, "completed games strictly before target kickoff")
+    if name in _PREGAME_FEATURES:
+        return FeatureSpec(name, AsOf.PREGAME, "schedule, venue, market, or immutable draft fact")
+    if name in _PRIOR_GAMES_FEATURES:
+        return FeatureSpec(name, AsOf.PRIOR_GAMES, "completed games strictly before target kickoff")
+    raise KeyError(
+        f"Feature {name!r} has no as-of classification. Add it to "
+        "ml/feature_contract.py (or to FORBIDDEN_MODEL_FIELDS) before use."
+    )
+
+
+#: Physical / career snapshot attributes, fixed for the season.
+_SEASON_PROFILE_FEATURES = frozenset({
+    "height", "weight",
+    # Career snapshot from the season roster context, not a game outcome.
+    "age", "career_games",
+})
+
+#: Pregame facts: schedule, venue, market lines, and immutable draft facts.
+#: Pace/script expectations belong here (not PRIOR_GAMES): they mix prior
+#: pace with the target game's spread/total, so the line's pregame
+#: provenance governs them.
+_PREGAME_FEATURES = frozenset({
+    "game_total_line", "spread_line", "is_home", "days_rest", "is_short_week",
+    "is_bye_prior", "is_dome", "surface_turf", "rule_coeff", "draft_round",
+    "expected_pass_attempts", "expected_pass_rate", "neutral_script_flag",
+})
+
+#: Everything else legal today, each derived from completed games strictly
+#: before the target kickoff: Kalman estimates, season-baseline averages,
+#: opponent-allowed averages, team pace from prior weeks, rest/injury state
+#: from prior rows, lagged PBP/NGS replacements, Elo pregame snapshots, and
+#: the Phase 4 experiment-group columns (still gated off FEATURE_COLS).
+_PRIOR_GAMES_FEATURES = frozenset({
+    "depth_chart_rank",  # lagged depth_charts; week N uses chart week < N
+    "games_missed_streak", "prior_snap_share",
+    "team_pace", "team_pass_rate",
+    "target_share_trend", "team_pos_rank",
+    "team_off_elo", "team_def_elo", "opp_off_elo", "opp_def_elo",
+    "elo_matchup_diff", "elo_implied_win_prob",
+    "deep_matchup_score", "coverage_matchup_score", "separation_demand_score",
+    "kalman_est_receiving_yards", "kalman_est_receiving_tds", "kalman_est_targets",
+    "kalman_est_receptions", "kalman_est_target_share", "kalman_est_red_zone_target_share",
+    "kalman_est_air_yards_share",
+    "kalman_est_fantasy_ppr", "kalman_est_carries", "kalman_est_rushing_yards",
+    "kalman_est_rushing_tds", "kalman_est_pass_attempts", "kalman_est_completions",
+    "kalman_est_interceptions", "kalman_est_fumbles", "kalman_est_passing_yards",
+    "kalman_est_passing_tds",
+    "seas_games_played", "seas_avg_receiving_yards", "seas_avg_targets",
+    "seas_avg_receptions", "seas_avg_target_share", "seas_avg_fantasy_ppr",
+    "seas_yards_per_target", "seas_yards_per_reception",
+    "seas_avg_carries", "seas_avg_rushing_yards", "seas_yards_per_carry",
+    "seas_avg_attempts", "seas_avg_passing_yards", "seas_completion_pct",
+    "seas_avg_passing_cpoe", "seas_avg_passing_epa",
+    "seas_avg_receiving_epa", "seas_avg_rushing_epa",
+    "seas_avg_racr", "seas_avg_wopr", "seas_avg_receiving_yac",
+    "opp_avg_receiving_yards_allowed", "opp_avg_targets_allowed",
+    "opp_avg_tds_allowed", "opp_avg_fantasy_ppr_allowed",
+    "opp_avg_rushing_yards_allowed",
+    "opp_zone_pct", "opp_man_pct", "opp_blitz_rate", "opp_pressure_rate",
+    # Phase 4 experiment groups (enabled only via resolve_feature_cols).
+    "carry_share", "ts_vs_league", "rz_ts_vs_league", "carry_share_vs_league",
+    "opp_adj_target_share",
+    "prior_epa_per_play", "prior_epa_per_target", "prior_epa_per_rush",
+    "prior_qb_epa_per_dropback", "prior_adot", "prior_drop_rate",
+    "prior_avg_separation", "prior_avg_cushion", "prior_target_share_pbp",
+    "prior_air_yards_share_pbp", "prior_red_zone_targets",
+    "prior_end_zone_targets", "prior_red_zone_target_share",
+    "prior_pass_left_rate", "prior_pass_middle_rate", "prior_pass_right_rate",
+    "prior_ol_pressure_rate", "prior_ol_sack_rate", "prior_yac_per_reception",
+    "prior_xyac_per_reception", "routes_run_per_game",
+})
 
 
 def build_feature_registry(feature_names: Iterable[str]) -> dict[str, FeatureSpec]:

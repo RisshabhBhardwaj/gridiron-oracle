@@ -571,6 +571,7 @@ class PipelineRunner:
         if stat in YARDAGE_STATS and not dry_run_mode:
             mc_df = self._apply_conformal_yardage_intervals(
                 mc_df, stacked_estimates, stat=stat, position=position,
+                season=season,
             )
 
         # Attach metadata columns
@@ -1181,6 +1182,7 @@ class PipelineRunner:
         *,
         stat: str,
         position: str,
+        season: int,
     ) -> pd.DataFrame:
         """
         Replace p10/p90 with 80% split-conformal intervals when available.
@@ -1191,6 +1193,12 @@ class PipelineRunner:
         ``_20260807`` files) fed the shipped intervals — a live defect in served
         uncertainty, not a latent risk. One cell has exactly one calibration
         source.
+
+        Only OOF rows from seasons strictly before ``season`` calibrate the
+        interval. Calibrating on the evaluated season's own residuals is
+        in-sample: the intervals look tighter than they are on unseen games.
+        ``season`` is required with no default: a None default would mean
+        "all seasons" and reopen the leak.
         """
         actual_parts: list[np.ndarray] = []
         prediction_parts: list[np.ndarray] = []
@@ -1203,8 +1211,23 @@ class PipelineRunner:
         else:
             oof = pd.read_csv(path)
             if {"y_true", "y_pred"}.issubset(oof.columns):
-                actual_parts.append(oof["y_true"].to_numpy(dtype=float))
-                prediction_parts.append(oof["y_pred"].to_numpy(dtype=float))
+                if "season" not in oof.columns:
+                    logger.warning(
+                        "Pinned conformal OOF %s has no season column; skipping it "
+                        "because its rows cannot be shown to be prior-season.",
+                        path.name,
+                    )
+                else:
+                    # Causal cut: strictly earlier seasons only. NaN seasons are dropped.
+                    prior = oof[pd.to_numeric(oof["season"], errors="coerce") < season]
+                    if prior.empty:
+                        logger.warning(
+                            "Pinned conformal OOF %s has no seasons before %d for %s/%s.",
+                            path.name, season, stat, position,
+                        )
+                    else:
+                        actual_parts.append(prior["y_true"].to_numpy(dtype=float))
+                        prediction_parts.append(prior["y_pred"].to_numpy(dtype=float))
             else:
                 logger.warning(
                     "Pinned conformal OOF %s lacks y_true/y_pred columns", path.name

@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
 """
-Regenerate the causal-eval summary JSONs from the per-cell eval CSVs — C-31.
+Aggregate per-cell causal-eval CSVs into one reproducible headline count.
 
-`reports/eval_causal_volume_summary.json` reported **mean Poisson deviance**
-under the key `pooled_mae`. Two errors in one key:
+Each input row is one evaluated cell-season with the model's score, the two
+baseline scores, and whether the model beat each baseline. This script counts
+rows where the model beat BOTH baselines, per cell and in total
+("beat_both/cell_seasons", e.g. the owner-verified 74/75 claim), and records
+exactly which files went into the count.
 
-  * the metric is not MAE — `ml/eval_metrics.primary_score` routes count targets
-    (`targets`, `carries`, `pass_attempts`) to `poisson_deviance`;
-  * it is not pooled — the value is the *unweighted mean across seasons* of the
-    per-season scores, not a score recomputed over the pooled rows. (Verified:
-    the committed values match `df.model_score.mean()` to 6 decimals, and differ
-    from the n-weighted mean in the 4th.)
+Inputs are discovered, never hard-coded: every
+``reports/eval_causal_<stat>_<position>.csv`` present is aggregated, and the
+output records its inputs. When no input exists the script fails loudly and
+prints the commands a rerun must execute instead of inventing a number.
 
-Both summaries were hand-assembled, with no generator, so nothing stopped the
-next one from being mislabelled the same way. This script is the generator. It
-carries the metric name through from the CSVs rather than assuming one, so a
-count target can never again be summarised under an MAE-shaped key.
+Producing the inputs (a VPS training run does this after `make freeze-baseline`):
 
+    for each (stat, position) cell:
+        python -m ml.eval_causal \\
+            --oof <pinned stack CSV from releases/current_baseline.json> \\
+            --stat <stat> --position <position> \\
+            --history <player_id,season,week,<stat> baseline history CSV> \\
+            --out reports/eval_causal_<stat>_<position>.csv
     python scripts/summarize_causal_evals.py
-    python scripts/summarize_causal_evals.py --check   # fail if the files are stale
+    python scripts/summarize_causal_evals.py --check   # fail if the file is stale
+
+The pinned stack CSV for a cell is ``get_manifest().resolve_stack(stat,
+position)``; the history CSV needs the database for baselines.
 """
 
 from __future__ import annotations
@@ -35,116 +42,164 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REPORTS = REPO_ROOT / "reports"
 
 GENERATED_BY = "python scripts/summarize_causal_evals.py"
+OUTPUT_NAME = "causal_baseline_beats.json"
+INPUT_GLOB = "eval_causal_*.csv"
 
-# (output file, cells) — cells are (target, position) in report order.
-GROUPS: dict[str, list[tuple[str, str]]] = {
-    "eval_causal_volume_summary.json": [
-        ("targets", "WR"),
-        ("targets", "TE"),
-        ("targets", "RB"),
-        ("carries", "RB"),
-        ("pass_attempts", "QB"),
-    ],
-    "eval_causal_yardage_summary.json": [
-        ("receiving_yards", "WR"),
-        ("receiving_yards", "TE"),
-        ("receiving_yards", "RB"),
-        ("rushing_yards", "RB"),
-        ("rushing_yards", "QB"),
-    ],
-}
+REQUIRED_COLUMNS = frozenset({
+    "stat",
+    "season",
+    "metric",
+    "n",
+    "model_score",
+    "naive_score",
+    "trailing3_score",
+    "beats_naive",
+    "beats_trailing3",
+})
 
-# Recorded when the summary was first assembled; the eval CSVs do not name the
-# stack artifact they scored, so this mapping is carried forward explicitly
-# rather than silently dropped.
-ARTIFACTS: dict[tuple[str, str], str] = {
-    ("receiving_yards", "WR"): "stack_receiving_yards_WR_20260809.csv",
-    ("receiving_yards", "TE"): "stack_receiving_yards_TE_20260809.csv",
-    ("receiving_yards", "RB"): "stack_receiving_yards_RB_20260809.csv",
-    ("rushing_yards", "RB"): "stack_rushing_yards_RB_20260809.csv",
-    ("rushing_yards", "QB"): "stack_rushing_yards_QB_20260809.csv",
-}
+PRODUCER_HELP = """\
+No per-cell causal-eval CSVs found ({pattern} under {reports}).
+Nothing is written: a baseline-beating count with no inputs would be invented.
+
+To regenerate (VPS training run, after `make freeze-baseline`):
+  1. For each (stat, position) cell, score the pinned stack artifact:
+       stack_csv=$(python -c "from ml.artifact_manifest import get_manifest; print(get_manifest().resolve_stack('<stat>', '<position>'))")
+       python -m ml.eval_causal --oof "$stack_csv" --stat <stat> --position <position> \\
+           --history <baseline-history CSV> --out reports/eval_causal_<stat>_<position>.csv
+     (the history CSV needs the database for baselines)
+  2. Rerun this script, then `python scripts/summarize_causal_evals.py --check`.
+"""
 
 
-def summarize_cell(target: str, position: str) -> dict:
-    path = REPORTS / f"eval_causal_stack_{target}_{position}.csv"
+def _to_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes"):
+        return True
+    if text in ("false", "0", "no", ""):
+        return False
+    raise ValueError(f"not a boolean: {value!r}")
+
+
+def discover_inputs(eval_dir: Path) -> list[Path]:
+    """Return sorted per-cell eval CSVs. Empty when the rerun never produced them."""
+    return sorted(eval_dir.glob(INPUT_GLOB))
+
+
+def summarize_cell(path: Path) -> dict:
     df = pd.read_csv(path)
+    missing = REQUIRED_COLUMNS - set(df.columns)
+    if missing:
+        raise ValueError(f"{path.name}: missing columns {sorted(missing)}")
 
     metrics = sorted(df["metric"].unique())
     if len(metrics) != 1:
         raise ValueError(f"{path.name}: mixed metrics {metrics}")
     metric = metrics[0]
 
-    beats = df["beats_naive"].astype(bool) & df["beats_trailing3"].astype(bool)
-    record = {
-        "target": target,
-        "position": position,
+    beats = df["beats_naive"].map(_to_bool) & df["beats_trailing3"].map(_to_bool)
+    positions = sorted(df["position"].unique()) if "position" in df.columns else []
+    return {
+        "source_report": path.relative_to(REPO_ROOT).as_posix()
+        if path.is_relative_to(REPO_ROOT)
+        else path.name,
+        "stat": str(df["stat"].iloc[0]) if df["stat"].nunique() == 1 else "mixed",
+        "position": positions[0] if len(positions) == 1 else positions,
         "metric": metric,
         "beat_both": f"{int(beats.sum())}/{len(df)}",
-        "mean_season_score": float(df["model_score"].mean()),
-        "n_weighted_score": float(
-            (df["model_score"] * df["n"]).sum() / df["n"].sum()
-        ),
-        "seasons": int(len(df)),
-        "rows": int(df["n"].sum()),
-        "source_report": path.relative_to(REPO_ROOT).as_posix(),
+        "beat_both_count": int(beats.sum()),
+        "cell_seasons": int(len(df)),
+        "seasons": sorted(int(s) for s in df["season"].unique()),
+        "rows": int(pd.to_numeric(df["n"], errors="coerce").fillna(0).sum()),
     }
-    artifact = ARTIFACTS.get((target, position))
-    if artifact:
-        record["artifact"] = artifact
-    return record
 
 
-def build(name: str) -> dict:
+def build(eval_dir: Path = REPORTS) -> dict:
+    """Aggregate every discovered per-cell CSV. Raises FileNotFoundError with
+    producer instructions when there is nothing to aggregate."""
+    inputs = discover_inputs(eval_dir)
+    if not inputs:
+        raise FileNotFoundError(
+            PRODUCER_HELP.format(pattern=INPUT_GLOB, reports=eval_dir)
+        )
+    cells = [summarize_cell(path) for path in inputs]
     return {
         "schema_version": 1,
         "generated_by": GENERATED_BY,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "metric_note": (
             "`metric` is carried through from the per-cell eval CSVs, which get "
-            "it from ml.eval_metrics.primary_score. `mean_season_score` is the "
-            "unweighted mean of per-season scores; `n_weighted_score` weights by "
-            "row count. Neither is a score recomputed over pooled rows."
+            "it from ml.eval_metrics.primary_score. A count target is scored "
+            "with Poisson deviance and must never be summarised under an "
+            "MAE-shaped key (audit C-31)."
         ),
-        "cells": [summarize_cell(t, p) for t, p in GROUPS[name]],
+        "inputs": [
+            path.relative_to(REPO_ROOT).as_posix()
+            if path.is_relative_to(REPO_ROOT)
+            else path.name
+            for path in inputs
+        ],
+        "headline": {
+            "beat_both": sum(c["beat_both_count"] for c in cells),
+            "cell_seasons": sum(c["cell_seasons"] for c in cells),
+        },
+        "cells": cells,
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--eval-dir",
+        type=Path,
+        default=REPORTS,
+        help="directory holding per-cell eval_causal_*.csv files",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="summary path (default: <eval-dir>/causal_baseline_beats.json)",
+    )
     parser.add_argument(
         "--check",
         action="store_true",
         help="exit nonzero if a summary differs from what this script would write",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    out = args.out or (args.eval_dir / OUTPUT_NAME)
 
-    failures = 0
-    for name in GROUPS:
-        built = build(name)
-        out = REPORTS / name
-        if args.check:
-            if not out.exists():
-                print(f"MISSING {name}", file=sys.stderr)
-                failures += 1
-                continue
-            current = json.loads(out.read_text())
-            # Timestamps are expected to differ; content is not.
-            if current.get("cells") != built["cells"]:
-                print(f"STALE   {name} — regenerate with {GENERATED_BY}", file=sys.stderr)
-                failures += 1
-            if "pooled_mae" in out.read_text():
-                print(
-                    f"MISLABEL {name} — 'pooled_mae' names a metric that is not "
-                    "MAE and not pooled (audit C-31)",
-                    file=sys.stderr,
-                )
-                failures += 1
-        else:
-            out.write_text(json.dumps(built, indent=2) + "\n")
-            print(f"wrote {out.relative_to(REPO_ROOT)}")
+    try:
+        built = build(args.eval_dir)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
-    return 1 if failures else 0
+    if args.check:
+        if not out.exists():
+            print(f"MISSING {out}", file=sys.stderr)
+            return 1
+        current = json.loads(out.read_text())
+        for key in ("inputs", "headline", "cells"):
+            if current.get(key) != built[key]:
+                print(f"STALE   {out} — regenerate with {GENERATED_BY}", file=sys.stderr)
+                return 1
+        if "pooled_mae" in out.read_text():
+            print(
+                f"MISLABEL {out} — 'pooled_mae' names a metric that is not "
+                "MAE and not pooled (audit C-31)",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"ok {out}")
+        return 0
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(built, indent=2) + "\n")
+    headline = built["headline"]
+    print(f"wrote {out}  ({headline['beat_both']}/{headline['cell_seasons']} cell-seasons beat both baselines)")
+    return 0
 
 
 if __name__ == "__main__":

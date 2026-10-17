@@ -115,6 +115,7 @@ def test_conformal_yardage_without_pinned_oof_fails_closed_by_default(monkeypatc
     with pytest.raises(RuntimeError, match="No stacked OOF residuals"):
         runner._apply_conformal_yardage_intervals(
             mc_df, np.array([10.0]), stat="rushing_yards", position="RB",
+            season=2026,
         )
 
 
@@ -127,6 +128,7 @@ def test_conformal_yardage_explicit_graceful_fallback_keeps_bayesian_intervals(m
     mc_df = pd.DataFrame({"projection": [1.0]}, index=pd.Index(["p1"], name="player_id"))
     out = runner._apply_conformal_yardage_intervals(
         mc_df, np.array([10.0]), stat="rushing_yards", position="RB",
+        season=2026,
     )
     assert out is mc_df
 
