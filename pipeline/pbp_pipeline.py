@@ -842,17 +842,25 @@ def _safe(v):
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-def main() -> None:
+def main(seasons: list[int] | None = None) -> list[int]:
+    """
+    Build PBP features for ``seasons`` (default: all of SEASONS).
+
+    Returns the seasons that failed. A failure is also written to dead_letter, and
+    the other seasons still run. The caller decides whether a failure stops its run.
+    """
+    run_seasons = list(SEASONS if seasons is None else seasons)
     logger.info("=" * 60)
-    logger.info("  PBP Pipeline — Seasons 2019–2025")
+    logger.info("  PBP Pipeline — Seasons %s", ", ".join(str(s) for s in run_seasons))
     logger.info("=" * 60)
 
+    failed_seasons: list[int] = []
     conn = _get_conn()
     try:
         total_features, total_matchups, total_ftn, total_plays = 0, 0, 0, 0
         all_features = []
 
-        for season in SEASONS:
+        for season in run_seasons:
             try:
                 pbp = _load_pbp_season(season)
                 part = _load_participation_season(season)
@@ -913,6 +921,7 @@ def main() -> None:
                 )
             except Exception as e:
                 logger.warning("Season %d PBP failed: %s — skipping.", season, e)
+                failed_seasons.append(season)
                 # A failed statement leaves Postgres refusing every further
                 # command on this connection until rolled back — without
                 # this, one bad season silently aborts every season after
@@ -950,7 +959,10 @@ def main() -> None:
         "  PBP DONE — %d feature rows, %d matchup edges, %d ftn_player_game, %d pbp_plays",
         total_features, total_matchups, total_ftn, total_plays
     )
+    if failed_seasons:
+        logger.warning("PBP failed for seasons: %s", failed_seasons)
     logger.info("=" * 60)
+    return failed_seasons
 
 
 if __name__ == "__main__":

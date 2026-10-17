@@ -20,6 +20,58 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+def verify_forward_week_structural(
+    dsn: str, *, season: int, start_week: int, pipeline_run_id: str
+) -> dict:
+    """Structural gate for a forward (unplayed) week (audit C-1).
+
+    The statistical gate below scores pending projections against realized
+    points, which do not exist before kickoff — for a forward week that join is
+    always empty and the gate can never pass, blocking promotion. This check
+    asks the defined question for that case instead: did the pending candidate
+    run actually produce rows for the target week, in every surface steps 4-6
+    write? It reads the pending run id, never the approved surface.
+    """
+    import psycopg2
+
+    checks = [
+        ("projections", "pipeline_run_id",
+         "SELECT COUNT(*) FROM projections WHERE season = %s AND pipeline_run_id = %s",
+         (season, pipeline_run_id)),
+        ("season_simulations", "pipeline_run_id",
+         "SELECT COUNT(*) FROM season_simulations WHERE season = %s AND start_week = %s AND pipeline_run_id = %s",
+         (season, start_week, pipeline_run_id)),
+        ("team_game_predictions", "model_run_id",
+         "SELECT COUNT(*) FROM team_game_predictions WHERE season = %s AND week = %s AND model_run_id = %s",
+         (season, start_week, pipeline_run_id)),
+    ]
+    counts: dict[str, int] = {}
+    with psycopg2.connect(dsn) as conn:
+        with conn.cursor() as cur:
+            for table, _id_col, sql, params in checks:
+                cur.execute(sql, params)
+                row = cur.fetchone()
+                counts[table] = int(row[0]) if row and row[0] is not None else 0
+    met = all(n > 0 for n in counts.values())
+    missing = sorted(table for table, n in counts.items() if n == 0)
+    return {
+        "mode": "structural",
+        "season": season,
+        "start_week": start_week,
+        "pipeline_run_id": pipeline_run_id,
+        "row_counts": counts,
+        "acceptance": {"every_surface_has_target_week_rows": met},
+        "missing_surfaces": missing,
+        "diagnosis": (
+            "All three materialized surfaces carry rows for the target week under "
+            "the pending run id." if met else
+            f"No pending rows for these surfaces under {pipeline_run_id}: {missing}. "
+            "Steps 4-6 either did not run or wrote nothing for the target week; "
+            "do not promote."
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--season", type=int, default=2025)
@@ -27,6 +79,18 @@ def main() -> int:
     parser.add_argument("--end-week", type=int, default=18)
     parser.add_argument("--top-n", type=int, default=24)
     parser.add_argument("--out", type=Path, default=ROOT / "reports" / "season_acceptance.json")
+    parser.add_argument(
+        "--structural-only",
+        action="store_true",
+        help="Forward-week structural gate (audit C-1): assert the pending run id has "
+             "rows for the target week instead of scoring against realized points, "
+             "which do not exist before kickoff.",
+    )
+    parser.add_argument(
+        "--pipeline-run-id",
+        default=None,
+        help="Pending run id to check in structural mode (e.g. weekly_auto_2026_pending)",
+    )
     from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 
     parser.add_argument(
@@ -35,6 +99,22 @@ def main() -> int:
         help="Database to read projections and realized points from (the refresh passes its own DSN)",
     )
     args = parser.parse_args()
+
+    if args.structural_only:
+        if not args.pipeline_run_id:
+            parser.error("--structural-only requires --pipeline-run-id")
+        from pipeline.schema import normalize_dsn
+
+        payload = verify_forward_week_structural(
+            normalize_dsn(args.database_url),
+            season=args.season,
+            start_week=args.start_week,
+            pipeline_run_id=args.pipeline_run_id,
+        )
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(payload, indent=2) + "\n")
+        print(json.dumps(payload, indent=2))
+        return 0 if payload["acceptance"]["every_surface_has_target_week_rows"] else 1
 
     import pandas as pd
     import psycopg2

@@ -516,6 +516,10 @@ CREATE TABLE IF NOT EXISTS dead_letter (
 
 # ── Adapter ───────────────────────────────────────────────────────────────────
 
+class IngestIncompleteError(RuntimeError):
+    """A requested source failed to load, or loaded and staged no rows. The ingest did not complete."""
+
+
 class NFLReadPyAdapter:
     """
     Fetches data from nflreadpy, validates each row with a Pydantic model,
@@ -528,11 +532,20 @@ class NFLReadPyAdapter:
     Dry-run (no DB required — use for local testing):
         adapter = NFLReadPyAdapter(db_url="")
         adapter.run_full_ingest(seasons=[2025], dry_run=True)
+
+    run_full_ingest treats every source it is asked for as required. A load that
+    fails after retries, or a source that loads but stages zero rows, raises
+    IngestIncompleteError once all sources have run. Sources the season filter
+    skips (for example FTN charting before 2022) are not attempted and do not count.
     """
 
     def __init__(self, db_url: str) -> None:
         self._db_url = db_url
         self._conn: Optional[psycopg2.extensions.connection] = None
+        # Per run_full_ingest call: failed loads as (source, season, error), and
+        # successful loads per source. Reset at the start of each run.
+        self._load_failures: list[tuple[str, int, str]] = []
+        self._successful_loads: dict[str, int] = {}
 
     # ── Connection management ─────────────────────────────────────────────
 
@@ -627,6 +640,38 @@ class NFLReadPyAdapter:
 
     # ── Core validation loop ──────────────────────────────────────────────
 
+    def _record_load_failure(
+        self, source: str, season: int, exc: Exception, dry_run: bool
+    ) -> None:
+        """
+        A load that still failed after _load_with_retry. It is a failure of the
+        source, not an empty success: run_full_ingest raises for it once every
+        source has run. The failure is also dead-lettered when writing is enabled.
+        """
+        message = f"{type(exc).__name__}: {exc}"
+        self._load_failures.append((source, season, message))
+        if not dry_run and self._conn:
+            self._write_dead_letter(
+                f"nflreadpy.load.{source}", message, {"season": season, "source": source}
+            )
+
+    def _source_problems(self, source: str, ok: int, failures_before: int) -> list[str]:
+        """Why a requested source is incomplete for this run, or [] when it is complete."""
+        problems: list[str] = []
+        new_failures = self._load_failures[failures_before:]
+        if new_failures:
+            seasons = sorted({season for _, season, _ in new_failures})
+            problems.append(
+                f"{source}: load failed for season(s) {seasons} after retries "
+                f"({new_failures[0][2]})"
+            )
+        if ok == 0 and self._successful_loads.get(source, 0) > 0:
+            problems.append(
+                f"{source}: loaded from nflreadpy but staged zero valid rows; "
+                "a required source must not be empty"
+            )
+        return problems
+
     def _process_source(
         self,
         source_type: str,
@@ -646,6 +691,8 @@ class NFLReadPyAdapter:
         The preview list is always built; only printed in dry_run mode.
         """
         validator_cls = VALIDATOR_MAP[source_type]
+        # Only a load that returned a frame reaches here; a failed load is recorded separately.
+        self._successful_loads[source_type] = self._successful_loads.get(source_type, 0) + 1
         staging_batch: list[tuple] = []
         success_count = 0
         failure_count = 0
@@ -756,6 +803,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_player_stats, seasons=season)
             except Exception as exc:
                 logger.error("load_player_stats FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_PLAYER_STATS, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_PLAYER_STATS, df, season, WEEK_COL[SOURCE_PLAYER_STATS], dry_run
@@ -778,6 +826,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_rosters, seasons=season)
             except Exception as exc:
                 logger.error("load_rosters FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_ROSTERS, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_ROSTERS, df, season, WEEK_COL[SOURCE_ROSTERS], dry_run
@@ -800,6 +849,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_schedules, seasons=season)
             except Exception as exc:
                 logger.error("load_schedules FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_SCHEDULES, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_SCHEDULES, df, season, WEEK_COL[SOURCE_SCHEDULES], dry_run
@@ -826,6 +876,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_snap_counts, seasons=season)
             except Exception as exc:
                 logger.error("load_snap_counts FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_SNAP_COUNTS, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_SNAP_COUNTS, df, season, WEEK_COL[SOURCE_SNAP_COUNTS], dry_run
@@ -848,6 +899,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_depth_charts, seasons=season)
             except Exception as exc:
                 logger.error("load_depth_charts FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_DEPTH_CHARTS, season, exc, dry_run)
                 continue
             # nflreadpy's current depth feed generally has no publication
             # timestamp.  Preserve when we acquired this snapshot so freshness
@@ -896,6 +948,7 @@ class NFLReadPyAdapter:
                         "load_nextgen_stats FAILED season=%d stat_type=%s: %s",
                         season, stat_type, exc,
                     )
+                    self._record_load_failure(SOURCE_NEXTGEN_STATS, season, exc, dry_run)
                     continue
                 ok, fail, preview = self._process_source(
                     SOURCE_NEXTGEN_STATS, df, season, WEEK_COL[SOURCE_NEXTGEN_STATS], dry_run
@@ -918,6 +971,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_team_stats, seasons=season)
             except Exception as exc:
                 logger.error("load_team_stats FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_TEAM_STATS, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_TEAM_STATS, df, season, WEEK_COL[SOURCE_TEAM_STATS], dry_run
@@ -941,6 +995,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_ftn_charting, seasons=season)
             except Exception as exc:
                 logger.error("load_ftn_charting FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_FTN_CHARTING, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_FTN_CHARTING, df, season, WEEK_COL[SOURCE_FTN_CHARTING], dry_run
@@ -962,6 +1017,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_participation, seasons=season)
             except Exception as exc:
                 logger.error("load_participation FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_PARTICIPATION, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_PARTICIPATION, df, season, WEEK_COL[SOURCE_PARTICIPATION], dry_run
@@ -983,6 +1039,7 @@ class NFLReadPyAdapter:
                 df = self._load_with_retry(nfl.load_combine, seasons=season)
             except Exception as exc:
                 logger.error("load_combine FAILED season=%d: %s", season, exc)
+                self._record_load_failure(SOURCE_COMBINE, season, exc, dry_run)
                 continue
             ok, fail, preview = self._process_source(
                 SOURCE_COMBINE, df, season, WEEK_COL[SOURCE_COMBINE], dry_run
@@ -1006,6 +1063,9 @@ class NFLReadPyAdapter:
         """
         sources = sources or ALL_SOURCES
         results: dict[str, tuple[int, int]] = {}
+        self._load_failures = []
+        self._successful_loads = {}
+        problems: list[str] = []
 
         dispatch = {
             SOURCE_PLAYER_STATS:    self.fetch_player_stats,
@@ -1024,10 +1084,18 @@ class NFLReadPyAdapter:
             if i > 0:
                 logger.debug("Sleeping %.1fs between sources…", MIN_DELAY_BETWEEN_SOURCES)
                 time.sleep(MIN_DELAY_BETWEEN_SOURCES)
+            failures_before = len(self._load_failures)
             ok, fail = dispatch[source](seasons, dry_run=dry_run)
             results[source] = (ok, fail)
+            problems.extend(self._source_problems(source, ok, failures_before))
 
         _print_summary(results)
+        if problems:
+            message = "; ".join(problems)
+            if dry_run:
+                logger.warning("Ingest incomplete (dry run, not raised): %s", message)
+            else:
+                raise IngestIncompleteError(message)
         return results
 
 

@@ -107,6 +107,8 @@ class OrchestratorSummary:
     seasons: list[int]
     dry_run: bool
     season_results: list[SeasonResult]
+    # Run-level steps (Elo and PBP enrichment) that are not tied to one season.
+    global_steps: list[StepResult] = field(default_factory=list)
     total_players: int = 0
     total_games: int = 0
     total_feature_rows: int = 0
@@ -516,14 +518,16 @@ class Orchestrator:
                 sr = _live_season(season, self._db_url, sources=sources)
             season_results.append(sr)
 
+        global_steps: list[StepResult] = []
         if not dry_run:
-            _run_global_enrichment(self._db_url)
+            global_steps = _run_global_enrichment(self._db_url, seasons)
 
         end = datetime.utcnow()
         summary = OrchestratorSummary(
             seasons=seasons,
             dry_run=dry_run,
             season_results=season_results,
+            global_steps=global_steps,
             total_players=sum(sr.n_players for sr in season_results),
             total_games=sum(sr.n_games   for sr in season_results),
             total_feature_rows=sum(sr.n_feature_rows for sr in season_results),
@@ -534,33 +538,55 @@ class Orchestrator:
         return summary
 
 
-def _run_global_enrichment(db_url: str) -> None:
+def _run_global_enrichment(db_url: str, seasons: Optional[list[int]] = None) -> list[StepResult]:
     """
-    Elo/embedding enrichment and the PBP pipeline write directly into
-    feature_matrix across all seasons in one pass (not per-season, no
-    season argument) — previously only pipeline/run_full_etl.sh called
-    them, so any orchestrator-only live run silently skipped Elo columns
-    and Bucket 11 (PBP) features. Best-effort, matching run_full_etl.sh:
-    a failure here is logged and does not fail the ingest/normalize/
-    feature_engineer work already committed for the requested seasons.
+    Elo and PBP enrichment, written into feature_matrix for ``seasons`` only.
+
+    These steps used to run for every season (2019 to 2026) on each live run,
+    so a weekly refresh rewrote the whole history with no run id. Scoping them to
+    the requested seasons means a weekly run touches only the season it refreshes.
+    The Elo fit still reads all game history, because the rating is a running
+    state, so the values for those seasons are unchanged.
+
+    A failure is returned as a failed StepResult, so the caller can fail the run.
+    It is also written to dead_letter. The embedding step is not run here; it
+    raises by design (see enrich_elo_embeddings.enrich_embeddings).
     """
     os.environ.setdefault("DATABASE_URL", db_url)
+    steps: list[StepResult] = []
 
-    logger.info("Post-ETL: Elo/embedding enrichment…")
+    logger.info("Post-ETL: Elo enrichment (seasons=%s)…", seasons or "all")
+    t0 = time.monotonic()
     try:
-        from pipeline.enrich_elo_embeddings import main as run_elo_enrichment
-        run_elo_enrichment()
+        from pipeline.enrich_elo_embeddings import run_elo_enrichment
+        run_elo_enrichment(seasons)
+        steps.append(StepResult(name="enrich_elo", elapsed_s=time.monotonic() - t0, ok=True))
     except Exception as exc:
-        logger.warning("Elo/embedding enrichment failed (continuing): %s", exc)
+        logger.error("Elo enrichment FAILED: %s", exc)
         _write_dead_letter(db_url, "orchestrator/enrich_elo_embeddings", str(exc), 0)
+        steps.append(StepResult(
+            name="enrich_elo", elapsed_s=time.monotonic() - t0, ok=False, error=str(exc),
+        ))
 
-    logger.info("Post-ETL: PBP pipeline…")
+    logger.info("Post-ETL: PBP pipeline (seasons=%s)…", seasons or "all")
+    t0 = time.monotonic()
     try:
         from pipeline.pbp_pipeline import main as run_pbp_pipeline
-        run_pbp_pipeline()
+        failed_seasons = run_pbp_pipeline(seasons)
+        if failed_seasons:
+            steps.append(StepResult(
+                name="pbp_pipeline", elapsed_s=time.monotonic() - t0, ok=False,
+                error=f"PBP failed for seasons {failed_seasons} (see dead_letter)",
+            ))
+        else:
+            steps.append(StepResult(name="pbp_pipeline", elapsed_s=time.monotonic() - t0, ok=True))
     except Exception as exc:
-        logger.warning("PBP pipeline failed (continuing): %s", exc)
+        logger.error("PBP pipeline FAILED: %s", exc)
         _write_dead_letter(db_url, "orchestrator/pbp_pipeline", str(exc), 0)
+        steps.append(StepResult(
+            name="pbp_pipeline", elapsed_s=time.monotonic() - t0, ok=False, error=str(exc),
+        ))
+    return steps
 
 
 # ── Print helper ──────────────────────────────────────────────────────────────
@@ -589,6 +615,11 @@ def _print_orchestrator_summary(summary: OrchestratorSummary) -> None:
             f"  Games: {sr.n_games}"
             f"  Features: {sr.n_feature_rows}"
         )
+
+    for step in summary.global_steps:
+        status = "✓" if step.ok else "✗"
+        err_str = f"  ERROR: {step.error}" if step.error else ""
+        print(f"\n  Run-level  {status} {step.name:<20}  {step.elapsed_s:>6.2f}s{err_str}")
 
     print(f"\n{'─' * 72}")
     print(

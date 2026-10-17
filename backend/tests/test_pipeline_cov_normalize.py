@@ -397,27 +397,34 @@ def test_upsert_game_logs_flushes_in_batches_and_counts_every_row(norm, fake_db,
     assert summary.errors == 0
 
 
-def test_upsert_game_logs_fk_violation_skips_that_batch_and_counts_errors(
+def test_upsert_game_logs_bad_row_costs_only_that_row_and_is_dead_lettered(
     norm, fake_db, monkeypatch
 ):
+    """H-3: one bad row in a batch no longer drops the whole batch (up to 500 rows).
+
+    The batch insert fails, rolls back, and is retried row by row in savepoints.
+    Only the offending row is lost, and it is dead-lettered with its payload so
+    the raw data survives for replay.
+    """
     monkeypatch.setattr(normalize_mod, "BATCH_SIZE", 2)
-    calls = {"n": 0}
     real = fake_db.execute_values
 
-    def first_batch_fails(cur, sql, argslist, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
+    def one_row_always_fails(cur, sql, argslist, **kwargs):
+        if "INSERT INTO game_logs" in " ".join(sql.split()) and any(r[0] == "p0" for r in argslist):
             raise psycopg2.IntegrityError("foreign key violation")
         return real(cur, sql, argslist, **kwargs)
 
-    monkeypatch.setattr(normalize_mod, "execute_values", first_batch_fails)
+    monkeypatch.setattr(normalize_mod, "execute_values", one_row_always_fails)
     logs = [{"player_id": f"p{i}", "game_id": "G"} for i in range(5)]
     summary = NormalizeSummary()
 
-    assert norm._upsert_game_logs(logs, summary) == 3
-    assert summary.errors == 2  # the failed batch of two rows
-    assert fake_db.rollbacks == 1
-    assert [len(b) for b in fake_db.values_for("INSERT INTO game_logs")] == [2, 1]
+    assert norm._upsert_game_logs(logs, summary) == 4
+    assert summary.errors == 1  # only p0
+    assert fake_db.rollbacks == 1  # the failed batch insert rolled back
+    dead = fake_db.statements_containing("INSERT INTO dead_letter")
+    assert len(dead) == 1
+    assert dead[0][1][0] == "normalize/game_logs"
+    assert "player_id=p0" in dead[0][1][1]
 
 
 def test_upsert_game_logs_empty_is_noop(norm, fake_db):

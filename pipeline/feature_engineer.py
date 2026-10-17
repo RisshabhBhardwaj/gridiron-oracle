@@ -581,10 +581,10 @@ CREATE INDEX IF NOT EXISTS idx_feature_matrix_player_season
 # Any field added to FeatureRow is automatically included here and in DB writes.
 _FM_COLS: list[str] = [f.name for f in dc_fields(FeatureRow)]
 
-# Forward rows take these columns from the target game, never from the player's
-# prior-season row, whose values describe a different game: the lines, rest,
-# venue, and the script expectations derived from the lines. All other columns
-# keep their existing source (see build_forward_week).
+# Columns that describe the target game: the lines, rest, venue, and the script
+# expectations derived from the lines. build_feature_row reads them from the
+# target game row. Forward rows never carry them from history (see
+# build_forward_week). Tests check that the set stays a subset of the model columns.
 _FWD_TARGET_GAME_COLS: frozenset[str] = frozenset({
     "game_total_line", "spread_line",
     "days_rest", "is_short_week", "is_bye_prior",
@@ -598,6 +598,22 @@ _FWD_TARGET_GAME_COLS: frozenset[str] = frozenset({
 # line history: the latest snapshot known before as-of, else a line implied by
 # pregame Elo only (decision 0008, item 3). See pipeline/line_snapshots.py and
 # build_forward_week below. There is no fixed median fallback.
+
+# Columns the causal rebuild does not populate (training clears them to NULL, see
+# _clear_disabled_feature_values). Forward rows leave them NULL too, so the model
+# never sees a source in serving that it did not train on.
+_DISABLED_FEATURE_COLUMNS: frozenset[str] = frozenset({
+    "snap_pct_off", "routes_run_pct", "blitz_exposure",
+    "temp_f", "wind_mph", "temp_bucket", "wind_bucket",
+    "wind_x_qb", "wind_x_wr", "precip_x_pass", "injury_status_encoded",
+    "avg_separation", "avg_cushion",
+    "epa_per_play", "epa_per_target", "epa_per_rush", "qb_epa_per_dropback",
+    "adot", "yac_per_reception", "xyac_per_reception", "target_share_pbp",
+    "air_yards_share_pbp", "red_zone_targets", "end_zone_targets",
+    "red_zone_target_share", "drop_rate", "ol_pressure_rate", "ol_sack_rate",
+    "pass_left_rate", "pass_middle_rate", "pass_right_rate",
+    *(f"player_emb_{i}" for i in range(32)),
+})
 
 
 # ── Parallel helper (module-level for joblib pickle-ability) ──────────────────
@@ -620,6 +636,60 @@ def _compute_player_features(
         )
         results.append(fr)
     return results
+
+
+# ── Forward-row helpers (module-level, pure) ──────────────────────────────────
+
+def _cut_prior_games(rows: list[dict], *, week: int, as_of: datetime) -> list[dict]:
+    """Completed games of the season that are known before the target game.
+
+    Keeps rows with ``week < week`` that kicked off before ``as_of``. A prior-week
+    row with no kickoff time cannot be shown to precede ``as_of``, so the build
+    fails closed instead of guessing.
+    """
+    prior = [row for row in rows if int(row["week"]) < week]
+    undated = sorted({str(row["game_id"]) for row in prior if row.get("kickoff_at") is None})
+    if undated:
+        raise ValueError(
+            f"{len(undated)} prior-week games have no kickoff_at, so they cannot be cut at as_of: {undated[:5]}"
+        )
+    kept = [row for row in prior if row["kickoff_at"] < as_of]
+    if len(kept) != len(prior):
+        logger.info("forward cut: %d prior-week rows kicked off after as_of and were excluded", len(prior) - len(kept))
+    return kept
+
+
+def _latest_profiles(rows: list[dict], season: int) -> dict[str, dict]:
+    """Latest player profile whose effective season is at or before ``season``."""
+    latest: dict[str, dict] = {}
+    for row in rows:
+        effective = int(row["effective_season"])
+        if effective > season:
+            continue
+        pid = str(row["player_id"])
+        if pid not in latest or effective > int(latest[pid]["effective_season"]):
+            latest[pid] = dict(row)
+    return latest
+
+
+def _forward_target(
+    row: dict, *, season: int, week: int, team: str, opponent: str, profile: dict,
+) -> dict:
+    """Target-row dict that build_feature_row reads for a forward candidate.
+
+    Keys match the historical game-log rows, so the same profile values reach
+    the builder. The target game is not played, so there are no stat columns.
+    Physical measurables prefer the season profile (the source training uses);
+    the roster row is the fallback when no profile exists yet.
+    """
+    return {
+        "player_id": row["player_id"], "game_id": row["game_id"], "season": season, "week": week,
+        "position": row.get("position"), "team": team, "opponent_team": opponent,
+        "player_height": profile.get("height_inches", row.get("player_height")),
+        "player_weight": profile.get("weight_lbs", row.get("player_weight")),
+        "draft_round": row.get("draft_round"), "draft_number": row.get("draft_number"),
+        "entry_year": row.get("entry_year"), "birth_date": row.get("birth_date"),
+    }
 
 
 # ── FeatureEngineer class ─────────────────────────────────────────────────────
@@ -659,12 +729,18 @@ class FeatureEngineer:
                 self._conn.rollback()
             self.close()
 
-    def _fetch_season_rows(self, season: int) -> list[dict]:
-        """Fetch all game_log rows for a season, joined with game context."""
+    def _fetch_season_rows(self, season: int, *, before_week: Optional[int] = None) -> list[dict]:
+        """Fetch game_log rows for a season, joined with game context.
+
+        ``before_week`` keeps only weeks strictly before it. Forward builds pass
+        it so the target week never reaches the builder.
+        """
         assert self._conn
+        week_clause = "" if before_week is None else "AND gl.week < %s"
+        params: tuple = (season,) if before_week is None else (season, before_week)
         with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                """
+                f"""
                 SELECT
                     gl.player_id, gl.game_id, gl.season, gl.week,
                     gl.position, gl.team, gl.opponent_team,
@@ -684,7 +760,7 @@ class FeatureEngineer:
                     COALESCE(snap.total_line, g.total_line) AS total_line,
                     COALESCE(snap.spread_line, g.spread_line) AS spread_line,
                     g.home_rest, g.away_rest,
-                    g.precipitation_bucket,
+                    g.precipitation_bucket, g.kickoff_at,
                     psp.height_inches AS player_height,
                     psp.weight_lbs AS player_weight,
                     p.draft_round,
@@ -712,10 +788,10 @@ class FeatureEngineer:
                   ON psp.player_id = gl.player_id AND psp.effective_season = gl.season
                 LEFT JOIN pbp_features pf
                   ON pf.player_id = gl.player_id AND pf.game_id = gl.game_id
-                WHERE gl.season = %s
+                WHERE gl.season = %s {week_clause}
                 ORDER BY gl.player_id, gl.week
                 """,
-                (season,),
+                params,
             )
             return [dict(r) for r in cur.fetchall()]
 
@@ -768,17 +844,23 @@ class FeatureEngineer:
         self, *, season: int, week: int, as_of: datetime,
         line_elo: Any = None,
     ) -> int:
-        """Build pre-kickoff feature rows from only an as-of roster snapshot.
+        """Build pre-kickoff feature rows for one week, causal as of ``as_of``.
 
-        Historical feature building requires completed game logs.  This path is
-        intentionally separate: it uses a depth-chart snapshot no newer than
-        ``as_of``, retains only a player's latest *prior-season* feature state,
-        and clears every target label. Game context (lines, rest, venue) comes
-        from the target game (``_FWD_TARGET_GAME_COLS``).
+        Each candidate's row comes from ``build_feature_row``, the builder the
+        historical path uses, fed only what is known before the target game: the
+        season's completed games with ``week < week`` that kicked off before
+        ``as_of``, for the player and for the league (opponent and positional
+        context). Profile values (height, weight, age, experience) come from the
+        latest profile at or before ``season``. Game context (lines, rest, venue)
+        comes from the target game. No feature row from an earlier season is
+        carried: training builds each row from its own season only, so carried
+        state would change the model's inputs. Routes, PBP/NGS priors, and the
+        lagged depth rank are filled from strictly prior weeks afterwards, as in
+        training.
 
         A line the target game does not carry resolves through the causal line
-        history (latest snapshot known before ``as_of``, else a pregame-Elo
-        implied line — decision 0008, item 3), never a fixed median.
+        history (latest snapshot known before ``as_of`` and kickoff, else a
+        pregame-Elo implied line — decision 0008, item 3), never a fixed median.
         ``line_elo`` injects the fitted Elo system (tests); when omitted the
         shared ``get_elo_system()`` singleton is used.
         """
@@ -786,12 +868,40 @@ class FeatureEngineer:
             raise ValueError("as_of must be timezone-aware")
         assert self._conn
         with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Forward rows carry cleared labels and are upserted over feature_matrix
+            # by (player_id, game_id). For a week that already has played games that
+            # would overwrite actual_* labels and historical features, so refuse
+            # before any candidate or history query runs.
+            cur.execute(
+                """
+                SELECT (
+                    EXISTS (
+                        SELECT 1 FROM games
+                        WHERE season = %s AND week = %s
+                          AND (home_score IS NOT NULL OR away_score IS NOT NULL)
+                    )
+                    OR EXISTS (SELECT 1 FROM game_logs WHERE season = %s AND week = %s)
+                ) AS played
+                """,
+                (season, week, season, week),
+            )
+            guard_rows = cur.fetchall()
+            if guard_rows:
+                first = guard_rows[0]
+                played = first.get("played") if isinstance(first, dict) else first[0]
+                if played:
+                    raise ValueError(
+                        f"Refusing to build forward rows for season={season} week={week}: "
+                        "the week already has played games. Forward rows would overwrite "
+                        "actual_* labels and historical features in feature_matrix."
+                    )
             cur.execute(
                 """
                 SELECT g.id AS game_id, g.home_team, g.away_team, g.roof, g.surface,
                        g.total_line, g.spread_line, g.home_rest, g.away_rest, g.kickoff_at,
-                       dc.player_id, dc.position, dc.team, p.height AS player_height,
-                       p.weight AS player_weight, p.draft_round, p.draft_number
+                       dc.player_id, dc.position, dc.team,
+                       p.birth_date, p.entry_year, p.draft_round, p.draft_number,
+                       p.height AS player_height, p.weight AS player_weight
                 FROM games g
                 JOIN LATERAL (
                     SELECT DISTINCT ON (d.player_id) d.player_id, d.position, d.team
@@ -816,41 +926,38 @@ class FeatureEngineer:
                 raise ValueError(f"Forward roster has {len(teams)} teams, expected 32")
             player_ids = sorted({str(row["player_id"]) for row in candidates})
             cur.execute(
-                f"""
-                SELECT DISTINCT ON (player_id) {', '.join(_FM_COLS)}
-                FROM feature_matrix WHERE player_id = ANY(%s) AND season < %s
-                ORDER BY player_id, season DESC, week DESC, computed_at DESC
+                """
+                SELECT player_id, effective_season, height_inches, weight_lbs
+                FROM player_season_profiles
+                WHERE player_id = ANY(%s) AND effective_season <= %s
                 """,
                 (player_ids, season),
             )
-            priors = {str(row["player_id"]): dict(row) for row in cur.fetchall()}
+            profiles = _latest_profiles([dict(row) for row in cur.fetchall()], season)
+        history = _cut_prior_games(self._fetch_season_rows(season, before_week=week), week=week, as_of=as_of)
+        league_ctx = build_season_feature_context(history)
+        by_player: dict[str, list[dict]] = defaultdict(list)
+        for prow in history:
+            by_player[str(prow["player_id"])].append(prow)
 
         feature_rows: list[FeatureRow] = []
         # One causal line lookup per game (not per player): the snapshot/Elo
         # resolution is identical for every row of the same game.
         _causal_lines_by_game: dict[str, Any] = {}
-        identity = {"player_id", "game_id", "season", "week", "position", "team", "opponent_team", "is_home", "as_of"}
         for row in candidates:
+            pid = str(row["player_id"])
             team = str(row["team"])
             home = team == row["home_team"]
-            target = {
-                "player_id": row["player_id"], "game_id": row["game_id"], "season": season,
-                "week": week, "position": row["position"], "team": team,
-                "opponent_team": row["away_team"] if home else row["home_team"],
-                "player_height": row["player_height"], "player_weight": row["player_weight"],
-                "draft_round": row["draft_round"], "draft_number": row["draft_number"],
-            }
+            opponent = str(row["away_team"] if home else row["home_team"])
+            target = _forward_target(
+                row, season=season, week=week, team=team, opponent=opponent,
+                profile=profiles.get(pid, {}),
+            )
             game = {key: row.get(key) for key in (
                 "home_team", "away_team", "roof", "surface", "total_line", "spread_line", "home_rest", "away_rest"
             )}
-            context = build_feature_row(target, [], game, [])
-            values = {name: getattr(context, name) for name in _FM_COLS}
-            prior = priors.get(str(row["player_id"]))
-            if prior:
-                for name in _FM_COLS:
-                    if (name not in identity and not name.startswith("actual_")
-                            and name not in _FWD_TARGET_GAME_COLS):
-                        values[name] = prior.get(name)
+            built = build_feature_row(target, by_player.get(pid, []), game, history, season_ctx=league_ctx)
+            values = {name: getattr(built, name) for name in _FM_COLS}
             if values["game_total_line"] is None or values["spread_line"] is None:
                 game_id = str(row["game_id"])
                 causal = _causal_lines_by_game.get(game_id)
@@ -872,9 +979,9 @@ class FeatureEngineer:
                 if values["spread_line"] is None:
                     values["spread_line"] = causal.spread_line
             values.update({
-                "player_id": str(row["player_id"]), "game_id": str(row["game_id"]),
-                "season": season, "week": week, "position": row["position"], "team": team,
-                "opponent_team": target["opponent_team"], "is_home": int(home), "as_of": as_of,
+                "player_id": pid, "game_id": str(row["game_id"]),
+                "season": season, "week": week, "position": row.get("position"), "team": team,
+                "opponent_team": opponent, "is_home": int(home), "as_of": as_of,
             })
             for name in _FM_COLS:
                 if name.startswith("actual_"):
@@ -1099,19 +1206,7 @@ class FeatureEngineer:
                 """
             )
             existing = {row[0] for row in cur.fetchall()}
-            disabled = {
-                "snap_pct_off", "routes_run_pct", "blitz_exposure",
-                "temp_f", "wind_mph", "temp_bucket", "wind_bucket",
-                "wind_x_qb", "wind_x_wr", "precip_x_pass", "injury_status_encoded",
-                "avg_separation", "avg_cushion",
-                "epa_per_play", "epa_per_target", "epa_per_rush", "qb_epa_per_dropback",
-                "adot", "yac_per_reception", "xyac_per_reception", "target_share_pbp",
-                "air_yards_share_pbp", "red_zone_targets", "end_zone_targets",
-                "red_zone_target_share", "drop_rate", "ol_pressure_rate", "ol_sack_rate",
-                "pass_left_rate", "pass_middle_rate", "pass_right_rate",
-                *(f"player_emb_{i}" for i in range(32)),
-            }
-            columns = sorted(disabled.intersection(existing))
+            columns = sorted(_DISABLED_FEATURE_COLUMNS.intersection(existing))
             if columns:
                 cur.execute(
                     f"UPDATE feature_matrix SET {', '.join(f'{column} = NULL' for column in columns)} WHERE season = %s",
