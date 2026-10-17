@@ -7,14 +7,14 @@ Ridge meta-learner for the 2-layer stacking ensemble.
 ARCHITECTURE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Layer 1 — Base learners (run separately, produce OOF predictions):
-  XGBoost  → ml/oof/xgb_{target}_{run_id[:8]}.csv
-  LightGBM → ml/oof/lgbm_{target}_{run_id[:8]}.csv
-  TFT      → ml/oof/tft_{target}_{run_id[:8]}.csv   (complete, 3-way alignment tested)
+  XGBoost  → ml/oof/xgb_{target}_{run_id[:16]}.csv
+  LightGBM → ml/oof/lgbm_{target}_{run_id[:16]}.csv
+  TFT      → ml/oof/tft_{target}_{run_id[:16]}.csv   (complete, 3-way alignment tested)
 
 Layer 2 — Meta-learner (this file):
   Input:  Aligned matrix of base-learner OOF predictions
   Model:  Ridge regression, alpha tuned via RidgeCV (GCV)
-  Output: ml/oof/stack_{target}_{run_id[:8]}.csv
+  Output: ml/oof/stack_{target}_{run_id[:16]}.csv
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WHY RIDGE FOR THE META-LEARNER
@@ -102,7 +102,7 @@ from ml.artifact_manifest import (
     killed_learners,
     learner_prefix_of,
 )
-from ml.utils import TARGET_COL_MAP, _compute_metrics
+from ml.utils import RUN_ID_FILE_CHARS, TARGET_COL_MAP, _compute_metrics, new_pseudo_run_id
 from ml.reliability import promotion_gate
 
 logging.basicConfig(
@@ -516,7 +516,9 @@ def _save_stack_oof(
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     position_tag = f"_{position}" if position else ""
-    filename = f"stack_{target}{position_tag}_{run_id[:8]}.csv"
+    # Keep the leading RUN_ID_FILE_CHARS of the run id (not a date-only
+    # prefix): two stacks in the same second must not share a file name.
+    filename = f"stack_{target}{position_tag}_{run_id[:RUN_ID_FILE_CHARS]}.csv"
     path = out_dir / filename
 
     extra_pred_cols = [
@@ -900,7 +902,9 @@ def stack(
             logger.error("MLflow logging failed (continuing without it): %s", exc)
 
     elif not serving_oof_df.empty:
-        pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        # The id carries a random suffix so two stacks in the same second
+        # cannot share a file name (a time-only id overwrote the first).
+        pseudo_run_id = new_pseudo_run_id()
         oof_path = _save_stack_oof(serving_oof_df, target, pseudo_run_id, out_dir, position_filter)
 
     return StackResult(

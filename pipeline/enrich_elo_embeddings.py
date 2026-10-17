@@ -26,6 +26,8 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 
+from ml.season_constants import LAST_COMPLETE_SEASON
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -50,7 +52,8 @@ def enrich_elo(conn) -> None:
     with the 6 Elo columns for every (player, game) row.
 
     Strategy:
-        - Pull one row per game (distinct game_id + team combos) from game_logs.
+        - Pull one row per game (distinct game_id + team combos) from game_logs,
+          capped at LAST_COMPLETE_SEASON (the same cap as training and OOF).
         - Sort ascending by season, week to preserve temporal order (no leakage).
         - For each game: call elo.update(home_team, away_team, home_score, away_score,
           week). This is the standard ELO update used by 538-style models.
@@ -84,11 +87,15 @@ def enrich_elo(conn) -> None:
           AND gl.opponent_team IS NOT NULL
           AND gl.season IS NOT NULL
           AND gl.week IS NOT NULL
+          AND gl.season <= %(last_season)s
         ORDER BY gl.game_id, gl.team, gl.season, gl.week
-    """)
+    """, {"last_season": LAST_COMPLETE_SEASON})
     rows = cur.fetchall()
     cols = [d[0] for d in cur.description]
     games_df = pd.DataFrame(rows, columns=cols)
+    # Second guard on the same cap: the fit must never see a season past
+    # LAST_COMPLETE_SEASON, even if the query above is changed (audit C2).
+    games_df = games_df[games_df["season"].astype(int) <= LAST_COMPLETE_SEASON]
 
     if games_df.empty:
         logger.warning("No game_logs rows found — skipping Elo enrichment.")

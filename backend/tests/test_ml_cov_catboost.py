@@ -307,8 +307,10 @@ class TestTrain:
         result = train(df, [2021, 2022, 2023], target="receiving_yards", n_optuna_trials=0,
                        position_filter="WR", mlflow_tracking_uri=uri, out_dir=tmp_path / "oof")
 
+        from ml.utils import RUN_ID_FILE_CHARS
+
         assert result.run_id is not None and len(result.run_id) > 8
-        assert result.oof_path.name == f"catboost_receiving_yards_WR_{result.run_id[:8]}.csv"
+        assert result.oof_path.name == f"catboost_receiving_yards_WR_{result.run_id[:RUN_ID_FILE_CHARS]}.csv"
         assert result.oof_path.exists()
         run = mlflow.get_run(result.run_id)
         assert run.data.params["target"] == "receiving_yards"

@@ -14,7 +14,7 @@ Expanding-window only. Same hard AssertionError guard at every fold:
 OOF FORMAT (identical to others — required for stacking)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Columns: player_id, game_id, season, week, y_true, y_pred, fold_idx
-Saved to: ml/oof/catboost_{target}_{run_id[:8]}.csv
+Saved to: ml/oof/catboost_{target}_{run_id[:16]}.csv
 
 Standalone usage:
   python -m ml.catboost_model --seasons 2018-2024 --target receiving_yards
@@ -246,12 +246,12 @@ def _walk_forward_cv(
 def _pseudo_run_id(now: Optional[float] = None) -> str:
     """Run id used when MLflow issued none (disabled or unreachable).
 
-    save_oof keeps only run_id[:8] for the file name, so the first 8 characters must
-    identify the run. A UTC date did not: same-day runs wrote the same file and the
-    earlier OOF was lost. The id is the Unix time in seconds as 8 hex digits. It is
-    unique per second, sorts in time order (stacking discovery takes the newest file
-    by name), and always sorts after the old 8-digit date stamps. The 8 digits last
-    until 2106.
+    save_oof keeps only run_id[:16] for the file name, so the first 16 characters
+    must identify the run. A UTC date did not: same-day runs wrote the same file
+    and the earlier OOF was lost. The id is the Unix time in seconds as 8 hex
+    digits. It is unique per second, sorts in time order (stacking discovery
+    takes the newest file by name), and always sorts after the old 8-digit date
+    stamps. The 8 digits last until 2106.
     """
     seconds = int(time.time() if now is None else now)
     return f"{seconds:08x}"
@@ -305,9 +305,18 @@ def train(
     )
 
     if n_optuna_trials > 0:
-        last_train_seasons, last_val_season = folds[-1]
-        optuna_train = df[df["season"].isin(last_train_seasons)]
-        optuna_val   = df[df["season"] == last_val_season]
+        # Tune on the second-to-last fold: validating on the last fold's
+        # season lets hyperparameters see the final evaluation season, so the
+        # last OOF fold is not a clean held-out result (audit C4). With a
+        # single fold there is no earlier season; keep folds[-1] and say so.
+        tune_train_seasons, tune_val_season = folds[-2] if len(folds) >= 2 else folds[-1]
+        if len(folds) < 2:
+            logger.warning(
+                "Optuna tuning on the only fold (season %d): no earlier season available.",
+                tune_val_season,
+            )
+        optuna_train = df[df["season"].isin(tune_train_seasons)]
+        optuna_val   = df[df["season"] == tune_val_season]
         best_params = _run_optuna(
             optuna_train, optuna_val, features, target_col, n_optuna_trials
         )

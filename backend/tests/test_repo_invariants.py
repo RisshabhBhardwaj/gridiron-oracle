@@ -246,7 +246,11 @@ def test_no_report_labels_a_count_metric_as_mae() -> None:
 def test_summary_metric_matches_the_source_csv() -> None:
     import pandas as pd
 
-    for name in ("eval_causal_volume_summary.json", "eval_causal_yardage_summary.json"):
+    for name in (
+        "eval_causal_volume_summary.json",
+        "eval_causal_yardage_summary.json",
+        "causal_baseline_beats.json",
+    ):
         path = REPO_ROOT / "reports" / name
         if not path.exists():
             continue
@@ -262,12 +266,20 @@ def test_summaries_are_reproducible_from_their_generator() -> None:
         REPO_ROOT / "reports" / "eval_causal_volume_summary.json",
         REPO_ROOT / "reports" / "eval_causal_yardage_summary.json",
     ]
-    if not all(path.exists() for path in summary_paths):
-        return
-    result = subprocess.run(
-        [sys.executable, "scripts/summarize_causal_evals.py", "--check"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    if all(path.exists() for path in summary_paths):
+        result = subprocess.run(
+            [sys.executable, "scripts/summarize_causal_evals.py", "--check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    beats_path = REPO_ROOT / "reports" / "causal_baseline_beats.json"
+    if beats_path.exists():
+        result = subprocess.run(
+            [sys.executable, "scripts/summarize_causal_evals.py", "--check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr

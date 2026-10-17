@@ -25,6 +25,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import time
+import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -473,6 +475,27 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[float, flo
     return mae, rmse
 
 
+RUN_ID_FILE_CHARS: int = 16
+"""Leading characters of a run id that go into an OOF file name.
+
+Pseudo run ids are 16 hex digits (see new_pseudo_run_id). Earlier files used 8;
+the parsers in ml/artifact_manifest.py and ml/stacking_ensemble.py accept any
+underscore-free stamp, so both widths parse.
+"""
+
+
+def new_pseudo_run_id(now: Optional[float] = None) -> str:
+    """Run id used when MLflow issued none (disabled or unreachable).
+
+    Returns 16 lowercase hex digits: Unix seconds (8 digits, fixed width, so names
+    sort in time order) followed by 8 random digits. The random part keeps two
+    runs in the same second from sharing a file name, which a time-only id did
+    not. Callers must not use "_" in the id, because the file name is split on it.
+    """
+    seconds = int(time.time() if now is None else now)
+    return f"{seconds:08x}{uuid.uuid4().hex[:8]}"
+
+
 def save_oof(
     oof_df: pd.DataFrame,
     target: str,
@@ -483,12 +506,13 @@ def save_oof(
 ) -> Path:
     """Save OOF predictions to CSV. Returns path written.
 
-    Filename includes position when provided so multi-position same-day runs
-    cannot overwrite each other (stacking discovery depends on this).
+    Filename includes position and the leading RUN_ID_FILE_CHARS of the run id,
+    so runs that share a day or a second cannot overwrite each other (stacking
+    discovery depends on this).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     pos_part = f"_{position}" if position else ""
-    filename = f"{prefix}_{target}{pos_part}_{run_id[:8]}.csv"
+    filename = f"{prefix}_{target}{pos_part}_{run_id[:RUN_ID_FILE_CHARS]}.csv"
     path = out_dir / filename
     oof_df.to_csv(path, index=False)
     logger.info("OOF predictions saved → %s  (%d rows)", path, len(oof_df))

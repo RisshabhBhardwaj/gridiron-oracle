@@ -34,7 +34,7 @@ Expanding-window only. Same hard AssertionError guard at every fold:
 OOF FORMAT (identical to xgb_model.py — required for stacking)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Columns: player_id, game_id, season, week, y_true, y_pred, fold_idx
-Saved to: ml/oof/lgbm_{target}_{run_id[:8]}.csv
+Saved to: ml/oof/lgbm_{target}_{run_id[:16]}.csv
 
 The stacking meta-learner (stacking_ensemble.py) concatenates the XGBoost
 and LightGBM OOF files as its input features. Identical column format is
@@ -84,6 +84,7 @@ from ml.utils import (
     _parse_seasons,
     export_onnx,
     load_feature_matrix,
+    new_pseudo_run_id,
     save_oof,
 )
 from ml.cohort_guards import validate_training_cohort
@@ -413,11 +414,19 @@ def train(
         out_dir / "manifests" / f"lgbm_{target}_{position_filter or 'all'}_{data_hash}.json",
     )
 
-    # ── Optuna on most-recent fold ────────────────────────────────────────────
+    # ── Optuna on the fold before the most recent ─────────────────────────────
+    # Validating on the last fold's season lets hyperparameters see the final
+    # evaluation season (audit C4). Tune one season earlier so the last OOF
+    # fold stays a clean held-out result.
     if n_optuna_trials > 0:
-        last_train_seasons, last_val_season = folds[-1]
-        optuna_train = df[df["season"].isin(last_train_seasons)]
-        optuna_val   = df[df["season"] == last_val_season]
+        tune_train_seasons, tune_val_season = folds[-2] if len(folds) >= 2 else folds[-1]
+        if len(folds) < 2:
+            logger.warning(
+                "Optuna tuning on the only fold (season %d): no earlier season available.",
+                tune_val_season,
+            )
+        optuna_train = df[df["season"].isin(tune_train_seasons)]
+        optuna_val   = df[df["season"] == tune_val_season]
         best_params = _run_optuna(
             optuna_train, optuna_val, features, target_col, n_optuna_trials
         )
@@ -530,12 +539,14 @@ def train(
         except Exception as exc:
             logger.error("MLflow logging failed (continuing without it): %s", exc)
             # MLflow was configured but unreachable — still save OOF to disk.
+            # The id carries a random suffix so two runs in the same second
+            # cannot share a file name (a time-only id overwrote the first).
             if not oof_df.empty and oof_path is None:
-                pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+                pseudo_run_id = new_pseudo_run_id()
                 oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm", position=position_filter or "all")
 
     elif not oof_df.empty:
-        pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        pseudo_run_id = new_pseudo_run_id()
         oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm", position=position_filter or "all")
 
     return LGBMTrainResult(

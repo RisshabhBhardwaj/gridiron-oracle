@@ -15,7 +15,7 @@ from typing import Any, Optional
 import pandas as pd
 
 from ml.tft_model import TFTConfig, logger
-from ml.utils import FoldResult, save_oof
+from ml.utils import FoldResult, new_pseudo_run_id, save_oof
 
 
 def _save_local_oof(
@@ -27,7 +27,7 @@ def _save_local_oof(
     if oof_df.empty:
         return None
 
-    pseudo_run_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+    pseudo_run_id = new_pseudo_run_id()
     return save_oof(
         oof_df, target, pseudo_run_id, out_dir, prefix="tft", position=position or "all"
     )
