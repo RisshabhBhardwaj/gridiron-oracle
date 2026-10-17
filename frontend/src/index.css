@@ -1,17 +1,59 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ── Design tokens: the single source of truth for colour ──────────────────────
- * Values are space-separated RGB channels so Tailwind can add opacity
- * (bg-accent/15). tailwind.config.ts maps each name to a utility class.
- * Change a colour here and nowhere else. Components never contain hex or rgb().
+ * Values in :root are space-separated RGB channels so Tailwind can add opacity
+ * (bg-accent/15). The @theme block below maps each name to a utility class
+ * (bg-surface-raised, text-fg-muted, border-line, ...). `inline` keeps the
+ * var() reference in the emitted CSS, so the runtime variables stay the single
+ * source of truth. Change a colour in :root and nowhere else. Components never
+ * contain hex or rgb().
  *
  * Contrast on surface-raised: fg 16.9:1, fg-muted 6.0:1, fg-subtle 5.0:1,
  * accent 10.0:1, info 7.3:1, negative 6.2:1, highlight 7.1:1, warning 10.7:1.
  */
+@theme inline {
+  --color-surface: rgb(var(--surface));
+  --color-surface-raised: rgb(var(--surface-raised));
+  --color-surface-overlay: rgb(var(--surface-overlay));
+  --color-line: rgb(var(--line));
+  --color-line-strong: rgb(var(--line-strong));
+  --color-fg: rgb(var(--fg));
+  --color-fg-muted: rgb(var(--fg-muted));
+  --color-fg-subtle: rgb(var(--fg-subtle));
+  --color-accent: rgb(var(--accent));
+  --color-accent-fg: rgb(var(--accent-fg));
+  --color-positive: rgb(var(--positive));
+  --color-negative: rgb(var(--negative));
+  --color-warning: rgb(var(--warning));
+  --color-info: rgb(var(--info));
+  --color-highlight: rgb(var(--highlight));
+  --color-tone: rgb(var(--tone));
+
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-display: 'Bebas Neue', Impact, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --shadow-card: 0 4px 24px rgb(var(--shadow) / 0.4), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --shadow-card-hover: 0 8px 40px rgb(var(--shadow) / 0.6), 0 1px 0 rgb(255 255 255 / 0.06) inset;
+
+  /* Faint white wash used on raised panels */
+  --background-image-panel-gradient: linear-gradient(135deg, rgb(255 255 255 / 0.04) 0%, rgb(255 255 255 / 0.01) 100%);
+  /* Floor (bad week) to ceiling (great week) range bar */
+  --background-image-range-bar: linear-gradient(90deg, rgb(var(--negative) / 0.7) 0%, rgb(var(--info) / 0.8) 50%, rgb(var(--positive) / 0.7) 100%);
+
+  --animate-fade-in: fade-in 0.5s ease-out forwards;
+  --animate-ping-slow: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+
+  @keyframes fade-in {
+    0%   { opacity: 0; transform: translateY(12px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes ping-slow {
+    0% { transform: scale(1); opacity: 1; }
+    75%, 100% { transform: scale(1.8); opacity: 0; }
+  }
+}
 :root {
   /* Surfaces */
   --surface:         13 13 13;     /* page background */
@@ -97,50 +139,6 @@
     animation: shimmer 1.5s ease-in-out infinite;
   }
 
-  /* Native range slider (WhatIfStudio). Settings uses the shared Slider. */
-  .oracle-slider {
-    @apply w-full appearance-none h-1.5 rounded-full cursor-pointer outline-none bg-surface-overlay;
-  }
-  .oracle-slider::-webkit-slider-thumb {
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: rgb(var(--tone));
-    box-shadow: 0 0 8px rgb(var(--tone) / 0.6);
-    cursor: pointer;
-    border: 2px solid rgb(var(--surface));
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }
-  .oracle-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
-    box-shadow: 0 0 16px rgb(var(--tone) / 0.8);
-  }
-  .oracle-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: rgb(var(--tone));
-    box-shadow: 0 0 8px rgb(var(--tone) / 0.6);
-    cursor: pointer;
-    border: 2px solid rgb(var(--surface));
-  }
-
-  /* Native select (pages not yet moved to the shared Select) */
-  .oracle-select {
-    @apply bg-surface-raised border border-line text-fg text-sm rounded-lg px-3 py-1.5;
-    @apply focus:outline-none focus:border-info/60 focus:ring-1 focus:ring-info/30;
-    @apply transition-colors duration-150;
-    appearance: none;
-    /* Chevron. An SVG data URI cannot read CSS variables, so this one grey is
-       the only colour value outside the token block; it matches --fg-muted. */
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='%238B93A1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    background-size: 14px;
-    padding-right: 28px;
-  }
-
   /* Small caps label above a value */
   .section-label {
     @apply text-xs font-semibold text-fg-muted uppercase tracking-widest;
@@ -151,11 +149,6 @@
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-
-@keyframes fade-in {
-  0%   { opacity: 0; transform: translateY(12px); }
-  100% { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes bar-fill-in {
