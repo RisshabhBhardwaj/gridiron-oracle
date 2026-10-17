@@ -10,6 +10,8 @@ import { positionTone } from '@/lib/tokens'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import type { LegacyRow } from '@tanstack/react-table/legacy'
+import { DataTable, type TableColumn } from '@/components/ui/data-table'
 import type { DraftBoardPlayer, PickedItem } from '@/types/api'
 
 type Mode = 'board' | 'mock'
@@ -76,6 +78,7 @@ export function DraftBoard() {
   const draftedPids = useMemo(() => {
     return new Set(picksSoFar.map((p) => p.player.player_id).filter(Boolean))
   }, [picksSoFar])
+
 
   const rows = useMemo(() => {
     let list = [...(data?.players ?? [])]
@@ -182,6 +185,110 @@ export function DraftBoard() {
     setPicksSoFar([])
   }
 
+  const showDraftAction = mode === 'mock' && isDraftActive
+
+  const columns: TableColumn<DraftBoardPlayer>[] = useMemo(() => {
+    const cols: TableColumn<DraftBoardPlayer>[] = []
+    if (showDraftAction) {
+      cols.push({
+        header: 'Action',
+        id: 'action',
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <button
+            onClick={() => handleUserPick(row.original)}
+            disabled={!isUserTurn}
+            className={`px-2.5 py-1 rounded text-xs font-bold ${
+              isUserTurn
+                ? 'bg-accent text-accent-fg hover:brightness-110'
+                : 'bg-line text-fg-muted cursor-not-allowed opacity-40'
+            }`}
+          >
+            Draft
+          </button>
+        ),
+      })
+    }
+    cols.push(
+      {
+        header: 'ADP#',
+        accessorKey: 'adp_rank',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <span className="text-fg-muted">{row.original.adp_rank ?? '—'}</span>
+        ),
+      },
+      {
+        header: 'Player',
+        accessorKey: 'player_name',
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <span className="font-medium text-fg">
+            {row.original.player_name}
+            {row.original.board_tail && (
+              <span className="ml-1.5 px-1.5 py-0.5 text-[9px] rounded bg-line text-fg-muted">
+                Tail
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        header: 'Pos',
+        accessorKey: 'position',
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <PositionBadge position={row.original.position} />
+        ),
+      },
+      {
+        header: 'Team',
+        accessorKey: 'team',
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <span className="text-fg-muted">{row.original.team ?? '—'}</span>
+        ),
+      },
+      {
+        header: 'ADP',
+        accessorKey: 'adp',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <>{row.original.adp != null ? row.original.adp.toFixed(1) : '—'}</>
+        ),
+      },
+      {
+        header: 'Model#',
+        accessorKey: 'model_rank',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <>{row.original.model_rank ?? '—'}</>
+        ),
+      },
+      {
+        header: 'Model PPR',
+        accessorKey: 'model_fantasy_ppr',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
+          <>{row.original.model_fantasy_ppr != null ? row.original.model_fantasy_ppr.toFixed(1) : '—'}</>
+        ),
+      },
+      {
+        header: 'Value',
+        accessorKey: 'value_vs_adp',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => {
+          const v = row.original.value_vs_adp ?? 0
+          return (
+            <span className={v > 0 ? 'text-positive' : v < 0 ? 'text-negative' : 'text-fg-muted'}>
+              {row.original.value_vs_adp != null
+                ? `${row.original.value_vs_adp > 0 ? '+' : ''}${row.original.value_vs_adp.toFixed(0)}`
+                : '—'}
+            </span>
+          )
+        },
+      },
+    )
+    return cols
+    // handleUserPick closes over the current draft state, so the action
+    // column always drafts the row it sits on.
+  }, [showDraftAction, isUserTurn])
   return (
     <div className="flex flex-col gap-6">
       {/* Header & Mode Switcher */}
@@ -423,76 +530,11 @@ export function DraftBoard() {
 
       {!isLoading && rows.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-line">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-surface-overlay text-[11px] uppercase tracking-wider text-fg-muted">
-              <tr>
-                {mode === 'mock' && isDraftActive && <th className="px-3 py-2">Action</th>}
-                <th className="px-3 py-2">ADP#</th>
-                <th className="px-3 py-2">Player</th>
-                <th className="px-3 py-2">Pos</th>
-                <th className="px-3 py-2">Team</th>
-                <th className="px-3 py-2">ADP</th>
-                <th className="px-3 py-2">Model#</th>
-                <th className="px-3 py-2">Model PPR</th>
-                <th className="px-3 py-2">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row: DraftBoardPlayer) => (
-                <tr
-                  key={`${row.player_name}-${row.adp_rank ?? row.model_rank}`}
-                  className="border-t border-line/60 hover:bg-surface-raised/40"
-                >
-                  {mode === 'mock' && isDraftActive && (
-                    <td className="px-3 py-2">
-                      <button
-                        onClick={() => handleUserPick(row)}
-                        disabled={!isUserTurn}
-                        className={`px-2.5 py-1 rounded text-xs font-bold ${
-                          isUserTurn
-                            ? 'bg-accent text-accent-fg hover:brightness-110'
-                            : 'bg-line text-fg-muted cursor-not-allowed opacity-40'
-                        }`}
-                      >
-                        Draft
-                      </button>
-                    </td>
-                  )}
-                  <td className="px-3 py-2 font-mono text-fg-muted">{row.adp_rank ?? '—'}</td>
-                  <td className="px-3 py-2 font-medium text-fg">
-                    {row.player_name}
-                    {row.board_tail && (
-                      <span className="ml-1.5 px-1.5 py-0.5 text-[9px] rounded bg-line text-fg-muted">
-                        Tail
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <PositionBadge position={row.position} />
-                  </td>
-                  <td className="px-3 py-2 text-fg-muted">{row.team ?? '—'}</td>
-                  <td className="px-3 py-2 font-mono">{row.adp != null ? row.adp.toFixed(1) : '—'}</td>
-                  <td className="px-3 py-2 font-mono">{row.model_rank ?? '—'}</td>
-                  <td className="px-3 py-2 font-mono">
-                    {row.model_fantasy_ppr != null ? row.model_fantasy_ppr.toFixed(1) : '—'}
-                  </td>
-                  <td
-                    className={`px-3 py-2 font-mono ${
-                      (row.value_vs_adp ?? 0) > 0
-                        ? 'text-positive'
-                        : (row.value_vs_adp ?? 0) < 0
-                          ? 'text-negative'
-                          : 'text-fg-muted'
-                    }`}
-                  >
-                    {row.value_vs_adp != null
-                      ? `${row.value_vs_adp > 0 ? '+' : ''}${row.value_vs_adp.toFixed(0)}`
-                      : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            columns={columns}
+            data={rows}
+            className="min-w-full [&_th]:px-3 [&_th]:py-2 [&_td]:px-3 [&_td]:py-2"
+          />
         </div>
       )}
     </div>

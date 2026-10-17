@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import clsx from 'clsx'
-import { Menu, Search, X } from 'lucide-react'
+import { Menu, Search } from 'lucide-react'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSearch } from '@/context/SearchContext'
 
 const NAV_LINKS = [
@@ -84,24 +85,24 @@ export function NavBar() {
               <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-fg-muted">Live</span>
             </div>
 
-            {/* Mobile hamburger */}
+            {/* Mobile hamburger: opens the menu dialog (focus trap, Escape) */}
             <button
               className="md:hidden text-fg-muted hover:text-fg p-2 rounded-md border border-line transition-colors"
-              onClick={() => setMenuOpen((prev) => !prev)}
-              aria-label="Toggle navigation"
-              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open navigation menu"
+              aria-haspopup="dialog"
             >
-              {menuOpen
-                ? <X className="size-5" aria-hidden="true" />
-                : <Menu className="size-5" aria-hidden="true" />}
+              <Menu className="size-5" aria-hidden="true" />
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Mobile menu */}
-        {menuOpen && (
-          <div className="md:hidden pb-4 border-t border-line pt-3 flex flex-col gap-1">
-            {/* Mobile search */}
+      {/* Mobile menu dialog */}
+      <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogTitle>Menu</DialogTitle>
+          <nav className="flex flex-col gap-1" aria-label="Mobile">
             <button
               onClick={() => { openSearch(); setMenuOpen(false) }}
               className="flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium text-fg-muted hover:text-fg hover:bg-surface-raised"
@@ -131,9 +132,9 @@ export function NavBar() {
                 {label}
               </NavLink>
             ))}
-          </div>
-        )}
-      </div>
+          </nav>
+        </DialogContent>
+      </Dialog>
     </nav>
   )
 }

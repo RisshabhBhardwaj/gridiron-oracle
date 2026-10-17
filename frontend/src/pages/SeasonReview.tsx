@@ -7,8 +7,11 @@ import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { positionTone, toneClass, type Tone } from '@/lib/tokens'
+import type { SeasonMetrics } from '@/types/api'
+import type { LegacyRow } from '@tanstack/react-table/legacy'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { DataTable, type TableColumn } from '@/components/ui/data-table'
 
 const SEASON_ITEMS = [
   { value: '2025', label: '2025 Season' },
@@ -65,6 +68,99 @@ export function SeasonReview() {
     if (!backtest?.by_season) return []
     return backtest.by_season.filter((m) => m.season === selectedSeason)
   }, [backtest, selectedSeason])
+
+  const columns: TableColumn<SeasonMetrics>[] = useMemo(
+    () => [
+      {
+        header: 'Position',
+        accessorKey: 'position',
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+          <span className={clsx(toneClass(positionTone(row.original.position)), 'font-bold text-tone')}>
+            {row.original.position}
+          </span>
+        ),
+      },
+      {
+        header: 'Games',
+        accessorKey: 'n_games',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+          <span className="text-fg-muted">{row.original.n_games}</span>
+        ),
+      },
+      {
+        header: 'Our average miss',
+        accessorKey: 'stack_mae',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+          <span className="font-semibold text-fg">{row.original.stack_mae.toFixed(2)}</span>
+        ),
+      },
+      {
+        header: 'Our big-miss penalty',
+        accessorKey: 'stack_rmse',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+          <span className="text-fg-muted">{row.original.stack_rmse.toFixed(2)}</span>
+        ),
+      },
+      {
+        header: 'Our range quality',
+        accessorKey: 'stack_crps',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+          <span className="text-fg-muted">{row.original.stack_crps.toFixed(2)}</span>
+        ),
+      },
+      {
+        header: 'Simple-method average miss',
+        accessorKey: 'naive_mae',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+          <span className="text-fg-muted">{row.original.naive_mae.toFixed(2)}</span>
+        ),
+      },
+      {
+        header: 'In-range rate',
+        accessorKey: 'coverage_80',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => {
+          const inBand =
+            row.original.coverage_80 >= 0.75 && row.original.coverage_80 <= 0.85
+          return (
+            <span className={`font-semibold ${inBand ? 'text-positive' : 'text-warning'}`}>
+              {(row.original.coverage_80 * 100).toFixed(1)}%
+            </span>
+          )
+        },
+      },
+      {
+        header: 'Better than simple method',
+        accessorKey: 'baseline_improvement_pct',
+        align: 'right',
+        mono: true,
+        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => {
+          const gain = row.original.baseline_improvement_pct
+          return (
+            <span className={`font-semibold ${gain >= 0 ? 'text-positive' : 'text-negative'}`}>
+              {gain >= 0 ? '+' : ''}
+              {/* Already a percentage in the backtest artifact, unlike
+                  coverage_80, which is a fraction. Scaling it again
+                  rendered a -20.05% regression as -2005.1%. */}
+              {gain.toFixed(1)}%
+            </span>
+          )
+        },
+      },
+    ],
+    [],
+  )
 
   return (
     <div className="flex flex-col gap-6">
@@ -194,58 +290,7 @@ export function SeasonReview() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-line/60 bg-surface-overlay/40 text-fg-muted font-medium">
-                    <th className="px-4 py-3">Position</th>
-                    <th className="px-4 py-3">Games</th>
-                    <th className="px-4 py-3">Our average miss</th>
-                    <th className="px-4 py-3">Our big-miss penalty</th>
-                    <th className="px-4 py-3">Our range quality</th>
-                    <th className="px-4 py-3">Simple-method average miss</th>
-                    <th className="px-4 py-3">In-range rate</th>
-                    <th className="px-4 py-3">Better than simple method</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/30">
-                  {seasonMetrics.map((row) => (
-                    <tr key={row.position} className="hover:bg-surface-raised/40 transition-colors">
-                      <td className={clsx(toneClass(positionTone(row.position)), 'px-4 py-3 font-bold text-tone')}>
-                        {row.position}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-fg-muted">{row.n_games}</td>
-                      <td className="px-4 py-3 font-mono font-semibold text-fg">{row.stack_mae.toFixed(2)}</td>
-                      <td className="px-4 py-3 font-mono text-fg-muted">{row.stack_rmse.toFixed(2)}</td>
-                      <td className="px-4 py-3 font-mono text-fg-muted">{row.stack_crps.toFixed(2)}</td>
-                      <td className="px-4 py-3 font-mono text-fg-muted">{row.naive_mae.toFixed(2)}</td>
-                      <td className="px-4 py-3 font-mono">
-                        <span
-                          className={`font-semibold ${
-                            row.coverage_80 >= 0.75 && row.coverage_80 <= 0.85
-                              ? 'text-positive'
-                              : 'text-warning'
-                          }`}
-                        >
-                          {(row.coverage_80 * 100).toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-mono">
-                        <span
-                          className={`font-semibold ${
-                            row.baseline_improvement_pct >= 0 ? 'text-positive' : 'text-negative'
-                          }`}
-                        >
-                          {row.baseline_improvement_pct >= 0 ? '+' : ''}
-                          {/* Already a percentage in the backtest artifact, unlike
-                              coverage_80 above, which is a fraction. Scaling it again
-                              rendered a -20.05% regression as -2005.1%. */}
-                          {row.baseline_improvement_pct.toFixed(1)}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <DataTable columns={columns} data={seasonMetrics} className="text-xs" />
             </div>
           </div>
         </div>

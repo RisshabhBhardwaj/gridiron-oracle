@@ -14,8 +14,8 @@ Decision record: [decisions/0004-shadcn-on-base-ui.md](decisions/0004-shadcn-on-
 - **Motion:** CSS transitions; `prefers-reduced-motion` is honoured globally in `index.css` and in `ProjectionCard`'s count-up.
 - Fonts: Space Grotesk (text), Bebas Neue (display numbers), JetBrains Mono.
 
-## Migration status (2026-10-17)
-Done:
+## Migration status (2026-10-17, tables/charts/menu/search pass)
+Done (in addition to the above):
 - Tokens unified (palette: the neutral dark set; the old neon values are gone).
 - Tailwind 3 to 4 (`tailwindcss` 4.3.3, `@tailwindcss/vite`; `tailwind-merge` 3; `tailwind.config.ts` and `postcss.config.js` deleted; tokens live in `@theme inline`). Class names are unchanged, so rendered output is the same set of utilities.
 - Settings: sliders use `Slider`; scoring choice is a `RadioGroup` (card variant); icons are lucide; view-only on the public site.
@@ -25,10 +25,12 @@ Done:
 - Tab and mode switchers are now `Tabs` (`CurrentSeason` weekly/season/games, `DraftBoard` board/mock). Position filters are now `ToggleGroup` (multiple on season/backtest pages, single-choice with ALL on the draft board; per-position tones kept).
 - `WhatIfStudio`: four `Slider`s and the dome `Switch`; icons are lucide. The `.oracle-slider` CSS is gone.
 - Icons and emoji: `NavBar`, `ErrorBanner`, `NoForecastBanner`, `DataStalenessWarning`, `Home`, `PlayerDetail`, `WhatIfStudio`, `DraftBoard`, `GameDetail` use lucide; no emoji in components.
+- Tables are TanStack Table through one themed `components/ui/data-table.tsx` (`DraftBoard`, `SeasonReview`, `BacktestExplorer` coverage).
+- Charts share `components/charts/themed-chart.tsx` (`ChartFrame`, `ChartGrid`, `ChartXAxis`, `ChartYAxis`, `ChartTooltip`, `chartTheme`): `BacktestExplorer` (season bars, calibration) and `SHAPChart`.
+- Phone navigation menu is a `Dialog` (focus trap, Escape, link closes it).
+- Home no longer has its own combobox: the hero button opens the shared player-search dialog, the one combobox for the site.
 
-Still hand-rolled (follow-up):
-1. Phone navigation menu in `components/layout/NavBar.tsx` and the inline search box in `pages/Home.tsx` (a second hand-built combobox). Both work and are tested; neither names a primitive, so they were left alone.
-2. Tables (`DraftBoard`, `SeasonReview`, `BacktestExplorer`): TanStack Table. Chart wrapper: one themed Recharts component using `token()`.
+Nothing hand-rolled remains from the original list.
 
 ## How to add a control
-Check `components/ui/` first. If it is missing, copy it from shadcn (`npx shadcn@latest view <name>` with `style: "base-nova"` shows the source), read the Base UI doc for the part in `frontend/node_modules/@base-ui/react/docs/react/components/`, rewrite the class strings to Tailwind 4 and the project tokens, and add a test that uses the keyboard. Do not use shadcn's colour names; use the tokens above.
+Check `components/ui/` first. If it is missing, copy it from shadcn (`npx shadcn@latest view <name>` with `style: "base-nova"` shows the source), read the Base UI doc for the part in `frontend/node_modules/@base-ui/react/docs/react/components/`, rewrite the class strings to Tailwind 4 and the project tokens, and add a test that uses the keyboard. Do not use shadcn's colour names; use the tokens above. Tables go through `components/ui/data-table.tsx` (`TableColumn`, with `align`/`mono`); charts go through `components/charts/themed-chart.tsx`.
