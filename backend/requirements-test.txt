@@ -1,8 +1,14 @@
-# Test-only additions for CI jobs that pass pytest flags from pytest-timeout
-# (see .github/workflows/nightly.yml). Not used by backend/Dockerfile.
+# Test-only additions. Not used by backend/Dockerfile (runtime image stays lean).
+# CI installs this file (see .github/workflows/ci.yml); nightly does too.
 
 -r requirements.txt
 
+pytest==9.0.3
+pytest-cov==7.1.0      # coverage measurement; gate: --cov-fail-under=80 in make ci
+hypothesis==6.152.4    # property-based testing for ML edge cases (Kalman, Monte Carlo)
+mutmut==3.5.0          # mutation testing (phase 1: backend runtime layer)
+
 # Pinned. 2.5.0 is yanked on PyPI ("accidental breaking change"), so 2.4.0 is
 # the newest usable release. Re-check the yanked flag before bumping.
+# Not in .venv_311 (nightly-only); keep the existing pin.
 pytest-timeout==2.4.0

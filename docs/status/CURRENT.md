@@ -71,6 +71,10 @@ Not started (no commits): the line snapshot table (decision 0008 item 3); the se
 - K and DEF are in the league's starting lineup but not modelled (out of scope by design). Confirm the owner wants that to stay.
 - Is `verify_db.py` wanted? It was archived on 2026-10-07 as unreferenced.
 
+## Migration-ready pass (2026-10-17, branch `agent/gor-migration-ready`, base `main` d8cd04a)
+
+Not on `main`, not pushed. Non-root `USER` + dropped build tools in `backend/Dockerfile`; pinned `backend/requirements.txt` with test/dev split (`requirements-test.txt`, `requirements-dev.txt`); compose ports bound to `127.0.0.1`, Postgres 18; new `docs/MIGRATION.md` runbook; `.env.example` completed. Gate green on the branch: 2144 passed, 31 skipped; ruff clean; evidence/serving manifests OK; `docker compose config` validates. Image build and `make up` not executed (no cached base layers; not pulling GBs on a tight disk). Remaining `/Users/...` paths are pinned artifacts (`releases/*.json`, `ml/onnx/*.onnx`) — re-freeze only.
+
 ## Decisions
 
 - [0001 Causal walk-forward evaluation](../decisions/0001-causal-walk-forward-evaluation.md)

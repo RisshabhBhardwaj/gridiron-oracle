@@ -120,7 +120,8 @@ jobs:
         run: pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
 
       - name: Install backend deps
-        run: pip install --no-cache-dir -r backend/requirements.txt
+        # -test file pulls in requirements.txt plus the pytest stack this job runs.
+        run: pip install --no-cache-dir -r backend/requirements-test.txt
 
       - name: Fail if torch is not the CPU build
         run: |

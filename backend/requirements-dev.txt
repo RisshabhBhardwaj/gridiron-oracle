@@ -1,0 +1,8 @@
+# Local dev tooling: lint + complexity gate. Not installed in CI's test job
+# (that job pins its own ruff/radon line) nor in backend/Dockerfile.
+# Local setup: scripts/bootstrap_local.sh installs this file.
+
+-r requirements-test.txt
+
+ruff==0.15.12                # `ruff check .`
+radon==6.0.1                # complexity gate in `make ci`

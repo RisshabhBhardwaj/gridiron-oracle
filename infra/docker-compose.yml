@@ -1,7 +1,7 @@
 services:
   # ── PostgreSQL — transactional store ────────────────────────────────────────
   db:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_USER: oracle
       POSTGRES_PASSWORD: oracle
@@ -9,7 +9,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     ports:
-      - "15439:5432"
+      - "127.0.0.1:15439:5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U oracle" ]
       interval: 10s
@@ -29,7 +29,7 @@ services:
     volumes:
       - mlflow_artifacts:/mlflow/artifacts
     ports:
-      - "15091:5001"
+      - "127.0.0.1:15091:5001"
     depends_on:
       db:
         condition: service_healthy
@@ -43,7 +43,7 @@ services:
       - "--collector.otlp.grpc.host-port=:4317"
       - "--collector.otlp.http.host-port=:4318"
     ports:
-      - "18686:16686"
+      - "127.0.0.1:18686:16686"
     healthcheck:
       test: [ "CMD-SHELL", "wget -q -O- http://localhost:16686/ >/dev/null 2>&1 || exit 1" ]
       interval: 15s
@@ -57,8 +57,8 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-      - "14317:4317"
-      - "14318:4318"
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
     depends_on:
       jaeger:
         condition: service_started
@@ -88,7 +88,7 @@ services:
       otel-collector:
         condition: service_started
     ports:
-      - "18017:8000"
+      - "127.0.0.1:18017:8000"
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8000/health || exit 1" ]
       interval: 15s
@@ -121,7 +121,7 @@ services:
       - ../frontend:/app
       - /app/node_modules # anonymous volume: keeps container's installed modules
     ports:
-      - "15173:5173"
+      - "127.0.0.1:15173:5173"
     depends_on:
       - backend
 
@@ -136,7 +136,7 @@ services:
       - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "19090:9090"
+      - "127.0.0.1:19090:9090"
     depends_on:
       - backend
 
@@ -148,7 +148,7 @@ services:
     volumes:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     ports:
-      - "19093:9093"
+      - "127.0.0.1:19093:9093"
 
 volumes:
   db_data:

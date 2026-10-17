@@ -1,7 +1,8 @@
 # Remediation regression locks
 
 The tests below guard the adversarial-audit findings.  The audit-baseline
-worktree is `/Users/risshabh/Projects/Active/go_06_baseline` at `191e151`.
+worktree is `<baseline-checkout>` at `191e151` (any checkout of the baseline
+commit works; the commands below use `$BASELINE_REPO` for its path).
 Where a test imports a newly introduced module it cannot run verbatim there;
 those use a minimal behavioural lock that only imports/modules-inspects code
 which already existed on the baseline.
@@ -34,8 +35,8 @@ Prove the three portable behavioural locks red against the baseline without
 modifying that worktree:
 
 ```bash
-cd /Users/risshabh/Projects/Active/go_06_baseline
+cd "$BASELINE_REPO"
 GRIDIRON_REPO_ROOT="$PWD" PYTHONPATH="$PWD" \
-  /Users/risshabh/Projects/Active/gridiron_oracle/.venv_311/bin/python -m pytest \
-  /Users/risshabh/Projects/Active/gridiron_oracle/backend/tests/test_audit_baseline_locks.py -q
+  "$GRIDIRON_REPO/.venv_311/bin/python" -m pytest \
+  "$GRIDIRON_REPO/backend/tests/test_audit_baseline_locks.py" -q
 ```
