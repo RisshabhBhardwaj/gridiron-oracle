@@ -41,9 +41,12 @@ def _offline_and_clean(monkeypatch):
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _blocked)
     monkeypatch.setattr(settings, "api_key", "")
     monkeypatch.setattr(settings, "odds_api_key", TEST_KEY)
+    monkeypatch.setattr(settings, "odds_min_remaining", 50)
     odds_module._cache.clear()
+    odds_module._remaining = None
     yield
     odds_module._cache.clear()
+    odds_module._remaining = None
 
 
 def _fake_upstream(monkeypatch, handler):
@@ -350,3 +353,161 @@ def test_request_with_x_api_key_reaches_the_route_when_api_key_is_set(monkeypatc
 
     assert r.status_code == 200
     assert r.json() == {"configured": False}
+
+
+# ---------------------------------------------------------------------------
+# (i) Monthly quota guard: stop upstream calls below the floor
+# ---------------------------------------------------------------------------
+
+
+def test_low_remaining_header_trips_429_with_no_upstream_spend(monkeypatch):
+    """A remaining count below the floor refuses the call before any spend."""
+    calls = []
+
+    def _handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            headers={"x-requests-remaining": "12"},
+            json=EVENTS,
+            request=request,
+        )
+
+    _fake_upstream(monkeypatch, _handler)
+
+    first = client.get("/odds", params={"markets": MARKET})
+    assert first.status_code == 200
+    assert len(calls) == 1
+
+    # 12 remaining is below the floor of 50: the next cold market is refused
+    # without reaching upstream at all.
+    refused = client.get("/odds", params={"markets": "player_rushing_yards"})
+
+    assert refused.status_code == 429
+    assert refused.json() == {
+        "detail": "Odds quota low: 12 requests remaining (floor 50); upstream call skipped"
+    }
+    assert len(calls) == 1
+
+
+def test_remaining_at_or_above_floor_still_calls_upstream(monkeypatch):
+    calls = []
+
+    def _handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            headers={"x-requests-remaining": "50"},
+            json=EVENTS,
+            request=request,
+        )
+
+    _fake_upstream(monkeypatch, _handler)
+
+    assert client.get("/odds", params={"markets": MARKET}).status_code == 200
+    assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
+    assert len(calls) == 2
+
+
+def test_warm_cache_is_served_after_the_floor_trips(monkeypatch):
+    """Refills are refused, but entries fetched before the trip cost nothing
+    to serve, so they keep their 200."""
+    calls = []
+
+    def _handler(request):
+        calls.append(request)
+        remaining = "400" if len(calls) == 1 else "3"
+        return httpx.Response(
+            200, headers={"x-requests-remaining": remaining}, json=EVENTS, request=request
+        )
+
+    _fake_upstream(monkeypatch, _handler)
+
+    assert client.get("/odds", params={"markets": MARKET}).status_code == 200
+    # A second market spends the quota down to 3, tripping the floor.
+    assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
+    assert len(calls) == 2
+
+    # The first market is cached: served without an upstream call.
+    warm = client.get("/odds", params={"markets": MARKET})
+    assert warm.status_code == 200
+    assert warm.json() == {"configured": True, "events": EVENTS}
+    assert len(calls) == 2
+
+    # A cold market is refused.
+    assert client.get("/odds", params={"markets": "player_passing_tds"}).status_code == 429
+    assert len(calls) == 2
+
+
+def test_error_responses_also_feed_the_guard(monkeypatch):
+    """Upstream failures carry the quota header too; a 500 that reports 7
+    remaining trips the next call."""
+    calls = []
+
+    def _handler(request):
+        calls.append(request)
+        return httpx.Response(
+            500, headers={"x-requests-remaining": "7"}, json={}, request=request
+        )
+
+    _fake_upstream(monkeypatch, _handler)
+
+    assert client.get("/odds", params={"markets": MARKET}).status_code == 500
+    refused = client.get("/odds", params={"markets": "player_rushing_yards"})
+    assert refused.status_code == 429
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("headers", [{}, {"x-requests-remaining": "plenty"}])
+def test_missing_or_unparseable_header_leaves_the_guard_open(monkeypatch, headers):
+    """Unknown quota never blocks: a missing or garbage header keeps calls
+    flowing rather than refusing on no data."""
+    calls = []
+
+    def _handler(request):
+        calls.append(request)
+        return httpx.Response(200, headers=headers, json=EVENTS, request=request)
+
+    _fake_upstream(monkeypatch, _handler)
+
+    assert client.get("/odds", params={"markets": MARKET}).status_code == 200
+    assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
+    assert len(calls) == 2
+    assert odds_module._remaining is None
+
+
+def test_floor_is_configurable_per_request(monkeypatch):
+    """ODDS_MIN_REMAINING moves the trip point: floor 10 lets 12 through."""
+    monkeypatch.setattr(settings, "odds_min_remaining", 10)
+    calls = []
+
+    def _handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            headers={"x-requests-remaining": "12"},
+            json=EVENTS,
+            request=request,
+        )
+
+    _fake_upstream(monkeypatch, _handler)
+
+    assert client.get("/odds", params={"markets": MARKET}).status_code == 200
+    assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
+    assert len(calls) == 2
+
+
+def test_floor_parses_from_env_with_safe_defaults(monkeypatch):
+    from backend.app.core.config import Settings
+
+    monkeypatch.setenv("ODDS_MIN_REMAINING", "25")
+    assert Settings().odds_min_remaining == 25
+
+    monkeypatch.delenv("ODDS_MIN_REMAINING")
+    assert Settings().odds_min_remaining == 50
+
+    monkeypatch.setenv("ODDS_MIN_REMAINING", "not-a-number")
+    assert Settings().odds_min_remaining == 50
+
+    monkeypatch.setenv("ODDS_MIN_REMAINING", "-5")
+    assert Settings().odds_min_remaining == 0

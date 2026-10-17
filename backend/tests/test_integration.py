@@ -25,7 +25,6 @@ Run locally:
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime
 
@@ -390,19 +389,13 @@ class TestBacktest:
         )
 
 
-# ── Scenario 5: WebSocket /alerts/ws ─────────────────────────────────────────
+# ── Scenario 5: alerts REST (the /alerts/ws WebSocket was removed in A-03) ──
 
-class TestAlertsWebSocket:
-    """
-    Real-time alert streaming via WebSocket.
-
-    Tests:
-      (a) Connection is accepted without error.
-      (b) Server delivers the startup alert (published by lifespan) on connect.
-    """
+class TestAlertsRest:
+    """GET /alerts returns count + alerts list. No frontend code ever called
+    the WebSocket, so only the REST history endpoint is covered here."""
 
     def test_alerts_rest_endpoint_schema(self, int_client):
-        """GET /alerts returns count + alerts list — sanity check before WS test."""
         r = int_client.get("/alerts")
         assert r.status_code == 200
         body = r.json()
@@ -410,47 +403,6 @@ class TestAlertsWebSocket:
         assert "alerts" in body
         assert isinstance(body["alerts"], list)
         assert body["count"] == len(body["alerts"])
-
-    def test_websocket_connection_accepted(self, int_client):
-        """WebSocket handshake succeeds without raising any exception."""
-        from backend.app.api.alerts import get_alert_service
-
-        svc = get_alert_service()
-        # Ensure at least one alert is in history before connecting
-        svc.publish_system("Integration Test", "WebSocket delivery verified")
-
-        # connect → receive first alert from recent history → close cleanly
-        with int_client.websocket_connect("/alerts/ws") as ws:
-            data = ws.receive_text()
-
-        alert = json.loads(data)
-        assert "title"     in alert, "Alert missing 'title' field"
-        assert "severity"  in alert, "Alert missing 'severity' field"
-        assert "timestamp" in alert, "Alert missing 'timestamp' field"
-
-    def test_websocket_startup_alert_delivered(self, int_client):
-        """
-        Lifespan publishes 'Gridiron Oracle started' to AlertService.
-        The WebSocket handler sends recent(20) on connect, so the startup
-        alert must appear in the first batch of messages.
-        """
-        from backend.app.api.alerts import get_alert_service
-
-        svc = get_alert_service()
-        recent = svc.recent(20)
-        if not recent:
-            pytest.skip("AlertService history empty — lifespan may not have fired")
-
-        with int_client.websocket_connect("/alerts/ws") as ws:
-            # Receive the first message (most recent alert = our test alert or startup)
-            raw = ws.receive_text()
-
-        alert = json.loads(raw)
-        # Structural check — not content-dependent
-        assert isinstance(alert.get("title"), str)
-        assert alert.get("severity") in ("info", "warning", "edge", "injury")
-        # Timestamp must be valid ISO 8601
-        datetime.fromisoformat(alert["timestamp"])
 
 
 class TestTeamGamePredictions:

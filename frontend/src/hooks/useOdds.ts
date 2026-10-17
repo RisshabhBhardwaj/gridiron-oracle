@@ -4,12 +4,12 @@
  * Goes through /api/odds rather than calling api.the-odds-api.com directly:
  * the previous VITE_ODDS_API_KEY was inlined into the client bundle by Vite at
  * build time, so anyone could read it from page source and spend the account's
- * 500 req/month quota. The key now lives only in the server function's env.
+ * 500 req/month quota. The key now lives only on the server: in production the
+ * Vercel proxy attaches its API key and forwards to backend GET /odds, which
+ * enforces the market allow-list, caches for 300 s, and stops upstream calls
+ * once the month's remaining quota falls below its floor (HTTP 429).
  *
  * Falls back to mock lines when the server reports no key configured (dev mode).
- *
- * The Odds API free tier: 500 req/month — we cache aggressively, and the
- * server function adds a shared CDN cache on top.
  */
 import { useQuery } from '@tanstack/react-query'
 

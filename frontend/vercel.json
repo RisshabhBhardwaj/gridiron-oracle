@@ -4,11 +4,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/proxy.js": { "maxDuration": 60 },
-    "api/odds-handler.js": { "maxDuration": 20 }
+    "api/proxy.js": { "maxDuration": 60 }
   },
   "rewrites": [
-    { "source": "/api/odds", "destination": "/api/odds-handler" },
     { "source": "/api/:path*", "destination": "/api/proxy?__path=:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

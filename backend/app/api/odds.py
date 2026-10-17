@@ -2,9 +2,10 @@
 backend/app/api/odds.py
 
 GET /odds?markets=<market>: server-side proxy for The Odds API (NFL player
-prop lines). It replaces frontend/api/odds-handler.js and matches that handler's
-SPORT, ALLOWED_MARKETS, response shapes, status codes and cache header.
-The Vercel handler stays in place until the owner approves the cutover.
+prop lines). It replaced frontend/api/odds-handler.js (retired; the Vercel
+/api/odds rewrite now falls through to the authenticated backend proxy) and
+keeps that handler's SPORT, ALLOWED_MARKETS, response shapes, status codes
+and cache header, plus a monthly quota guard (see below).
 
 Why it exists: the key must not reach the browser bundle, and the upstream
 quota (500 requests a month on the free tier) must not be spendable by any
@@ -18,6 +19,17 @@ Responses:
   upstream non-2xx           same status, {"detail": "Odds API error: <status>"};
                              the upstream body is never returned
   upstream unreachable       502 {"detail": "Odds API unreachable: <reason>"}
+  quota floor tripped        429 {"detail": "Odds quota low: ..."}; no upstream
+                             call. A warm cache is still served (no spend).
+
+Quota guard: the free tier is 500 requests a month, and every upstream answer
+carries an x-requests-remaining header. The last seen value is kept in-process
+(alongside the cache, same single-replica caveat). Before spending an upstream
+call, the remaining value is compared against settings.odds_min_remaining
+(ODDS_MIN_REMAINING, default 50): below the floor, the call is refused with
+429. Until one upstream answer has been seen, nothing is known and calls go
+through; a missing or unparseable header likewise leaves the guard open rather
+than blocking on unknown data.
 
 Cache: an in-process TTL cache of 300 seconds, keyed by market. It is per
 process. That is acceptable for a single replica. With several replicas each
@@ -76,6 +88,39 @@ _cache_guard = threading.Lock()
 # Fixed set of markets, so one lock per market is bounded and never grows.
 _market_locks: dict[str, threading.Lock] = {m: threading.Lock() for m in ALLOWED_MARKETS}
 
+# Last seen x-requests-remaining from the upstream API. None until one
+# upstream answer has been observed. Tests reset it alongside _cache.
+REMAINING_HEADER = "x-requests-remaining"
+_remaining: int | None = None
+_remaining_guard = threading.Lock()
+
+
+def _note_remaining(value: str | None) -> None:
+    """Record the upstream quota header. Absent or unparseable values leave
+    the previous reading (or the unknown state) untouched."""
+    global _remaining
+    if value is None:
+        return
+    try:
+        seen = int(value)
+    except ValueError:
+        return
+    if seen < 0:
+        return
+    with _remaining_guard:
+        _remaining = seen
+
+
+def _quota_tripped() -> int | None:
+    """Return the remaining count when it is below the configured floor,
+    else None. Unknown (never seen) never trips."""
+    with _remaining_guard:
+        seen = _remaining
+    if seen is None:
+        return None
+    floor = settings.odds_min_remaining
+    return seen if seen < floor else None
+
 
 class OddsFetchError(Exception):
     """The upstream call failed. status_code is the status returned to our caller."""
@@ -111,6 +156,10 @@ def fetch_odds(market: str, api_key: str) -> Any:
         reason = _redact(str(exc), api_key)
         raise OddsFetchError(502, f"Odds API unreachable: {reason}") from None
 
+    # Record the quota header on every answer, success or failure: a 429
+    # carries it too, and it is the only quota signal the guard ever sees.
+    _note_remaining(upstream.headers.get(REMAINING_HEADER))
+
     if not upstream.is_success:
         _log.warning("odds upstream returned %s", upstream.status_code)
         raise OddsFetchError(upstream.status_code, f"Odds API error: {upstream.status_code}")
@@ -136,9 +185,20 @@ def _events_for(market: str, api_key: str) -> Any:
         return hit
     with _market_locks[market]:
         # Another request may have filled the cache while this one waited.
+        # Cache hits cost nothing upstream, so the quota guard below only
+        # gates the fetch, never a served entry.
         hit = _cached_events(market)
         if hit is not _MISS:
             return hit
+        tripped = _quota_tripped()
+        if tripped is not None:
+            floor = settings.odds_min_remaining
+            _log.warning("odds quota floor tripped: %s remaining (floor %s)", tripped, floor)
+            raise OddsFetchError(
+                429,
+                f"Odds quota low: {tripped} requests remaining "
+                f"(floor {floor}); upstream call skipped",
+            )
         events = fetch_odds(market, api_key)
         with _cache_guard:
             _cache[market] = (_clock(), events)

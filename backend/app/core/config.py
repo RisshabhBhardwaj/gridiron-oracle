@@ -15,6 +15,17 @@ from ml.product_mode import resolve_product_mode
 
 _log = logging.getLogger(__name__)
 
+_ODDS_FLOOR_DEFAULT = 50
+
+
+def _parse_odds_floor(raw: str) -> int:
+    """Parse ODDS_MIN_REMAINING. Garbage falls back to the default; a floor
+    below zero is meaningless, so it becomes zero (never trip on unknown)."""
+    try:
+        return max(int(raw.strip() or str(_ODDS_FLOOR_DEFAULT)), 0)
+    except (ValueError, AttributeError):
+        return _ODDS_FLOOR_DEFAULT
+
 
 class Settings:
     """
@@ -43,6 +54,10 @@ class Settings:
         OTEL_EXPORTER_OTLP_INSECURE: true/false for OTLP gRPC transport
         ODDS_API_KEY:        The Odds API key for GET /odds. Optional; absent
                              means /odds reports configured=false (no upstream call).
+        ODDS_MIN_REMAINING:  Monthly quota floor for GET /odds. Upstream calls
+                             stop (429, no spend) once the provider's
+                             x-requests-remaining header falls below this.
+                             Default 50. Unparseable values fall back to 50.
     """
 
     def __init__(self) -> None:
@@ -90,6 +105,13 @@ class Settings:
         # The Odds API key used by GET /odds. Read server-side only; never logged
         # or returned. Empty disables the upstream call (configured=false).
         self.odds_api_key: str = os.environ.get("ODDS_API_KEY", "").strip()
+        # Monthly quota floor for GET /odds (ODDS_MIN_REMAINING, default 50).
+        # The upstream answers every call with an x-requests-remaining header;
+        # once the last seen value drops below this floor, /odds answers 429
+        # without calling upstream, so the rest of the month's quota survives.
+        self.odds_min_remaining: int = _parse_odds_floor(
+            os.environ.get("ODDS_MIN_REMAINING", "50")
+        )
         self.otel_service_name: str = os.environ.get(
             "OTEL_SERVICE_NAME",
             "gridiron-oracle-api",

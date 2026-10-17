@@ -1,14 +1,11 @@
 """
 backend/app/api/alerts.py
 
-WebSocket /alerts/ws endpoint + REST /alerts endpoint.
+REST /alerts endpoint: the recent alert history.
 
-WebSocket clients receive real-time broadcasts of:
-  - Injury / practice report updates
-  - Model edge signals from the C++ execution engine
-  - System events (retrain complete, data freshness warnings)
-
-REST /alerts returns the recent alert history for initial page load.
+The /alerts/ws WebSocket was removed (security A-03): no frontend code ever
+called it, so live streaming had no consumer. Alerts are published in-process
+by scheduled jobs and lifespan events and read back through GET /alerts.
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from backend.app.services.alert import Alert, AlertService
@@ -66,42 +63,6 @@ def get_alerts(n: int = Query(50, ge=1, le=200)) -> AlertsResponse:
         count=len(recent),
         alerts=[_alert_to_item(a) for a in reversed(recent)],
     )
-
-
-@router.websocket("/alerts/ws")
-async def alerts_websocket(websocket: WebSocket) -> None:
-    """
-    WebSocket endpoint for live alert streaming.
-
-    Client connects and receives JSON alert objects as they are published.
-    Connection stays open until client disconnects or server shuts down.
-
-    Message format: JSON matching AlertItem schema.
-    """
-    await websocket.accept()
-    logger.info("WebSocket client connected: %s", websocket.client)
-
-    # Send recent history on connect so the client has context
-    for alert in _alert_svc.recent(20):
-        try:
-            await websocket.send_text(alert.to_json())
-        except Exception:
-            break
-
-    # Stream new alerts as they arrive
-    try:
-        async for alert in _alert_svc.subscribe():
-            try:
-                await websocket.send_text(alert.to_json())
-            except WebSocketDisconnect:
-                break
-            except Exception as exc:
-                logger.warning("WebSocket send error: %s", exc)
-                break
-    except WebSocketDisconnect:
-        pass
-    finally:
-        logger.info("WebSocket client disconnected: %s", websocket.client)
 
 
 # ---------------------------------------------------------------------------
