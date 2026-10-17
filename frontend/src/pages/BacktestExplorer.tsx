@@ -1,8 +1,12 @@
 import { useState, useMemo } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, Scatter, ZAxis, Line, ComposedChart,
+  BarChart, Bar, Legend,
+  Scatter, ZAxis, Line, ComposedChart,
 } from 'recharts'
+import type { SeasonMetrics } from '@/types/api'
+import type { LegacyRow } from '@tanstack/react-table/legacy'
+import { DataTable, type TableColumn } from '@/components/ui/data-table'
+import { ChartFrame, ChartGrid, ChartTooltip, ChartXAxis, ChartYAxis, chartTheme } from '@/components/charts/themed-chart'
 import { useBacktest } from '@/hooks/useBacktest'
 import { BacktestPanel } from '@/components/BacktestPanel'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -12,22 +16,10 @@ import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
 import clsx from 'clsx'
 import { Panel } from '@/components/shared/Panel'
 import { positionTone, toneClass, token, type Tone } from '@/lib/tokens'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-const CHART_THEME = {
-  grid:      token('line'),
-  axisLine:  token('line-strong'),
-  axisText:  token('fg-muted'),
-  tooltip: {
-    contentStyle: {
-      background: token('surface-raised', 0.95),
-      border: `1px solid ${token('info', 0.2)}`,
-      borderRadius: '12px',
-      backdropFilter: 'blur(12px)',
-      boxShadow: `0 8px 32px ${token('shadow', 0.6)}`,
-    },
-    labelStyle: { color: token('fg'), fontWeight: '600' },
-  },
-}
+const STAT_ITEMS = BACKTEST_STATS.map((s) => ({ value: s, label: STAT_LABELS[s] || s }))
 
 function coverageTone(coverage80: number): Tone {
   if (coverage80 >= 0.70 && coverage80 <= 0.90) return 'positive'
@@ -35,15 +27,55 @@ function coverageTone(coverage80: number): Tone {
   return 'negative'
 }
 
+const COVERAGE_COLUMNS: TableColumn<SeasonMetrics>[] = [
+  {
+    header: 'Season',
+    accessorKey: 'season',
+    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => <span className="font-medium text-fg">{row.original.season}</span>,
+  },
+  {
+    header: 'Position',
+    accessorKey: 'position',
+    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+      <span className={clsx(toneClass(positionTone(row.original.position)), 'text-xs font-bold text-tone')}>
+        {row.original.position}
+      </span>
+    ),
+  },
+  {
+    header: 'In range (80%)',
+    accessorKey: 'coverage_80',
+    align: 'right' as const,
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+      <span className={clsx(toneClass(coverageTone(row.original.coverage_80)), 'font-bold text-tone')}>
+        {(row.original.coverage_80 * 100).toFixed(1)}%
+      </span>
+    ),
+  },
+  {
+    header: 'In range (50%)',
+    accessorKey: 'coverage_50',
+    align: 'right' as const,
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
+      <span className="text-fg-muted">{(row.original.coverage_50 * 100).toFixed(1)}%</span>
+    ),
+  },
+  {
+    header: 'Games',
+    accessorKey: 'n_games',
+    align: 'right' as const,
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => <span className="text-fg-muted">{row.original.n_games}</span>,
+  },
+]
+
 export function BacktestExplorer() {
   const [stat, setStat] = useState('receiving_yards')
   const [positions, setPositions] = useState<string[]>([...POSITIONS])
 
   const { data, isLoading, isError, error, refetch } = useBacktest({ stat, positions })
-
-  function togglePosition(pos: string) {
-    setPositions((prev) => prev.includes(pos) ? prev.filter((p) => p !== pos) : [...prev, pos])
-  }
 
   const seasonBarData = useMemo(() => {
     if (!data) return []
@@ -73,33 +105,41 @@ export function BacktestExplorer() {
             BACKTEST
           </h1>
         </div>
-        <p className="text-sm text-fg-muted">Model accuracy and probabilistic calibration over historical seasons</p>
+        <p className="text-sm text-fg-muted">How the model did on past seasons</p>
       </div>
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 p-4 rounded-xl bg-surface-raised border border-white/[0.06]">
-        <select value={stat} onChange={(e) => setStat(e.target.value)} className="oracle-select">
-          {BACKTEST_STATS.map((s) => <option key={s} value={s}>{STAT_LABELS[s]}</option>)}
-        </select>
-
-        <div className="flex items-center gap-1.5">
-          {POSITIONS.map((pos) => (
-            <button
-              key={pos}
-              onClick={() => togglePosition(pos)}
-              aria-pressed={positions.includes(pos)}
-              className={clsx(
-                toneClass(positionTone(pos)),
-                'px-3 py-1.5 rounded-lg text-xs font-bold tracking-wider transition-all duration-150 border',
-                positions.includes(pos)
-                  ? 'bg-tone/20 border-tone/50 text-tone'
-                  : 'bg-transparent border-white/[0.07] text-fg-muted hover:text-fg',
-              )}
-            >
-              {pos}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
+          <Select
+            items={STAT_ITEMS}
+            value={stat}
+            onValueChange={(v) => { if (v) setStat(v) }}
+          >
+            <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STAT_ITEMS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+
+        <ToggleGroup
+          multiple
+          aria-label="Positions"
+          value={positions}
+          onValueChange={setPositions}
+        >
+          {POSITIONS.map((pos) => (
+            <ToggleGroupItem key={pos} value={pos} tone={positionTone(pos)}>
+              {pos}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
 
       {isLoading && <div className="flex justify-center py-16"><LoadingSpinner size="lg" /></div>}
@@ -136,96 +176,58 @@ export function BacktestExplorer() {
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Season MAE */}
-            <Panel title="Season-by-Season MAE: Model vs Naive Baseline">
-              <ResponsiveContainer width="100%" height={280}>
+            <Panel title="Average miss by season: us vs the simple method">
+              <ChartFrame height={280}>
                 <BarChart data={seasonBarData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
-                  <XAxis dataKey="season" stroke={CHART_THEME.axisLine} tick={{ fontSize: 11, fill: CHART_THEME.axisText }} />
-                  <YAxis stroke={CHART_THEME.axisLine} tick={{ fontSize: 11, fill: CHART_THEME.axisText }} />
-                  <Tooltip {...CHART_THEME.tooltip} />
-                  <Legend wrapperStyle={{ fontSize: '11px', color: CHART_THEME.axisText }} />
-                  <Bar dataKey="stack_mae" name="Model MAE"     fill={token('info', 0.8)}  radius={[4,4,0,0]} />
-                  <Bar dataKey="naive_mae" name="Naive Baseline" fill={token('fg-muted', 0.5)} radius={[4,4,0,0]} />
+                  <ChartGrid />
+                  <ChartXAxis dataKey="season" />
+                  <ChartYAxis />
+                  <ChartTooltip />
+                  <Legend wrapperStyle={{ fontSize: '11px', color: chartTheme.axisText }} />
+                  <Bar dataKey="stack_mae" name="Our average miss" fill={token('info', 0.8)}  radius={[4,4,0,0]} />
+                  <Bar dataKey="naive_mae" name="Simple method"    fill={token('fg-muted', 0.5)} radius={[4,4,0,0]} />
                 </BarChart>
-              </ResponsiveContainer>
+              </ChartFrame>
             </Panel>
 
             {/* Calibration */}
-            <Panel title="Calibration Reliability Diagram">
-              <ResponsiveContainer width="100%" height={280}>
+            <Panel title="Do our probabilities match reality?">
+              <ChartFrame height={280}>
                 <ComposedChart margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_THEME.grid} />
-                  <XAxis
+                  <ChartGrid />
+                  <ChartXAxis
                     type="number" dataKey="x" domain={[0, 1]}
-                    stroke={CHART_THEME.axisLine} tick={{ fontSize: 11, fill: CHART_THEME.axisText }}
-                    label={{ value: 'Predicted Prob.', position: 'insideBottom', offset: -12, fill: CHART_THEME.axisText, fontSize: 11 }}
+                    label={{ value: 'Predicted chance', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 11 }}
                   />
-                  <YAxis
+                  <ChartYAxis
                     type="number" dataKey="y" domain={[0, 1]}
-                    stroke={CHART_THEME.axisLine} tick={{ fontSize: 11, fill: CHART_THEME.axisText }}
-                    label={{ value: 'Observed Freq.', angle: -90, position: 'insideLeft', offset: 10, fill: CHART_THEME.axisText, fontSize: 11 }}
+                    label={{ value: 'Actually happened', angle: -90, position: 'insideLeft', offset: 10, fill: chartTheme.axisText, fontSize: 11 }}
                   />
-                  <Tooltip {...CHART_THEME.tooltip} />
+                  <ChartTooltip />
                   <Line
                     data={calibDiagonal} type="linear" dataKey="y"
                     stroke={token('fg-muted', 0.6)} strokeDasharray="5 5" dot={false}
-                    name="Perfect Calibration" legendType="line"
+                    name="Perfect match" legendType="line"
                   />
                   <ZAxis range={[40, 200]} />
-                  <Scatter data={calibPoints} fill={token('info', 0.8)} name="Model"
+                  <Scatter data={calibPoints} fill={token('info', 0.8)} name="Our model"
                     style={{ filter: `drop-shadow(0 0 4px ${token('info', 0.4)})` }}
                   />
                 </ComposedChart>
-              </ResponsiveContainer>
+              </ChartFrame>
             </Panel>
           </div>
 
           {/* Coverage table */}
-          <Panel title="Coverage by Season & Position">
+          <Panel title="In-range rate by season and position">
             <div className="overflow-x-auto -m-5">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-surface/60 border-b border-white/5">
-                    {['Season', 'Position', 'Coverage 80%', 'Coverage 50%', 'N Games'].map((h, i) => (
-                      <th
-                        key={h}
-                        className={clsx('px-5 py-3 text-[10px] font-semibold uppercase tracking-widest text-fg-muted', i > 1 ? 'text-right' : 'text-left')}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.by_season.map((row) => (
-                    <tr
-                      key={`${row.season}-${row.position}`}
-                      className="transition-colors border-b border-white/[0.04] even:bg-white/[0.015] hover:bg-info/[0.04]"
-                    >
-                      <td className="px-5 py-3 font-medium text-fg">{row.season}</td>
-                      <td className="px-5 py-3">
-                        <span className={clsx(toneClass(positionTone(row.position)), 'text-xs font-bold text-tone')}>
-                          {row.position}
-                        </span>
-                      </td>
-                      <td className={clsx(toneClass(coverageTone(row.coverage_80)), 'px-5 py-3 text-right font-bold font-mono text-tone')}>
-                        {(row.coverage_80 * 100).toFixed(1)}%
-                      </td>
-                      <td className="px-5 py-3 text-right font-mono text-fg-muted">
-                        {(row.coverage_50 * 100).toFixed(1)}%
-                      </td>
-                      <td className="px-5 py-3 text-right font-mono text-fg-muted">{row.n_games}</td>
-                    </tr>
-                  ))}
-                  {data.by_season.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-5 py-8 text-center text-fg-muted text-sm">
-                        No backtest data available for the selected filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              {data.by_season.length === 0 ? (
+                <p className="px-5 py-8 text-center text-fg-muted text-sm">
+                  No backtest data available for the selected filters.
+                </p>
+              ) : (
+                <DataTable columns={COVERAGE_COLUMNS} data={data.by_season} />
+              )}
             </div>
           </Panel>
         </>

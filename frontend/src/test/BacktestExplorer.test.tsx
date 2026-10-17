@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BacktestExplorer } from '../pages/BacktestExplorer'
@@ -37,21 +38,21 @@ describe('BacktestExplorer', () => {
     // The heading for the season chart is the reliable signal; recharts
     // may or may not render SVG in jsdom with mocked ResizeObserver
     await waitFor(() =>
-      expect(screen.getByText('Season-by-Season MAE: Model vs Naive Baseline')).toBeInTheDocument(),
+      expect(screen.getByText('Average miss by season: us vs the simple method')).toBeInTheDocument(),
     )
   })
 
   it('calibration chart container renders', async () => {
     renderBacktest()
     await waitFor(() =>
-      expect(screen.getByText('Calibration Reliability Diagram')).toBeInTheDocument(),
+      expect(screen.getByText('Do our probabilities match reality?')).toBeInTheDocument(),
     )
   })
 
   it('coverage table rows render with season values', async () => {
     renderBacktest()
     await waitFor(() =>
-      expect(screen.getByText('Coverage by Season & Position')).toBeInTheDocument(),
+      expect(screen.getByText('In-range rate by season and position')).toBeInTheDocument(),
     )
     // Factory has seasons 2022, 2023, 2025
     const cells = await screen.findAllByText('2022')
@@ -60,13 +61,16 @@ describe('BacktestExplorer', () => {
   })
 
   it('stat dropdown changes trigger new query', async () => {
+    const user = userEvent.setup()
     renderBacktest()
     await waitFor(() =>
       expect(screen.getByText('MAE')).toBeInTheDocument(),
     )
-    const dropdown = screen.getByRole('combobox')
-    expect(dropdown).toBeInTheDocument()
-    fireEvent.change(dropdown, { target: { value: 'rushing_yards' } })
+    const dropdown = screen.getByRole('combobox', { name: 'Stat:' })
+    expect(dropdown).toHaveTextContent('Receiving Yards')
+    await user.click(dropdown)
+    await user.click(await screen.findByRole('option', { name: 'Rushing Yards' }))
+    expect(screen.getByRole('combobox', { name: 'Stat:' })).toHaveTextContent('Rushing Yards')
     // Query refires — loading indicator may briefly appear, then data reloads
     await waitFor(() =>
       expect(screen.getByText('MAE')).toBeInTheDocument(),

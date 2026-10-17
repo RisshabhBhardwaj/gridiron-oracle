@@ -8,7 +8,7 @@ import { toneClass, type Tone } from '@/lib/tokens'
  * <input type="range"> for assistive technology.
  *
  * Copied from the shadcn/ui Base UI slider and adapted to this project's
- * Tailwind 3 and colour tokens (docs/decisions/0004). Range sliders with two
+ * Tailwind 4 and colour tokens (docs/decisions/0004). Range sliders with two
  * thumbs are not needed yet; add a second Thumb here when they are.
  */
 type SliderProps = Omit<SliderPrimitive.Root.Props<number>, 'aria-label'> & {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { ChevronDown, ChevronUp, Dices } from 'lucide-react'
 import { useGameDriveSim } from '@/hooks/useDriveSim'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { SkeletonCard } from '@/components/shared/LoadingSpinner'
@@ -61,7 +62,6 @@ export function GameDetail() {
         >
           ← Back to Current Season
         </Link>
-        <span className="font-mono text-xs text-fg-muted">Game ID: {gameId}</span>
       </div>
 
       {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
@@ -79,7 +79,7 @@ export function GameDetail() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/40 pb-4">
               <div>
                 <span className="text-[11px] uppercase tracking-wider font-bold text-accent">
-                  {data.season} Week {data.week} · Drive-By-Drive Simulation
+                  {data.season} Week {data.week} · Drive-by-drive simulation
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-fg mt-0.5">
                   {data.away_team} @ {data.home_team}
@@ -91,11 +91,11 @@ export function GameDetail() {
                   type="button"
                   onClick={handleResimulate}
                   disabled={isFetching}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-fg hover:brightness-110 shadow transition-all"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-fg hover:brightness-110 shadow transition-all"
                 >
-                  {isFetching ? 'Simulating…' : '🎲 Resimulate Game'}
+                  <Dices className="size-3.5" aria-hidden="true" />
+                  {isFetching ? 'Simulating…' : 'Resimulate'}
                 </button>
-                <span className="text-[10px] font-mono text-fg-muted">Seed: {data.seed}</span>
               </div>
             </div>
 
@@ -109,23 +109,23 @@ export function GameDetail() {
                   <span className="text-3xl font-bold text-fg font-mono">
                     {data.summary.simulated_away_points}
                   </span>
-                  <span className="text-xs text-fg-muted">pts (Sim)</span>
+                  <span className="text-xs text-fg-muted">pts</span>
                 </div>
                 <span className="text-xs font-mono text-fg-muted mt-1">
-                  Anchor Model: {data.anchor.away_points.toFixed(1)} pts · {data.anchor.away_yards.toFixed(0)} yds
+                  Model: {data.anchor.away_points.toFixed(1)} pts · {data.anchor.away_yards.toFixed(0)} yds
                 </span>
               </div>
 
               {/* Game Result Center */}
               <div className="flex flex-col items-center justify-center p-4 text-center">
-                <span className="text-xs uppercase font-mono tracking-widest text-fg-muted">Final Simulated Result</span>
+                <span className="text-xs uppercase font-mono tracking-widest text-fg-muted">Simulated result</span>
                 <span className="text-lg font-bold text-accent mt-1">
                   {data.summary.simulated_winner === 'TIE'
-                    ? 'Game Tied'
-                    : `${data.summary.simulated_winner} Wins`}
+                    ? 'Tie game'
+                    : `${data.summary.simulated_winner} win`}
                 </span>
                 <span className="text-xs font-mono text-fg-muted mt-2">
-                  Total Drives: {data.summary.total_drives} · Home Win Prob: {(data.anchor.home_win_probability * 100).toFixed(0)}%
+                  {data.summary.total_drives} drives · Home win chance: {(data.anchor.home_win_probability * 100).toFixed(0)}%
                 </span>
               </div>
 
@@ -134,13 +134,13 @@ export function GameDetail() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">Home</span>
                 <span className="text-2xl font-bold font-display text-fg mt-1">{data.home_team}</span>
                 <div className="flex items-baseline gap-2 mt-2">
-                  <span className="text-xs text-fg-muted">pts (Sim)</span>
+                  <span className="text-xs text-fg-muted">pts</span>
                   <span className="text-3xl font-bold text-fg font-mono">
                     {data.summary.simulated_home_points}
                   </span>
                 </div>
                 <span className="text-xs font-mono text-fg-muted mt-1">
-                  Anchor Model: {data.anchor.home_points.toFixed(1)} pts · {data.anchor.home_yards.toFixed(0)} yds
+                  Model: {data.anchor.home_points.toFixed(1)} pts · {data.anchor.home_yards.toFixed(0)} yds
                 </span>
               </div>
             </div>
@@ -150,7 +150,7 @@ export function GameDetail() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold font-display uppercase tracking-wider text-fg">
-                Drive Sequence Timeline
+                Drives
               </h2>
               <span className="text-xs text-fg-muted">
                 Click any drive to expand play-by-play details
@@ -209,7 +209,9 @@ export function GameDetail() {
                         <span className="font-mono text-xs font-bold text-fg pl-2 border-l border-line">
                           {data.away_team} {drive.away_score_after} - {drive.home_score_after} {data.home_team}
                         </span>
-                        <span className="text-xs text-fg-muted">{isExpanded ? '▲' : '▼'}</span>
+                        {isExpanded
+                          ? <ChevronUp className="size-3.5 text-fg-muted" aria-hidden="true" />
+                          : <ChevronDown className="size-3.5 text-fg-muted" aria-hidden="true" />}
                       </div>
                     </button>
 
@@ -251,16 +253,16 @@ export function GameDetail() {
                                 </td>
                                 <td className="py-1.5 px-2">
                                   {play.is_touchdown && (
-                                    <span className="text-emerald-400 font-bold">TOUCHDOWN 🏈</span>
+                                    <span className="text-emerald-400 font-bold">Touchdown</span>
                                   )}
                                   {play.is_first_down && !play.is_touchdown && (
-                                    <span className="text-accent font-medium">1st Down ➔</span>
+                                    <span className="text-accent font-medium">1st Down</span>
                                   )}
                                   {play.is_turnover && (
-                                    <span className="text-rose-400 font-bold">TURNOVER ⚠️</span>
+                                    <span className="text-rose-400 font-bold">Turnover</span>
                                   )}
                                   {play.is_safety && (
-                                    <span className="text-purple-400 font-bold">SAFETY 🛑</span>
+                                    <span className="text-purple-400 font-bold">Safety</span>
                                   )}
                                   {!play.is_first_down && !play.is_touchdown && !play.is_turnover && !play.is_safety && (
                                     <span className="text-fg-muted">No 1st down</span>

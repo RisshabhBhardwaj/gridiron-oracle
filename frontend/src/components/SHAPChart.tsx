@@ -1,10 +1,11 @@
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ResponsiveContainer, Cell,
+  BarChart, Bar, Tooltip,
+  ReferenceLine, Cell,
 } from 'recharts'
 import clsx from 'clsx'
 import type { FactorItem } from '@/types/api'
 import { toneClass, token } from '@/lib/tokens'
+import { ChartFrame, ChartGrid, ChartXAxis, ChartYAxis } from '@/components/charts/themed-chart'
 
 interface SHAPChartProps  { factors: FactorItem[]; height?: number }
 interface ChartDatum      { label: string; feature: string; impact: number; value: number }
@@ -38,17 +39,16 @@ export function SHAPChart({ factors, height = 280 }: SHAPChartProps) {
     .map((f) => ({ label: f.label, feature: f.feature, impact: f.impact, value: f.value }))
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ChartFrame height={height}>
       <BarChart data={sorted} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke={token('line')} horizontal={false} />
-        <XAxis
+        <ChartGrid horizontal={false} />
+        <ChartXAxis
           type="number"
-          stroke={token('line-strong')}
           tick={{ fontSize: 10, fill: token('fg-muted') }}
           tickLine={false}
           axisLine={false}
         />
-        <YAxis
+        <ChartYAxis
           type="category"
           dataKey="label"
           width={150}
@@ -70,6 +70,6 @@ export function SHAPChart({ factors, height = 280 }: SHAPChartProps) {
           ))}
         </Bar>
       </BarChart>
-    </ResponsiveContainer>
+    </ChartFrame>
   )
 }

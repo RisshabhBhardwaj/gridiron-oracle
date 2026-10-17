@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 /**
  * Tabs on Base UI: role=tablist / tab / tabpanel, roving focus, arrow keys, Home
  * and End. Copied from the shadcn/ui Base UI tabs and adapted to this project's
- * Tailwind 3 and colour tokens (docs/decisions/0004).
+ * Tailwind 4 and colour tokens (docs/decisions/0004).
  *
  * Not used by a page yet. It is meant to replace the hand-rolled tab switchers
  * (Current Season, Draft board mode) as those pages are migrated.

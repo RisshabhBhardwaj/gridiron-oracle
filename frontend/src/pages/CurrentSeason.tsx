@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import clsx from 'clsx'
 import { useNavigate, Link } from 'react-router-dom'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
@@ -14,8 +14,21 @@ import { CURRENT_SEASON, POSITIONS, SEASON_SIM_STATS, STAT_LABELS, type SeasonSi
 import type { SeasonPlayerProjection } from '@/types/api'
 import { PositionBadge } from '@/components/PositionBadge'
 import { positionTone, toneClass } from '@/lib/tokens'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 type Tab = 'weekly' | 'season' | 'games'
+
+const WEEK_ITEMS = Array.from({ length: 18 }, (_, i) => ({
+  value: String(i + 1),
+  label: `Week ${i + 1}`,
+}))
+const START_WEEK_ITEMS = Array.from({ length: 18 }, (_, i) => ({
+  value: String(i + 1),
+  label: `From Week ${i + 1}`,
+}))
+const STAT_ITEMS = SEASON_SIM_STATS.map((s) => ({ value: s, label: STAT_LABELS[s] || s }))
 
 interface PlayerCardProps {
   row: SeasonPlayerProjection
@@ -157,14 +170,6 @@ export function CurrentSeason() {
     setDefaults({ season, week: selectedWeek, stat: statKey })
   }, [activeTab, weeklyQuery.data, seasonQuery.data, statKey, season, selectedWeek, setPlayers, setDefaults])
 
-  const togglePosition = useCallback((pos: string) => {
-    setSelectedPositions((prev) =>
-      prev.includes(pos)
-        ? prev.length === 1 ? prev : prev.filter((p) => p !== pos)
-        : [...prev, pos],
-    )
-  }, [])
-
   const playersList = useMemo(() => {
     const source = activeTab === 'weekly' ? weeklyQuery.data?.projections : seasonQuery.data?.projections
     if (!source) return []
@@ -196,38 +201,13 @@ export function CurrentSeason() {
         </div>
 
         {/* Tab switcher */}
-        <div className="flex items-center rounded-lg bg-surface-overlay p-1 border border-line">
-          <button
-            onClick={() => setActiveTab('weekly')}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-              activeTab === 'weekly'
-                ? 'bg-accent text-accent-fg shadow'
-                : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            Weekly
-          </button>
-          <button
-            onClick={() => setActiveTab('season')}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-              activeTab === 'season'
-                ? 'bg-accent text-accent-fg shadow'
-                : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            Season-Long
-          </button>
-          <button
-            onClick={() => setActiveTab('games')}
-            className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-              activeTab === 'games'
-                ? 'bg-accent text-accent-fg shadow'
-                : 'text-fg-muted hover:text-fg'
-            }`}
-          >
-            Games
-          </button>
-        </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
+          <TabsList aria-label="Season view">
+            <TabsTrigger value="weekly">Weekly</TabsTrigger>
+            <TabsTrigger value="season">Season-Long</TabsTrigger>
+            <TabsTrigger value="games">Games</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {freshness && <DataStalenessWarning dataFreshness={freshness} />}
@@ -237,81 +217,78 @@ export function CurrentSeason() {
         <div className="flex flex-wrap items-center gap-3">
           {(activeTab === 'weekly' || activeTab === 'games') && (
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-fg-muted">Week:</label>
-              <select
-                aria-label="Select week"
-                value={selectedWeek}
-                onChange={(e) => setSelectedWeek(Number(e.target.value))}
-                className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-2.5 py-1.5 text-fg"
+              <span className="text-xs font-medium text-fg-muted" id="week-label">Week:</span>
+              <Select
+                items={WEEK_ITEMS}
+                value={String(selectedWeek)}
+                onValueChange={(v) => { if (v) setSelectedWeek(Number(v)) }}
               >
-                {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (
-                  <option key={w} value={w}>
-                    Week {w}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-labelledby="week-label" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WEEK_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           {activeTab === 'season' && (
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-fg-muted">Start Week:</label>
-              <select
-                aria-label="Select start week"
-                value={startWeek}
-                onChange={(e) => setStartWeek(Number(e.target.value))}
-                className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-2.5 py-1.5 text-fg"
+              <span className="text-xs font-medium text-fg-muted" id="start-week-label">Start Week:</span>
+              <Select
+                items={START_WEEK_ITEMS}
+                value={String(startWeek)}
+                onValueChange={(v) => { if (v) setStartWeek(Number(v)) }}
               >
-                {Array.from({ length: 18 }, (_, i) => i + 1).map((w) => (
-                  <option key={w} value={w}>
-                    From Week {w}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-labelledby="start-week-label" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {START_WEEK_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           {activeTab !== 'games' && (
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-fg-muted">Stat:</label>
-              <select
-                aria-label="Select stat"
+              <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
+              <Select
+                items={STAT_ITEMS}
                 value={statKey}
-                onChange={(e) => setStatKey(e.target.value as SeasonSimStat)}
-                className="oracle-select bg-surface-overlay border border-line text-xs rounded-lg px-2.5 py-1.5 text-fg"
+                onValueChange={(v) => { if (v) setStatKey(v as SeasonSimStat) }}
               >
-                {SEASON_SIM_STATS.map((s) => (
-                  <option key={s} value={s}>
-                    {STAT_LABELS[s] || s}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STAT_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
         </div>
 
         {activeTab !== 'games' && (
-          <div className="flex items-center gap-1.5">
-            {POSITIONS.map((pos) => {
-              const active = selectedPositions.includes(pos)
-              return (
-                <button
-                  key={pos}
-                  onClick={() => togglePosition(pos)}
-                  aria-pressed={active}
-                  className={clsx(
-                    toneClass(positionTone(pos)),
-                    'px-2.5 py-1 text-xs font-semibold rounded-md border transition-colors',
-                    active
-                      ? 'bg-tone text-accent-fg border-transparent'
-                      : 'border-line text-fg-muted hover:border-line-strong',
-                  )}
-                >
-                  {pos}
-                </button>
-              )
-            })}
-          </div>
+          <ToggleGroup
+            multiple
+            aria-label="Positions"
+            value={selectedPositions}
+            onValueChange={(next) => { if (next.length > 0) setSelectedPositions(next) }}
+          >
+            {POSITIONS.map((pos) => (
+              <ToggleGroupItem key={pos} value={pos} tone={positionTone(pos)}>
+                {pos}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         )}
       </div>
 

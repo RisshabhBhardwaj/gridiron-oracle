@@ -12,7 +12,7 @@ Last verified against code: 2026-10-07 (module existence and constants checked; 
 4. **Uncertainty**: weekly intervals use residual quantiles (`ml/conformal.py`). Monte Carlo (`ml/monte_carlo.py`) runs in the served scenario path (`backend/app/services/projection.py`, `run_scenario`). The PyMC layer (`ml/bayesian_layer.py`) is reached only from the offline pipeline runner (`ml/train.py`), which serving calls only through a fallback that is switched off (`backend/app/services/projection.py`, `_PIPELINE_FALLBACK_ENABLED = False`).
 5. **Other simulators**: season (`ml/season_simulator.py`, C++ `engine/src/season_simulator.cpp`), team-game and drive models (`ml/team_game_model.py`, `ml/drive_engine.py`, `engine/src/drive_mcmc.cpp`), draft board and mock draft (`ml/draft_projection.py`, `ml/vor.py`, `ml/mock_draft.py`). Draft ranks use VOR for an 8-team PPR league.
 6. **Serving** (`backend/app/`): FastAPI. Routes: `/predict`, `/projections/*`, `/explain`, `/scenario`, `/backtest`, `/settings`, `/alerts`, `/season/current`, `/draft/board`, `/mock-draft/*`, `/team-games/*`, `/drive/simulate`. Optional `X-API-Key`. `PRODUCT_MODE=artifact_backed` (default) serves only pinned artifacts; `graceful_fallback` allows labelled fallbacks.
-7. **Frontend** (`frontend/src/`): React 18, TypeScript, Vite, Tailwind 3, TanStack Query, Recharts. Routed pages: Home, Projections (+ game detail), Season review, Draft, Player, Backtest, Settings.
+7. **Frontend** (`frontend/src/`): React 18, TypeScript, Vite, Tailwind 4, TanStack Query, Recharts. Routed pages: Home, Projections (+ game detail), Season review, Draft, Player, Backtest, Settings.
 
 ## C++ engine (`engine/`)
 

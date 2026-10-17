@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SeasonReview } from '../pages/SeasonReview'
@@ -20,28 +21,35 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe('SeasonReview', () => {
-  it('renders season review header and ground truth data floor notice', async () => {
+  it('renders season review header and past-results notice in plain words', async () => {
     renderWithProviders(<SeasonReview />)
     expect(screen.getByText('Season Review')).toBeInTheDocument()
-    expect(screen.getByText(/Evaluation Data Floor/i)).toBeInTheDocument()
+    expect(screen.getByText(/Past results only/i)).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(screen.getByText('Mean Absolute Error (MAE)')).toBeInTheDocument()
-      expect(screen.getByText('Root Mean Squared Error (RMSE)')).toBeInTheDocument()
-      expect(screen.getByText(/Positional Performance Audit/i)).toBeInTheDocument()
+      expect(screen.getByText('Average miss')).toBeInTheDocument()
+      expect(screen.getByText('Big-miss penalty')).toBeInTheDocument()
+      expect(screen.getByText(/By position/i)).toBeInTheDocument()
     })
   })
 
   it('allows changing target stat and season', async () => {
+    const user = userEvent.setup()
     renderWithProviders(<SeasonReview />)
 
     await waitFor(() => {
-      expect(screen.getByText('Mean Absolute Error (MAE)')).toBeInTheDocument()
+      expect(screen.getByText('Average miss')).toBeInTheDocument()
     })
 
-    const seasonSelect = screen.getByDisplayValue('2025 Season')
-    fireEvent.change(seasonSelect, { target: { value: '2024' } })
+    const seasonSelect = screen.getByRole('combobox', { name: 'Season:' })
+    expect(seasonSelect).toHaveTextContent('2025 Season')
+    await user.click(seasonSelect)
+    await user.click(await screen.findByRole('option', { name: '2024 Season' }))
+    expect(screen.getByRole('combobox', { name: 'Season:' })).toHaveTextContent('2024 Season')
 
-    expect(screen.getByDisplayValue('2024 Season')).toBeInTheDocument()
+    const statSelect = screen.getByRole('combobox', { name: 'Stat:' })
+    await user.click(statSelect)
+    await user.click(await screen.findByRole('option', { name: 'Rushing Yards' }))
+    expect(screen.getByRole('combobox', { name: 'Stat:' })).toHaveTextContent('Rushing Yards')
   })
 })

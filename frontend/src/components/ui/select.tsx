@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
  * Home/End, Escape and screen-reader support from the primitive.
  *
  * Copied from the shadcn/ui Base UI select and adapted to this project's
- * Tailwind 3 and colour tokens (docs/decisions/0004). Scroll arrows and
+ * Tailwind 4 and colour tokens (docs/decisions/0004). Scroll arrows and
  * separators are left out until something needs them.
  *
  * Usage:

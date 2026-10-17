@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
  * scroll, and labels the dialog from DialogTitle / DialogDescription.
  *
  * Copied from the shadcn/ui Base UI dialog and adapted to this project's
- * Tailwind 3 and colour tokens (docs/decisions/0004).
+ * Tailwind 4 and colour tokens (docs/decisions/0004).
  *
  * Every dialog needs a DialogTitle (use className="sr-only" to hide it).
  */

@@ -40,7 +40,7 @@ describe('Settings (editable build)', () => {
     const sliders = screen.getAllByRole('slider', { hidden: true })
     expect(sliders.length).toBeGreaterThanOrEqual(7)
     // kalman_form = 35
-    const kalmanSlider = screen.getByLabelText('Kalman Form (Player Ability)')
+    const kalmanSlider = screen.getByLabelText('Recent form')
     expect(kalmanSlider).toHaveValue('35')
     // matchup = 20
     const matchupSlider = screen.getByLabelText('Matchup Quality')
@@ -62,7 +62,7 @@ describe('Settings (editable build)', () => {
     await waitFor(() =>
       expect(screen.getByText('Feature Weights')).toBeInTheDocument(),
     )
-    const kalmanSlider = screen.getByLabelText('Kalman Form (Player Ability)')
+    const kalmanSlider = screen.getByLabelText('Recent form')
     // Change kalman_form from 35 → 40
     fireEvent.change(kalmanSlider, { target: { value: '40' } })
     await waitFor(() =>
@@ -75,7 +75,7 @@ describe('Settings (editable build)', () => {
     await waitFor(() =>
       expect(screen.getByText('Feature Weights')).toBeInTheDocument(),
     )
-    const kalmanSlider = screen.getByLabelText('Kalman Form (Player Ability)')
+    const kalmanSlider = screen.getByLabelText('Recent form')
     // Make total invalid: 35→45 (total becomes 110)
     fireEvent.change(kalmanSlider, { target: { value: '45' } })
     await waitFor(() =>
@@ -109,8 +109,8 @@ describe('Settings (editable build)', () => {
     await waitFor(() =>
       expect(screen.getByText('Fantasy Scoring Format')).toBeInTheDocument(),
     )
-    const pprButton = screen.getByRole('button', { name: /^PPR 1pt per reception$/i })
-    expect(pprButton).toHaveAttribute('aria-pressed', 'true')
+    const pprOption = screen.getByRole('radio', { name: /^PPR 1pt per reception$/i })
+    expect(pprOption).toHaveAttribute('aria-checked', 'true')
   })
 })
 
@@ -131,7 +131,9 @@ describe('Settings (public site, view-only)', () => {
     expect(save).toBeDisabled()
     expect(save).toHaveAccessibleDescription(/look at these settings, but not change them/i)
     expect(screen.getByRole('button', { name: /reset to defaults/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /^PPR 1pt per reception$/i })).toBeDisabled()
+    // Base UI radios are spans: the group communicates read-only through
+    // aria-disabled rather than a native disabled attribute.
+    expect(screen.getByRole('radio', { name: /^PPR 1pt per reception$/i })).toHaveAttribute('aria-disabled', 'true')
     for (const slider of screen.getAllByRole('slider', { hidden: true })) expect(slider).toBeDisabled()
   })
 
