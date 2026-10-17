@@ -111,6 +111,25 @@ class Game(SQLModel, table=True):
     game_logs: List["GameLog"] = Relationship(back_populates="game")
 
 
+class GameLineSnapshot(SQLModel, table=True):
+    """One observed (spread, total) pair for a game (decision 0008, item 3).
+
+    Append-only history: pipeline/normalize.py inserts a row per run that
+    carries a line instead of only overwriting games.total_line/spread_line.
+    Readers take the latest row captured strictly before as-of (and before
+    kickoff when known); see pipeline/line_snapshots.py.
+    """
+
+    __tablename__ = "game_line_snapshots"
+
+    game_id: str = Field(primary_key=True, foreign_key="games.id")
+    captured_at: datetime = Field(primary_key=True)
+    spread_line: Optional[float] = None
+    total_line: Optional[float] = None
+    source: str = "nflreadpy_schedule"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class GameLog(SQLModel, table=True):
     """
     Per-player, per-game statistics.

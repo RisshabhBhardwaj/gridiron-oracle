@@ -3,9 +3,11 @@
 build_forward_week takes the lines, rest, and venue of a row from the target
 game, never from the player's prior-season row, which describes a different
 game. Player history still comes from the prior row. A missing target line
-takes the training median, because training never saw a missing line.
+resolves through the causal line history (latest snapshot known before as-of,
+else a pregame-Elo implied line — decision 0008, item 3), never a median,
+because training never saw a missing line.
 
-These tests run without a database: a fake connection serves the two SELECTs,
+These tests run without a database: a fake connection serves the SELECTs,
 and the upsert and post-upsert fills are captured or stubbed.
 """
 
@@ -14,7 +16,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pipeline.feature_engineer as fe_mod
+from ml.team_elo import TeamEloSystem
 from pipeline.feature_engineer import FeatureEngineer
+from pipeline.line_snapshots import elo_implied_line
 
 PRIOR_TOTAL = 40.0
 TARGET_TOTAL = 50.0
@@ -34,7 +38,9 @@ class _Cursor:
         return False
 
     def execute(self, sql: str, params: object = None) -> None:
-        if "JOIN LATERAL" in sql:
+        if "game_line_snapshots" in sql:
+            self._rows = list(self._conn.snapshots)
+        elif "JOIN LATERAL" in sql:
             self._rows = list(self._conn.candidates)
         elif "FROM feature_matrix" in sql:
             self._rows = list(self._conn.priors)
@@ -44,11 +50,16 @@ class _Cursor:
     def fetchall(self) -> list[dict]:
         return list(self._rows)
 
+    def fetchone(self) -> dict | None:
+        return self._rows[0] if self._rows else None
+
 
 class _FakeConn:
-    def __init__(self, candidates: list[dict], priors: list[dict]) -> None:
+    def __init__(self, candidates: list[dict], priors: list[dict],
+                 snapshots: list[dict] | None = None) -> None:
         self.candidates = candidates
         self.priors = priors
+        self.snapshots = snapshots or []
 
     def cursor(self, **_kwargs: object) -> _Cursor:
         return _Cursor(self)
@@ -96,16 +107,20 @@ def _prior_row(**overrides: object) -> dict:
 
 
 def _forward_row(prior: dict | None, *, total: float | None = TARGET_TOTAL,
-                 spread: float | None = -3.0) -> dict:
+                 spread: float | None = -3.0,
+                 snapshots: list[dict] | None = None,
+                 line_elo: TeamEloSystem | None = None) -> dict:
     """Run build_forward_week for one week and return the target player's row."""
     fe = FeatureEngineer("postgresql://unused")
-    fe._conn = _FakeConn(_candidates(total, spread), [] if prior is None else [prior])
+    fe._conn = _FakeConn(_candidates(total, spread), [] if prior is None else [prior],
+                         snapshots)
     captured: list = []
     fe._upsert_feature_rows = lambda rows: (captured.extend(rows), len(rows))[1]
     fe._fill_prior_routes_run = lambda season: None
     fe._fill_prior_pbp_ngs_features = lambda season: None
     fe._fill_lagged_depth_chart_rank = lambda season: None
-    fe.build_forward_week(season=2026, week=1, as_of=AS_OF)
+    fe.build_forward_week(season=2026, week=1, as_of=AS_OF,
+                          line_elo=line_elo or TeamEloSystem())
     (row,) = [r for r in captured if r.player_id == TARGET_PID]
     return {name: getattr(row, name) for name in fe_mod._FM_COLS}
 
@@ -142,14 +157,24 @@ class TestTargetGameContextWins:
 
 
 class TestMissingLineFallback:
-    def test_missing_total_takes_training_median(self) -> None:
+    def test_missing_line_takes_snapshot_before_as_of(self) -> None:
         # A total of None read as 0 by LightGBM would look like a 0-point game.
-        row = _forward_row(_prior_row(), total=None)
-        assert row["game_total_line"] == fe_mod._FWD_LINE_FALLBACK["game_total_line"] == 45.0
+        snapshots = [
+            {"spread_line": -4.5, "total_line": 47.5,
+             "captured_at": datetime(2026, 9, 8, tzinfo=timezone.utc)},
+        ]
+        row = _forward_row(_prior_row(), total=None, spread=None,
+                           snapshots=snapshots)
+        assert row["game_total_line"] == 47.5
+        assert row["spread_line"] == -4.5
 
-    def test_missing_spread_takes_training_median(self) -> None:
-        row = _forward_row(_prior_row(), spread=None)
-        assert row["spread_line"] == fe_mod._FWD_LINE_FALLBACK["spread_line"] == 2.5
+    def test_missing_line_without_snapshot_is_elo_implied(self) -> None:
+        elo = TeamEloSystem()
+        row = _forward_row(_prior_row(), total=None, spread=None, line_elo=elo)
+        expected = elo_implied_line("H0", "A0", 2026, 1, elo)
+        assert row["game_total_line"] == expected.total_line
+        assert row["spread_line"] == expected.spread_line
+        assert row["spread_line"] != 2.5
 
     def test_present_line_is_not_replaced(self) -> None:
         row = _forward_row(_prior_row(), total=52.5)
@@ -160,5 +185,5 @@ class TestSourcePartition:
     def test_target_game_columns_are_all_real_feature_fields(self) -> None:
         assert fe_mod._FWD_TARGET_GAME_COLS <= set(fe_mod._FM_COLS)
 
-    def test_fallback_columns_are_target_game_columns(self) -> None:
-        assert set(fe_mod._FWD_LINE_FALLBACK) <= fe_mod._FWD_TARGET_GAME_COLS
+    def test_no_fixed_median_fallback_remains(self) -> None:
+        assert not hasattr(fe_mod, "_FWD_LINE_FALLBACK")

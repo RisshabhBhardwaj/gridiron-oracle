@@ -104,6 +104,7 @@ from scraper.adapters.nflreadpy_adapter import (
     _coerce_row,
     _psycopg2_dsn,
 )
+from pipeline.line_snapshots import SNAPSHOT_INSERT_SQL, snapshot_batch
 from pipeline.staging_retention import HIGH_VOLUME_SOURCE_TYPES
 
 logging.basicConfig(
@@ -711,6 +712,15 @@ class Normalizer:
                 rows,
             )
         self._conn.commit()
+        # Causal line history (decision 0008, item 3): the upsert above keeps
+        # only the latest-seen line on games. Append what this feed observed so
+        # a pre-kickoff line stays queryable after later moves overwrite it.
+        # Append-only — existing snapshot rows are never updated or deleted.
+        snap_rows = snapshot_batch(game_dicts, datetime.utcnow())
+        if snap_rows:
+            with self._conn.cursor() as cur:
+                execute_values(cur, SNAPSHOT_INSERT_SQL, snap_rows)
+            self._conn.commit()
         return len(game_dicts)
 
     def _upsert_players(self, player_dicts: list[dict]) -> int:
