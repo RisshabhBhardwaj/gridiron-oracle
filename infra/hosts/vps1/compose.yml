@@ -182,6 +182,7 @@ services:
       - path: .env
         required: true
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
       PRODUCT_MODE: artifact_backed
       HEALTHCHECKS_ETL_URL: ${HEALTHCHECKS_ETL_URL:-}
@@ -260,6 +261,7 @@ services:
       - path: .env
         required: true
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
       HEALTHCHECKS_TRAIN_SMALL_URL: ${HEALTHCHECKS_TRAIN_SMALL_URL:-}
       HEALTHCHECKS_TRAIN_FULL_URL: ${HEALTHCHECKS_TRAIN_FULL_URL:-}
