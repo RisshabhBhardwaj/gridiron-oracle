@@ -33,11 +33,14 @@ WORKDIR /app
 
 COPY infra/hosts/vps1/requirements-serving.txt /app/requirements-serving.txt
 
-# curl stays: the compose healthcheck probes /health with it. Build tools are
-# purged after the engine build so the runtime layer stays lean.
+# curl stays: the compose healthcheck probes /health with it. git stays ONLY
+# for the engine build below (FetchContent clones nlohmann_json) and is
+# purged with the rest of the build tools afterwards. Build tools are purged
+# after the engine build so the runtime layer stays lean.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
+    git \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
