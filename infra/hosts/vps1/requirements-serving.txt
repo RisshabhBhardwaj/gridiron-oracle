@@ -17,7 +17,7 @@
 # DROPPED (training / analysis only, not imported at serving):
 #   torch==2.11.0             (CPU wheel + CUDA avoidance; ~2.5 GB of CUDA
 #                              deps on linux/amd64 — the main serving win)
-#   pytorch-forecasting==1.7.0 (TFT retrains; upgrade-only on VPS-1)
+#   pytorch-forecasting==1.7.0 (TFT retrains run in the training slice, never in serving)
 #   pymc==5.28.4               (bayesian layer fitting, offline)
 #   shap==0.51.0               (analysis; ml/shap_service.py degrades
 #                              without it — confirm on the scratch box)

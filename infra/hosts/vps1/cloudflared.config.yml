@@ -1,4 +1,4 @@
-# Cloudflare Tunnel ingress template for VPS-1.
+# Cloudflare Tunnel ingress template for the shared VPS-4.
 #
 # DEPLOY STEP (owner, once): replace `api.<your-domain>` below with the real
 # hostname, e.g. `api.gridiron.<your-domain>`. The tunnel itself (ID, routing)

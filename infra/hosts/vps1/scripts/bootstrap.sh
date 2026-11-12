@@ -1,5 +1,10 @@
 #!/bin/bash
-# Fresh-Ubuntu (24.04) bootstrap for Gridiron VPS-1 — idempotent.
+# Fresh-Ubuntu (24.04) bootstrap for the shared Gridiron/ATS VPS-4 — idempotent.
+#
+# Region note: the box was ordered in Beauharnois/BHS (only region in stock),
+# but NOTHING in this script is region-specific — no regional mirrors,
+# endpoints, or locales. A later move to US-East is: run this script on the
+# new box, restore the R2 dump. See README "Portability".
 #
 # Run as root on first boot, re-runnable after that (every step checks state
 # first). Covers PLATFORM_SETUP §4 as applied to a TUNNEL-ONLY box:
@@ -11,9 +16,10 @@
 #   - Docker Engine + compose plugin from Docker's apt repo; daemon-wide
 #     log rotation + live-restore.
 #
-# Usage:
-#   SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" bash scripts/bootstrap.sh
-#   # or: bash scripts/bootstrap.sh "$(cat ~/.ssh/id_ed25519.pub)"
+# Usage (key material comes from the owner's ~/.ssh/ovh_boxes.pub —
+# public-key PATH only, never copied anywhere):
+#   SSH_PUBKEY="$(cat ~/.ssh/ovh_boxes.pub)" bash scripts/bootstrap.sh
+#   # or: bash scripts/bootstrap.sh "$(cat ~/.ssh/ovh_boxes.pub)"
 #
 # IMPORTANT — read before running:
 #   1. SSH hardening refuses to disable password auth until `deploy` holds a
@@ -71,7 +77,7 @@ HARDEN_CONF="/etc/ssh/sshd_config.d/10-hardening.conf"
 if [ -s "$AUTH_KEYS" ]; then
   log "writing $HARDEN_CONF ..."
   cat > "$HARDEN_CONF" <<'EOF'
-# Gridiron VPS-1 hardening (bootstrap.sh managed).
+# Gridiron site hardening (bootstrap.sh managed).
 PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -136,7 +142,7 @@ fi
 # Security updates automatic; everything else + reboots stay manual (monthly
 # maintenance window with `needrestart`, per §4).
 cat > /etc/apt/apt.conf.d/51-gridiron-unattended <<'EOF'
-// Gridiron VPS-1 (bootstrap.sh managed): security only, never reboot.
+// Gridiron site (bootstrap.sh managed): security only, never reboot.
 Unattended-Upgrade::Allowed-Origins {
   "${distro_id}:${distro_codename}-security";
 };

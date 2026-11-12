@@ -3,7 +3,7 @@
 # rclone to Cloudflare R2 → dead-man ping on success ONLY.
 #
 # Runs as the `backup` compose service (profile `jobs`, restart "no"),
-# invoked by host cron — never `up -d`. Fails LOUD: any error skips the
+# invoked by gridiron-backup.timer — never `up -d`. Fails LOUD: any error skips the
 # healthchecks ping, and the missing ping is the alert (see §11).
 #
 # Env (names match .env.example; values never in git):

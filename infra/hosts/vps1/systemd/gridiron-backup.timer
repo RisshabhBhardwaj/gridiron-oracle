@@ -1,0 +1,12 @@
+# Nightly backup: daily 23:00 UTC = daily 18:00 EST (UTC-5, November).
+# See the .service file for why this hour was chosen.
+[Unit]
+Description=Gridiron nightly R2 backup — daily 23:00 UTC (18:00 EST)
+
+[Timer]
+OnCalendar=*-*-* 23:00:00
+Persistent=false
+Unit=gridiron-backup.service
+
+[Install]
+WantedBy=timers.target

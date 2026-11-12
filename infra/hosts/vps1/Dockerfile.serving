@@ -1,4 +1,4 @@
-# Lean serving image for VPS-1.
+# Lean serving image for the shared VPS-4 (Gridiron site envelope).
 #
 # Same code tree as backend/Dockerfile, differing ONLY in installed
 # dependencies (per project rule: images must not alter artifacts,

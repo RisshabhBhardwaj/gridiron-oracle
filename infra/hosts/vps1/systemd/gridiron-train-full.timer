@@ -1,0 +1,13 @@
+# Full window: Friday 22:00 UTC = Friday 17:00 EST (UTC-5, November).
+# Runs through the weekend; the .service's RuntimeMaxSec=56h ends it
+# Monday 06:00 UTC (Monday 01:00 EST), ahead of the Tuesday ETL.
+[Unit]
+Description=Gridiron full retrain — Friday 22:00 UTC (17:00 EST)
+
+[Timer]
+OnCalendar=Fri *-*-* 22:00:00
+Persistent=false
+Unit=gridiron-train-full.service
+
+[Install]
+WantedBy=timers.target

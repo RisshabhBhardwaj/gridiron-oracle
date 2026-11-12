@@ -1,24 +1,37 @@
-# Gridiron Oracle — VPS-1 compose project (tunnel-only ingress).
+# Gridiron Oracle — vps1 compose project for the shared VPS-4 (tunnel-only ingress).
 #
-# Host: fresh Ubuntu 24.04 OVH VPS-1 (2 vCores, 4 GB RAM). No server ordered
-# yet; nothing here has run against a live host.
+# Host: ONE shared OVH VPS-4 (8 vCores, 24 GB RAM, 200 GB disk, 4 GB swap,
+# Ubuntu 24.04; ordered in Beauharnois/BHS — the stack itself is
+# region-agnostic, see README "Portability"). The `ovh-vps1` slug names the
+# task, not the box. No server access yet; nothing here has run live.
+#
+# HOST ENVELOPE MAP (owner decision 2026-11-12; measure, then adjust WITHIN
+# envelopes — never grow one envelope into another):
+#   Gridiron site   ~2.5 GB  api + db + cloudflared (first claim on CPU)
+#   ATS (reserved)  ~9.5 GB  RESERVED for the separate ATS project — left
+#                            free here, no ATS services designed.
+#   Gridiron train  ~10  GB  low-priority slice (see systemd/ + `training`).
+#   Host slack      ~2   GB  OS, Docker, one-shot jobs (ETL/backup run in the
+#                            training-idle window and draw from here).
+# Totals: 2.5 + 9.5 + 10 = 22 of 24 GB.
 #
 # Profiles:
 #   (none)          serving + db + tunnel. This is the steady state.
-#                   One-shot `etl` / `backup` services are NOT started by
-#                   `up -d` (they carry `profiles: [jobs]`); the host cron
-#                   (scheduler/gridiron.cron) invokes them with
-#                   `docker compose --profile jobs run --rm <svc>`.
-#   jobs            one-shot ETL + backup (cron only, never `up -d`).
-#   training        full-image light-refit shell (`run --rm training ...`).
-#                   Full TFT/GNN retrains are upgrade-only (see README).
-#   observability   MLflow + OTel collector + Jaeger + Prometheus +
-#                   Alertmanager. Diagnostic windows only on VPS-1: it does
-#                   not fit in 4 GB alongside serving — stop it afterwards.
+#                   One-shot `etl` / `backup` / training services are NOT
+#                   started by `up -d` (they carry `profiles:`); the systemd
+#                   timers in systemd/ invoke them with
+#                   `docker compose --profile <p> run --rm <svc>`.
+#   jobs            one-shot ETL + backup (timers only, never `up -d`).
+#   training        full-image training shell (`run --rm training ...`).
+#                   Slice-capped at ~10 GB / 5 CPUs, low priority (see README).
+#   observability   Prometheus + Alertmanager + OTel collector are the
+#                   always-fittable trio (see per-service notes). MLflow and
+#                   Jaeger ride the same profile but stay OFF unless the
+#                   runbook's one-at-a-time rule is followed (see README).
 #
-# Conventions (PLATFORM_SETUP §§6-8,11 as applied to a 4 GB tunnel-only box):
+# Conventions (PLATFORM_SETUP §§6-8,11 as applied to this shared box):
 # - `restart: unless-stopped` on every always-on service, `"no"` on one-shots.
-# - `mem_limit` on every service. Always-on total target: 2-2.5 GB of 4 GB.
+# - `mem_limit` on every service. Steady site total target: <= 2.5 GB.
 # - `healthcheck` on every long-running service.
 # - No published ports on serving/db/tunnel. Observability UIs bind to
 #   127.0.0.1 (same convention as infra/docker-compose.yml) for SSH-tunnel
@@ -43,7 +56,7 @@ x-logging: &logging
 
 services:
   # ── PostgreSQL — transactional store ──────────────────────────────────────
-  # Single Postgres for the whole box (one app on VPS-1). No published port:
+  # Gridiron's own Postgres (never shared with ATS). No published port:
   # reachable only over the `internal` network.
   db:
     image: postgres:18
@@ -225,11 +238,16 @@ services:
     security_opt: ["no-new-privileges:true"]
     logging: *logging
 
-  # ── Light-refit shell — profile `training`, never always-on ───────────────
-  # Same full image as `etl`. Interactive use only:
-  #   docker compose --profile training run --rm training \
-  #     python3 /app/scripts/train_volume_oof.sh ...
-  # Full TFT/GNN retrains are upgrade-only on this box (see README).
+  # ── Training shell — profile `training`, never always-on ───────────────────
+  # Same full image as `etl` (torch CPU, SHAP, MLflow client). Timers only:
+  #   gridiron-train-small.timer → scripts/train_small.sh (01:00–07:00 UTC)
+  #   gridiron-train-full.timer  → scripts/train_full.sh  (Fri 22:00–Mon 06:00 UTC)
+  # Interactive refits: docker compose --profile training run --rm training ...
+  # Enforcement is TWO layers (see README "Training slice"): the host slice
+  # caps the launcher, and THESE container caps are the real enforcement
+  # (a systemd Slice= would only constrain the docker CLI client, not the
+  # container, given Docker's cgroup nesting). cpu_shares 128 vs the default
+  # 1024 keeps the site's first claim on CPU under contention.
   training:
     build:
       context: ../../..
@@ -242,22 +260,29 @@ services:
         required: true
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
+      HEALTHCHECKS_TRAIN_SMALL_URL: ${HEALTHCHECKS_TRAIN_SMALL_URL:-}
+      HEALTHCHECKS_TRAIN_FULL_URL: ${HEALTHCHECKS_TRAIN_FULL_URL:-}
     depends_on:
       db:
         condition: service_healthy
     networks:
       - internal
-    mem_limit: 2.5g
+    mem_limit: 10g
+    cpus: 5.0
+    cpu_shares: 128
     restart: "no"
     user: appuser
     security_opt: ["no-new-privileges:true"]
     logging: *logging
 
-  # ── Observability — profile `observability`, diagnostic windows only ──────
+  # ── Observability — profile `observability` ────────────────────────────────
   # Reuses the shared infra/ configs (same flags as infra/docker-compose.yml).
   # The `backend:8000` scrape target resolves via the api network alias above.
-  # WARNING: this profile does NOT fit in 4 GB alongside serving (~1.9 GB
-  # extra). Enable for a diagnostic window, then `... down` it. See README.
+  # FIT MATH (site envelope 2.5 GB): steady site ≈ 1.83 GB (1g + 700m + 128m).
+  # The trio prometheus (256m) + alertmanager (64m) + otel-collector (128m) =
+  # 448 MB, for a combined ≈ 2.28 GB — inside the envelope, so the trio may
+  # stay on. mlflow (512m) and jaeger (512m) do NOT fit alongside the site and
+  # stay OFF; enable at most one at a time with the trio down (see README).
   mlflow:
     image: python:3.11-slim
     profiles: ["observability"]
@@ -281,6 +306,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # OFF BY DEFAULT (see header): enable only with the trio down, e.g.
+    #   docker compose --profile observability up -d mlflow
     mem_limit: 512m
     restart: unless-stopped
     healthcheck:
@@ -306,7 +333,7 @@ services:
       - "127.0.0.1:14318:4318"
     depends_on:
       - jaeger
-    mem_limit: 256m
+    mem_limit: 128m
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
     logging: *logging
@@ -326,6 +353,7 @@ services:
       - internal
     ports:
       - "127.0.0.1:18686:16686"
+    # OFF BY DEFAULT (see header): trace-debug windows only, trio down.
     mem_limit: 512m
     restart: unless-stopped
     healthcheck:
@@ -353,7 +381,7 @@ services:
       - "127.0.0.1:19090:9090"
     depends_on:
       - api
-    mem_limit: 512m
+    mem_limit: 256m
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy >/dev/null 2>&1 || exit 1"]
@@ -377,7 +405,7 @@ services:
       - internal
     ports:
       - "127.0.0.1:19093:9093"
-    mem_limit: 128m
+    mem_limit: 64m
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
     logging: *logging
