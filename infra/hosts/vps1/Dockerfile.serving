@@ -1,0 +1,85 @@
+# Lean serving image for the shared VPS-4 (Gridiron site envelope).
+#
+# Same code tree as backend/Dockerfile, differing ONLY in installed
+# dependencies (per project rule: images must not alter artifacts,
+# predictions, or code paths). What is dropped here, and why it is safe:
+#   - torch, pytorch-forecasting, pymc, shap, optuna: training / analysis
+#     only. The serving path (backend/app -> ml.served_learner,
+#     ml.inference_client -> ml.utils run_onnx_inference) scores from
+#     frozen artefacts and .onnx files; none of these modules is imported.
+#     ml/shap_service.py IS imported (explain endpoint) but degrades without
+#     the shap package — verify on the scratch box; if the import trace
+#     (measured in parallel) shows any of them on the serving path, add the
+#     package back to requirements-serving.txt and rebuild.
+#   - mlflow: not imported on the serving path (tracking URI is config-only).
+#   - xgboost / lightgbm / catboost / sklearn: KEPT. Native booster /
+#     sklearn artefacts may load outside the ONNX fast path.
+#   - onnxruntime: KEPT. The ONNX fast path (ml/utils.py run_onnx_inference,
+#     via ml/inference_client.py) is on the serving path.
+#
+# The C++ engine IS built (same cmake pattern as backend/Dockerfile, tools
+# purged afterwards): the api talks to it over a Unix socket and the
+# IPC client handles absence gracefully, but shipping the binary keeps the
+# image behaviour-identical to the full one. No .git dependency: the
+# materializer reads the platform commit variable, never `.git`.
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# /app on sys.path; layout mirrors the project root, same as backend/Dockerfile.
+WORKDIR /app
+
+COPY infra/hosts/vps1/requirements-serving.txt /app/requirements-serving.txt
+
+# curl stays: the compose healthcheck probes /health with it. Build tools are
+# purged after the engine build so the runtime layer stays lean.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r /app/requirements-serving.txt
+
+# Same code tree as the full image — dependency set is the only difference.
+COPY backend/app  /app/backend/app
+COPY pipeline     /app/pipeline
+COPY ml           /app/ml
+COPY scraper      /app/scraper
+COPY scripts      /app/scripts
+COPY engine       /app/engine
+COPY alembic      /app/alembic
+COPY alembic.ini  /app/alembic.ini
+
+# Release evidence read at runtime (artifact-backed mode fails closed without
+# these): MANIFEST.json, current_baseline.json, constrained-stack selection,
+# and the ml/onnx fast-path files travel with the image.
+COPY releases     /app/releases
+COPY ml/onnx      /app/ml/onnx
+COPY user_config.json /app/user_config.json
+COPY backend/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Build C++ engine (same flags as backend/Dockerfile).
+RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
+
+# Drop build tools from the runtime layer. curl stays for the healthcheck.
+# git is safe to remove — nothing at serving reads `.git`.
+RUN apt-get purge -y build-essential cmake \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Run as non-root (audit A-04). 8000 is unprivileged, so uvicorn needs no
+# capabilities. /app stays owned by appuser so entrypoint.sh can seed
+# SETTINGS_FILE on a fresh volume.
+RUN useradd --system --uid 10001 --create-home appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+# entrypoint.sh seeds SETTINGS_FILE when empty, then execs a SINGLE-worker
+# uvicorn (PORT honoured, default 8000). No --reload, no --workers flag:
+# single worker is deliberate (C++ handle is not thread-safe; 2 vCores).
+CMD ["/app/entrypoint.sh"]
