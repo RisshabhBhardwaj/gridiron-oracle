@@ -70,7 +70,7 @@ RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release 
 
 # Drop build tools from the runtime layer. curl stays for the healthcheck.
 # git is safe to remove — nothing at serving reads `.git`.
-RUN apt-get purge -y build-essential cmake \
+RUN apt-get purge -y build-essential cmake git \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
