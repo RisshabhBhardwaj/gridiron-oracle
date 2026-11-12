@@ -60,6 +60,14 @@ else
   usermod -aG sudo "$DEPLOY_USER"
 fi
 
+# Passwordless sudo for the deploy user (it has NO password — account locked —
+# so stock `%sudo` (password-required) sudo would be unusable, blocking every
+# later root step: /srv setup, systemd install, daemon config).
+echo "$DEPLOY_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$DEPLOY_USER
+chmod 440 /etc/sudoers.d/$DEPLOY_USER
+visudo -c -q || { rm -f /etc/sudoers.d/$DEPLOY_USER; echo "bootstrap: sudoers INVALID — aborting" >&2; exit 1; }
+log "passwordless sudo granted to $DEPLOY_USER (sudoers.d, visudo-checked)"
+
 SSH_DIR="/home/$DEPLOY_USER/.ssh"
 AUTH_KEYS="$SSH_DIR/authorized_keys"
 mkdir -p "$SSH_DIR"
