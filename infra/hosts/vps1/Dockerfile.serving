@@ -51,12 +51,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && pip install --no-cache-dir -r /app/requirements-serving.txt
 
 # Same code tree as the full image — dependency set is the only difference.
+# bench/ is required: engine/CMakeLists.txt builds spsc_latency_bench from
+# ../bench unconditionally.
 COPY backend/app  /app/backend/app
 COPY pipeline     /app/pipeline
 COPY ml           /app/ml
 COPY scraper      /app/scraper
 COPY scripts      /app/scripts
 COPY engine       /app/engine
+COPY bench        /app/bench
 COPY alembic      /app/alembic
 COPY alembic.ini  /app/alembic.ini
 

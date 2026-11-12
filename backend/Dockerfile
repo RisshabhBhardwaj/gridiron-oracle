@@ -33,6 +33,7 @@ COPY ml           /app/ml
 COPY scraper      /app/scraper
 COPY scripts      /app/scripts
 COPY engine       /app/engine
+COPY bench        /app/bench
 COPY alembic      /app/alembic
 COPY alembic.ini  /app/alembic.ini
 
