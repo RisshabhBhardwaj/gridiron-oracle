@@ -42,12 +42,28 @@ const HOP_BY_HOP = new Set([
 /** Headers Cloudflare adds to the incoming request; they mean nothing upstream. */
 const isCloudflareHeader = (name) => name.startsWith('cf-') || name === 'cdn-loop';
 
-/** @param {string} detail @param {number} status */
-const json = (detail, status) =>
-  new Response(JSON.stringify({ detail }), {
+/** @param {string} detail @param {number} status @param {Record<string, string>} [extra] @param {Record<string, string>} [headers] */
+const json = (detail, status, extra = {}, headers = {}) =>
+  new Response(JSON.stringify({ detail, ...extra }), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
   });
+
+/**
+ * The backend is down, unreachable or gone. The browser gets one stable,
+ * machine-readable shape (code "backend_unavailable"), which the frontend's
+ * ErrorBanner shows as a calm line instead of an error. Why it failed goes in
+ * `reason` for debugging; it never carries the key or headers.
+ *
+ * Status is 503, not 502/504: on a custom domain in a Cloudflare zone, a 502
+ * or 504 from the Function is replaced by Cloudflare's plain "error code: 502"
+ * page (seen 2026-11-12 on gridiron.risshabh.com; *.pages.dev passes it), so
+ * the JSON and its code never reach the browser.
+ * @param {string} reason
+ */
+const BACKEND_UNAVAILABLE_DETAIL = 'Live data is moving to a new server and will be back soon';
+const backendUnavailable = (reason) =>
+  json(BACKEND_UNAVAILABLE_DETAIL, 503, { code: 'backend_unavailable', reason }, { 'retry-after': '300' });
 
 /**
  * @param {{ request: Request, env: { BACKEND_URL?: string, BACKEND_API_KEY?: string } }} context
@@ -93,9 +109,25 @@ export async function onRequest({ request, env }) {
     });
   } catch (err) {
     if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
-      return json(`Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s`, 504);
+      return backendUnavailable(`Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s`);
     }
-    return json(`Upstream unreachable: ${err?.message ?? 'unknown error'}`, 502);
+    return backendUnavailable(`Upstream unreachable: ${err?.message ?? 'unknown error'}`);
+  }
+
+  // The host's edge answered for an app that is not there, so the backend is
+  // gone or down rather than missing a route:
+  //  - Railway answers 404 "Application not found" with x-railway-fallback
+  //    once a service is removed;
+  //  - an edge or gateway in front of the app answers 502/504, or a 503 that
+  //    is not JSON, with its own plain error page. FastAPI's own 503s are JSON
+  //    and pass through unchanged.
+  const isJson = (upstream.headers.get('content-type') || '').includes('application/json');
+  if (
+    upstream.headers.get('x-railway-fallback') === 'true'
+    || upstream.status === 502 || upstream.status === 504
+    || (upstream.status === 503 && !isJson)
+  ) {
+    return backendUnavailable(`Upstream host answered without the app (HTTP ${upstream.status})`);
   }
 
   const out = new Headers();

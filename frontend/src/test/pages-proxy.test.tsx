@@ -154,20 +154,66 @@ describe('errors', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('returns 502 when fetch rejects, without leaking the key', async () => {
+  it('returns 503 backend_unavailable when fetch rejects, without leaking the key', async () => {
     fetchMock.mockRejectedValue(new TypeError('connect ECONNREFUSED'))
     const res = await call('/api/x')
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(503)
+    expect(res.headers.get("retry-after")).toBe("300")
     const text = await res.text()
-    expect(JSON.parse(text)).toEqual({ detail: 'Upstream unreachable: connect ECONNREFUSED' })
+    expect(JSON.parse(text)).toEqual({
+      detail: 'Live data is moving to a new server and will be back soon',
+      code: 'backend_unavailable',
+      reason: 'Upstream unreachable: connect ECONNREFUSED',
+    })
     expect(text).not.toContain(KEY)
   })
 
-  it.each(['TimeoutError', 'AbortError'])('returns 504 on %s', async (name) => {
+  it.each(['TimeoutError', 'AbortError'])('returns 503 backend_unavailable on %s', async (name) => {
     fetchMock.mockRejectedValue(new DOMException('timed out', name))
     const res = await call('/api/x')
-    expect(res.status).toBe(504)
-    expect(await res.json()).toEqual({ detail: 'Upstream timed out after 60s' })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      detail: 'Live data is moving to a new server and will be back soon',
+      code: 'backend_unavailable',
+      reason: 'Upstream timed out after 60s',
+    })
+  })
+
+  it('treats a host edge with no app behind it as backend_unavailable', async () => {
+    fetchMock.mockResolvedValue(new Response('{"message":"Application not found"}', {
+      status: 404,
+      headers: { 'x-railway-fallback': 'true', 'content-type': 'application/json' },
+    }))
+    const res = await call('/api/x')
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ code: 'backend_unavailable' })
+  })
+
+  it.each([
+    [502, 'text/plain', 'error code: 502'],
+    [504, 'text/html', '<html>gateway timeout</html>'],
+    [503, 'text/plain', 'error code: 503'],
+  ])('treats an edge %i page as backend_unavailable', async (status, type, body) => {
+    fetchMock.mockResolvedValue(new Response(body, { status, headers: { 'content-type': type } }))
+    const res = await call('/api/x')
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ code: 'backend_unavailable' })
+  })
+
+  it("passes the backend's own JSON 503 through", async () => {
+    fetchMock.mockResolvedValue(new Response('{"detail":"unavailable"}', {
+      status: 503, headers: { 'content-type': 'application/json' },
+    }))
+    const res = await call('/api/x')
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ detail: 'unavailable' })
+  })
+
+  it('keeps a real backend 404 as a 404', async () => {
+    fetchMock.mockResolvedValue(new Response('{"detail":"Not found"}', { status: 404 }))
+    const res = await call('/api/x')
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ detail: 'Not found' })
   })
 
   it('passes a timeout signal to fetch', async () => {
