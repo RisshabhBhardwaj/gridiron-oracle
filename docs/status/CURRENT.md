@@ -1,8 +1,31 @@
 # Gridiron Oracle: current status
 
-As of 2026-10-17. Checked by running the gates on the commit named below. Items marked unverified were not run.
+As of 2026-11-12 (VPS-4 deploy branch `agent/ovh-vps1` section below); the rest as of 2026-10-17. Checked by running the gates on the commit named below. Items marked unverified were not run.
 Update this file at the end of every working session. See `_internal-docs/_platform/DOCS_STANDARD.md`.
 Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-2026-10-11.md` (local, not committed).
+
+## VPS-4 deploy (2026-11-12, branch `agent/ovh-vps1`, lead session)
+
+Owner retired Railway (backend URL returns "Application not found") and
+ordered ONE shared OVH VPS-4 (8 vCores, 24 GB, BHS, monthly) for Gridiron +
+ATS. Frontend stays on Cloudflare Pages. Deploy authorized 2026-11-12:
+runbook `docs/runbooks/vps4-shared-host.md`, layout `infra/hosts/vps1/`,
+plan rewritten in `docs/MIGRATION.md`.
+
+Gate on this branch (verified 2026-11-12 by the lead): ruff clean; backend
+2305 passed, 31 skipped, 123 deselected; frontend typecheck clean, 95 tests
+pass, build OK. Engine (C++) not rerun — untouched by this branch.
+
+Measurements (`docs/perf/VPS1_MEASUREMENTS.md`, no Docker): serving imports
+zero heavy libs in artifact-backed mode; API 84–142 MB empty-DB lower bound
+(budget 0.25 GB); one lgbm fold peaks ~0.35 GB — FITS the 10 GB training cap;
+full tree-OOF retrain projects ~8–10 h on 5 capped vCores. ETL real RSS and
+TFT/GNN retrain time unmeasured (blockers noted in the doc).
+
+Envelopes: site ~2.5 GB / ATS ~9.5 GB reserved / training ~10 GB + 5 CPUs /
+host slack ~2 GB. No server access happened in this session; first connect
+verifies the host fingerprint from the internal brief. Repo is public: no IP
+or fingerprint in tracked files (scanned clean).
 
 ## State of `main`
 

@@ -44,6 +44,12 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# ── 0b. git (bring-up clones the repo; minimal Ubuntu images lack it) ─────────
+if ! have git; then
+  log "installing git ..."
+  apt-get update && apt-get install -y git
+fi
+
 # ── 1. deploy user + SSH key ─────────────────────────────────────────────────
 if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
   log "creating user $DEPLOY_USER ..."
