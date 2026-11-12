@@ -4,7 +4,10 @@ Dated 2026-10-17. Status: **planned, not executed.** Nothing here has run
 against a live host. This file describes the move; it does not perform it.
 
 Target: an owner-acquired OVH VPS (not yet ordered) replacing
-Railway (api, weekly-refresh), Neon (Postgres), and Vercel (frontend).
+Railway (api, weekly-refresh) and Neon (Postgres). The frontend moved to
+Cloudflare Pages on 2026-11-12 and does not move to the VPS
+(`docs/runbooks/frontend-cloudflare-pages.md`). After cutover, point
+`BACKEND_URL` in `frontend/wrangler.toml` at the VPS API and redeploy.
 No worker provisions, deploys, or touches any live host or DNS entry.
 
 ## 1. VPS bootstrap assumptions
