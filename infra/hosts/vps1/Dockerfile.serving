@@ -37,10 +37,14 @@ COPY infra/hosts/vps1/requirements-serving.txt /app/requirements-serving.txt
 # for the engine build below (FetchContent clones nlohmann_json) and is
 # purged with the rest of the build tools afterwards. Build tools are purged
 # after the engine build so the runtime layer stays lean.
+# libboost-all-dev: the engine needs Boost.Beast/Asio headers (mirrors CI,
+# which installs the same package). Purged with the build tools afterwards —
+# Beast/Asio are header-only, so the runtime binary needs no Boost libs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     git \
+    libboost-all-dev \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
@@ -70,7 +74,7 @@ RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release 
 
 # Drop build tools from the runtime layer. curl stays for the healthcheck.
 # git is safe to remove — nothing at serving reads `.git`.
-RUN apt-get purge -y build-essential cmake git \
+RUN apt-get purge -y build-essential cmake git libboost-all-dev \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
