@@ -1,0 +1,9 @@
+# Cloudflare Pages project config. The /api proxy lives in functions/api/[[path]].js.
+name = "gridiron-oracle"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-11-01"
+
+# BACKEND_API_KEY is a Pages secret set by the owner in Cloudflare.
+# Never put its value in this file or anywhere in the repo.
+[vars]
+BACKEND_URL = "https://api-production-e715.up.railway.app"

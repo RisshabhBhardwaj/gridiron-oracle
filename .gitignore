@@ -287,3 +287,6 @@ reports/
 # Settings store: sibling lock file and atomic-write temp files (backend/app/api/settings.py)
 user_config.json.lock
 .user_config.json.*.tmp
+
+# Cloudflare Wrangler local state
+.wrangler/
