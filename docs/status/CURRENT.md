@@ -1,8 +1,15 @@
 # Gridiron Oracle: current status
 
-As of 2026-10-17. Checked by running the gates on the commit named below. Items marked unverified were not run.
+As of 2026-11-12 (Cloudflare section); the rest as of 2026-10-17. Checked by running the gates on the commit named below. Items marked unverified were not run.
 Update this file at the end of every working session. See `_internal-docs/_platform/DOCS_STANDARD.md`.
 Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-2026-10-11.md` (local, not committed).
+
+## Frontend on Cloudflare Pages (2026-11-12)
+
+- Live at `https://gridiron.risshabh.com` and `https://gridiron-oracle.pages.dev` (Pages project `gridiron-oracle`, owner's personal Cloudflare account). Runbook: `docs/runbooks/frontend-cloudflare-pages.md`. Decision: [0009](../decisions/0009-frontend-on-cloudflare-pages.md).
+- Production is the live-parity build: branch `agent/cloudflare-live` at `cfb46f9`, which is `989101b` + Pages Function + odds port + calm backend-down state. The `main`-based work is on `agent/cloudflare-migration`. Neither branch is pushed or merged.
+- **The backend is offline.** The Railway service is gone (Railway 404 "Application not found") while the owner moves to the OVH VPS. Visitors see the pages and one calm line, "Live data is moving to a new server and will be back soon". Vercel (`gridironoracle.vercel.app`) is still live, but its `/api` is broken the same way, until the owner retires it.
+- Owner steps once the VPS is up: set `BACKEND_URL` in `frontend/wrangler.toml` and redeploy; `wrangler pages secret put BACKEND_API_KEY --project-name gridiron-oracle` with the new VPS `API_KEY`; `ODDS_API_KEY` is optional.
 
 ## State of `main`
 
@@ -78,6 +85,7 @@ On `main` at `6bc2c3d`, not pushed. The repo side of the VPS move is done: porta
 - [0002 Artifact-backed, fail-closed serving](../decisions/0002-artifact-backed-fail-closed-serving.md)
 - [0003 Betting and Kelly sizing stay in scope](../decisions/0003-betting-and-kelly-sizing-in-scope.md)
 - [0004 shadcn on Base UI](../decisions/0004-shadcn-on-base-ui.md)
+- [0009 Frontend on Cloudflare Pages](../decisions/0009-frontend-on-cloudflare-pages.md)
 - [0005 SP0-SP4 rebuild plan retired; built pieces kept](../decisions/0005-sp0-sp2-plan-retired.md)
 - [0006 Forward rows take game context from the target game](../decisions/0006-forward-rows-take-target-game-context.md) (median fallback superseded)
 - [0007 Public Settings are read-only](../decisions/0007-public-settings-read-only.md)

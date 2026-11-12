@@ -12,12 +12,12 @@ The frontend is served by the Cloudflare Pages project `gridiron-oracle` in the 
 | Piece | File |
 |---|---|
 | Project config | `frontend/wrangler.toml` (`pages_build_output_dir = "dist"`, `BACKEND_URL` in `[vars]`) |
-| `/api/*` proxy | `frontend/functions/api/[[path]].js`. Maps `/api/x/y?q` to `BACKEND_URL/x/y?q`, adds `x-api-key` from the `BACKEND_API_KEY` secret, drops a client-sent key, and strips hop-by-hop and `cf-*` headers. Has a 60 s timeout (504), and returns 502 when the backend is unreachable. |
+| `/api/*` proxy | `frontend/functions/api/[[path]].js`. Maps `/api/x/y?q` to `BACKEND_URL/x/y?q`, adds `x-api-key` from the `BACKEND_API_KEY` secret, drops a client-sent key, and strips hop-by-hop and `cf-*` headers. When the backend is unreachable, times out (60 s), or its host answers without the app (Railway `x-railway-fallback`, or an edge 502/504 or non-JSON 503), it returns **503** `{detail, code: "backend_unavailable", reason}` with `Retry-After: 300`. It is 503, not 502, because on the custom domain Cloudflare replaces a Function's 502 with its own plain page. |
 | Access policy | `frontend/api/proxy-policy.js`, shared with the Vercel proxy. Settings writes are 403, hidden routes (`docs`, `openapi.json`, `integrity`, ...) are 404, and POST is allowed only to `scenario` and `mock-draft/pick`. |
 | SPA fallback | Built in: Pages serves `index.html` for unknown paths because the build has no `404.html`. Do not add one. |
 | Tests | `frontend/src/test/pages-proxy.test.tsx`, `proxy-policy.test.tsx` |
 
-Secrets (Pages, set by the owner, never in git): `BACKEND_API_KEY` (= Railway `API_KEY`). A Pages secret takes effect on the next deployment.
+Secrets (Pages, set by the owner, never in git): `BACKEND_API_KEY` (= the backend's `API_KEY`). A Pages secret takes effect on the next deployment.
 
 ## Deploy
 
@@ -42,6 +42,8 @@ Rollback: Cloudflare dashboard → Workers & Pages → `gridiron-oracle` → Dep
 
 ## Current production deploy (2026-11-12)
 
-Production runs the **live-parity build**, branch `agent/cloudflare-live`: commit `989101b` (what Vercel and Railway run), plus the Pages Function, this branch's `proxy-policy.js`, and `functions/api/odds.js`, a port of the old Vercel odds handler. That backend has no `/odds` route. `ODDS_API_KEY` is an optional Pages secret; without it, odds show mock lines.
+Production runs the **live-parity build**, branch `agent/cloudflare-live` at `cfb46f9`: commit `989101b` (what Vercel and Railway run), plus the Pages Function, this branch's `proxy-policy.js`, and `functions/api/odds.js`, a port of the old Vercel odds handler. That backend has no `/odds` route. `ODDS_API_KEY` is an optional Pages secret; without it, odds show mock lines. That branch also shows one calm line, "Live data is moving to a new server and will be back soon", in place of error banners when the proxy reports `backend_unavailable` (`ApiError.code`, `ErrorBanner`). The `main`-based branch has the Function half only; port the frontend half before redeploying from `main`.
 
-When `main` is pushed and Railway runs it, redeploy from `main`, which has no odds function: `/odds` is a backend route there. Drop `agent/cloudflare-live` after that.
+As of 2026-11-12 the backend is offline: Railway is being retired for the OVH VPS, and `BACKEND_URL` still points at the removed Railway service.
+
+When `main` is pushed and the backend (OVH VPS) runs it, redeploy from `main`, which has no odds function: `/odds` is a backend route there. Drop `agent/cloudflare-live` after that.
