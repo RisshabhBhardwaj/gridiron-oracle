@@ -1,10 +1,15 @@
 import { TriangleAlert, WifiOff } from 'lucide-react'
+import { ApiError } from '@/lib/api-client'
 
 interface ErrorBannerProps {
   error?: Error | null
   onRetry?: () => void
   message?: string
 }
+
+/** The /api proxy's code for "the backend cannot be reached" (see functions/api/[[path]].js). */
+export const BACKEND_UNAVAILABLE = 'backend_unavailable'
+export const BACKEND_UNAVAILABLE_MESSAGE = 'Live data is moving to a new server and will be back soon'
 
 /**
  * Plain-words failure notice. Never shows raw error text or developer
@@ -13,6 +18,11 @@ interface ErrorBannerProps {
  * explanation pass it as `message`.
  */
 export function ErrorBanner({ error, onRetry, message }: ErrorBannerProps) {
+  // Expected while the backend moves hosts: one calm line, no error framing, no retry.
+  if (error instanceof ApiError && error.code === BACKEND_UNAVAILABLE) {
+    return <p role="status">{BACKEND_UNAVAILABLE_MESSAGE}</p>
+  }
+
   const isOffline = error?.message?.includes('ECONNREFUSED') || error?.message?.includes('Failed to fetch')
 
   return (

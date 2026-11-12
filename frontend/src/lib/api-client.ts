@@ -19,13 +19,17 @@ export class ApiError extends Error {
   /** Present when the backend returned a JSON object (not a string) for `detail`.
    * Callers that only read `.detail`/`.message` are unaffected. */
   structuredDetail?: StructuredErrorDetail
+  /** Machine-readable error code, when the server sent one. The /api proxy
+   * sends "backend_unavailable" when the backend cannot be reached. */
+  code?: string
 
-  constructor(status: number, detail: string, structuredDetail?: StructuredErrorDetail) {
+  constructor(status: number, detail: string, structuredDetail?: StructuredErrorDetail, code?: string) {
     super(detail)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
     this.structuredDetail = structuredDetail
+    this.code = code
   }
 }
 
@@ -51,8 +55,10 @@ async function request<T>(
   if (!response.ok) {
     let detail = `HTTP ${response.status}`
     let structuredDetail: StructuredErrorDetail | undefined
+    let code: string | undefined
     try {
-      const errorJson = (await response.json()) as { detail?: string | StructuredErrorDetail }
+      const errorJson = (await response.json()) as { detail?: string | StructuredErrorDetail; code?: unknown }
+      if (typeof errorJson.code === 'string') code = errorJson.code
       if (typeof errorJson.detail === 'string') {
         detail = errorJson.detail
       } else if (errorJson.detail && typeof errorJson.detail === 'object') {
@@ -64,7 +70,7 @@ async function request<T>(
     } catch {
       // ignore parse error — use fallback message
     }
-    throw new ApiError(response.status, detail, structuredDetail)
+    throw new ApiError(response.status, detail, structuredDetail, code)
   }
 
   return response.json() as Promise<T>

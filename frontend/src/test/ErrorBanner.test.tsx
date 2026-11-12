@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ErrorBanner } from '../components/shared/ErrorBanner'
+import { ErrorBanner, BACKEND_UNAVAILABLE, BACKEND_UNAVAILABLE_MESSAGE } from '../components/shared/ErrorBanner'
+import { ApiError } from '../lib/api-client'
 
 describe('ErrorBanner', () => {
   it('explains a dead server in plain words without commands or raw text', () => {
@@ -17,6 +18,20 @@ describe('ErrorBanner', () => {
     expect(screen.getByText('Something went wrong')).toBeInTheDocument()
     expect(screen.getByText(/please try again/i)).toBeInTheDocument()
     expect(screen.queryByText(/sha mismatch/)).not.toBeInTheDocument()
+  })
+
+  it('shows one calm line (no error framing, no retry) when the backend is moving hosts', () => {
+    const err = new ApiError(502, BACKEND_UNAVAILABLE_MESSAGE, undefined, BACKEND_UNAVAILABLE)
+    render(<ErrorBanner error={err} onRetry={() => {}} />)
+    expect(screen.getByRole('status')).toHaveTextContent(BACKEND_UNAVAILABLE_MESSAGE)
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the error framing for other API errors', () => {
+    render(<ErrorBanner error={new ApiError(500, 'boom')} onRetry={() => {}} />)
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
   it('shows a caller-supplied message and fires retry', async () => {

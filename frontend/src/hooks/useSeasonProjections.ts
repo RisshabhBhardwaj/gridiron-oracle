@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { SeasonProjectionsResponse } from '@/types/api'
+import { apiClient } from '@/lib/api-client'
 
 interface UseSeasonProjectionsParams {
   season: number
@@ -18,13 +19,7 @@ async function fetchSeasonProjections({
   params.append('start_week', startWeek.toString())
   positions.forEach((p) => params.append('positions', p))
 
-  const url = `/api/projections/season/${season}?${params.toString()}`
-  
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`Failed to fetch season projections: ${res.statusText}`)
-  }
-  return res.json()
+  return apiClient.get<SeasonProjectionsResponse>(`/projections/season/${season}?${params.toString()}`)
 }
 
 export function useSeasonProjections(params: UseSeasonProjectionsParams) {
