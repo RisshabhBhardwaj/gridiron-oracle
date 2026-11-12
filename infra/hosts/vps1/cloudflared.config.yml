@@ -1,0 +1,33 @@
+# Cloudflare Tunnel ingress template for VPS-1.
+#
+# DEPLOY STEP (owner, once): replace `api.<your-domain>` below with the real
+# hostname, e.g. `api.gridiron.<your-domain>`. The tunnel itself (ID, routing)
+# is created owner-side with `cloudflared tunnel create gridiron-vps1`; this
+# file carries ONLY ingress rules, never credentials — auth is the
+# TUNNEL_TOKEN env var passed on the compose command line.
+#
+# Why ingress-only here: the tunnel token selects which tunnel runs, so no
+# `tunnel:` / `credentials-file:` keys are needed in this file.
+#
+# Security posture: tunnel-only ingress. The VPS firewall (see
+# scripts/bootstrap.sh) allows inbound 22/tcp and NOTHING else; there are no
+# 80/443 listeners on the box at all. Every public request arrives over the
+# outbound tunnel connection, then routes to the api over the internal
+# compose network.
+
+ingress:
+  # Single public hostname → the FastAPI backend.
+  - hostname: api.<your-domain>
+    service: http://api:8000
+    originRequest:
+      # The api is HTTP inside the compose network; TLS terminates at
+      # Cloudflare. Timeouts keep slow upstream clients from pinning the
+      # single uvicorn worker.
+      connectTimeout: 10s
+      tcpKeepAlive: 30s
+      noHappyEyeballs: false
+
+  # Everything else (including the apex / unknown hosts): 404, no fallback
+  # service. A catch-all that proxied elsewhere would turn this tunnel into
+  # an open relay for hostnames the owner never intended to serve.
+  - service: http_status:404

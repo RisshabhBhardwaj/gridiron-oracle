@@ -1,0 +1,391 @@
+# Gridiron Oracle — VPS-1 compose project (tunnel-only ingress).
+#
+# Host: fresh Ubuntu 24.04 OVH VPS-1 (2 vCores, 4 GB RAM). No server ordered
+# yet; nothing here has run against a live host.
+#
+# Profiles:
+#   (none)          serving + db + tunnel. This is the steady state.
+#                   One-shot `etl` / `backup` services are NOT started by
+#                   `up -d` (they carry `profiles: [jobs]`); the host cron
+#                   (scheduler/gridiron.cron) invokes them with
+#                   `docker compose --profile jobs run --rm <svc>`.
+#   jobs            one-shot ETL + backup (cron only, never `up -d`).
+#   training        full-image light-refit shell (`run --rm training ...`).
+#                   Full TFT/GNN retrains are upgrade-only (see README).
+#   observability   MLflow + OTel collector + Jaeger + Prometheus +
+#                   Alertmanager. Diagnostic windows only on VPS-1: it does
+#                   not fit in 4 GB alongside serving — stop it afterwards.
+#
+# Conventions (PLATFORM_SETUP §§6-8,11 as applied to a 4 GB tunnel-only box):
+# - `restart: unless-stopped` on every always-on service, `"no"` on one-shots.
+# - `mem_limit` on every service. Always-on total target: 2-2.5 GB of 4 GB.
+# - `healthcheck` on every long-running service.
+# - No published ports on serving/db/tunnel. Observability UIs bind to
+#   127.0.0.1 (same convention as infra/docker-compose.yml) for SSH-tunnel
+#   access only. Public traffic arrives via Cloudflare Tunnel (outbound-only).
+# - Docker bypasses ufw, so `ports:` entries are the real exposure surface:
+#   only loopback bindings appear here, and only under `observability`.
+# - `security_opt: no-new-privileges` everywhere. `read_only` + tmpfs where
+#   the app supports it (see per-service notes). `user:` where the image
+#   supports it (see README for the two places it is omitted and why).
+# - Images pinned by tag; each carries a digest placeholder comment to fill
+#   at deploy time (`docker pull <img> --quiet` prints the digest).
+# - Logging rotation per service (daemon-wide defaults also set in
+#   scripts/bootstrap.sh via /etc/docker/daemon.json).
+
+name: gridiron
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # ── PostgreSQL — transactional store ──────────────────────────────────────
+  # Single Postgres for the whole box (one app on VPS-1). No published port:
+  # reachable only over the `internal` network.
+  db:
+    image: postgres:18
+    # TODO(deploy): pin the digest observed at deploy, e.g.
+    # image: postgres:18@sha256:<digest from `docker pull postgres:18`>
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oracle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-oracle}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      # Mount at /var/lib/postgresql (not .../data): PGDATA lives underneath.
+      - pgdata:/var/lib/postgresql
+      - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
+    networks:
+      - internal
+    mem_limit: 700m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-oracle}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt: ["no-new-privileges:true"]
+    # No `read_only`: postgres must write PGDATA, /var/run/postgresql and
+    # its config-adjacent state. No `user:` override: the data dir is owned
+    # by the image's postgres uid; overriding it breaks startup.
+    logging: *logging
+
+  # ── FastAPI backend — the only serving process ────────────────────────────
+  # Single uvicorn worker (no --reload): the C++ DriveMCMC handle is not
+  # thread-safe and the box has 2 vCores; one worker is the correct shape.
+  api:
+    build:
+      context: ../../..
+      dockerfile: infra/hosts/vps1/Dockerfile.serving
+    image: gridiron-api:serving
+    # entrypoint.sh seeds SETTINGS_FILE onto its volume when empty, then
+    # execs a single-worker uvicorn (PORT honoured, default 8000).
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      PORT: "8000"
+      PRODUCT_MODE: artifact_backed
+      # Compose-time default keeps the stack bootable for smoke tests; the
+      # owner MUST set DATABASE_URL (and matching POSTGRES_*) in .env.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      internal:
+        # Alias keeps the shared infra/prometheus.yml scrape target
+        # (`backend:8000`) resolving without a forked config file.
+        aliases:
+          - backend
+    mem_limit: 1g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    user: appuser
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    security_opt: ["no-new-privileges:true"]
+    # No `ports:`: the tunnel reaches the api over `internal`.
+    logging: *logging
+
+  # ── Cloudflare Tunnel — the only ingress ──────────────────────────────────
+  # Outbound-only: no inbound firewall ports besides SSH. Tunnel token is
+  # env-only (name in .env.example, value never in git).
+  cloudflared:
+    image: cloudflare/cloudflared:2026.2.0
+    # TODO(deploy): pin the digest observed at deploy, e.g.
+    # image: cloudflare/cloudflared:2026.2.0@sha256:<digest>
+    command: tunnel --no-autoupdate run --metrics 0.0.0.0:20241 --config /etc/cloudflared/config.yml --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    volumes:
+      - ./cloudflared.config.yml:/etc/cloudflared/config.yml:ro
+    depends_on:
+      - api
+    networks:
+      - internal
+    mem_limit: 128m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:20241/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    security_opt: ["no-new-privileges:true"]
+    # No `user:`: the upstream image's supported run-as user is unverified;
+    # pinning a uid risks breaking tunnel credential handling. Revisit with
+    # `docker exec` uid inspection on the scratch box before hardening.
+    logging: *logging
+
+  # ── Weekly ETL — cron one-shot, never `up -d` ─────────────────────────────
+  # Full image (torch CPU, SHAP, MLflow client): refresh + light refits.
+  # Same code tree as serving; differs ONLY in installed dependencies.
+  etl:
+    build:
+      context: ../../..
+      dockerfile: backend/Dockerfile
+    image: gridiron-etl:full
+    profiles: ["jobs"]
+    # weekly_refresh.py has no ping of its own: curl the dead-man URL on
+    # success only (the full image keeps curl for its healthcheck).
+    command: ["/bin/sh", "-c", "python3 /app/scripts/weekly_refresh.py && if [ -n \"$HEALTHCHECKS_ETL_URL\" ]; then curl -fsS -m 10 --retry 3 \"$HEALTHCHECKS_ETL_URL\" -o /dev/null; fi"]
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
+      PRODUCT_MODE: artifact_backed
+      HEALTHCHECKS_ETL_URL: ${HEALTHCHECKS_ETL_URL:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    mem_limit: 1.5g
+    restart: "no"
+    user: appuser
+    security_opt: ["no-new-privileges:true"]
+    # No `read_only`: refresh stages scratch/parquet artefacts under /app and
+    # /tmp; remounting read-only risks failing a weekly run to save nothing
+    # (the container is removed after each run).
+    logging: *logging
+
+  # ── Nightly R2 backup — cron one-shot, never `up -d` ──────────────────────
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    image: gridiron-backup:vps1
+    profiles: ["jobs"]
+    command: /usr/local/bin/backup_to_r2.sh
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-oracle}
+      PGDATABASE: ${POSTGRES_DB:-oracle}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      R2_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT in .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID in .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY in .env}
+      R2_BUCKET: ${R2_BUCKET_BACKUPS:?set R2_BUCKET_BACKUPS in .env}
+      # Optional: age recipient for dump encryption. Unset = plain gzip dump
+      # (accepted v1; set it — see README "Secrets" for the sops path later).
+      AGE_RECIPIENT: ${AGE_RECIPIENT:-}
+      HEALTHCHECKS_BACKUP_URL: ${HEALTHCHECKS_BACKUP_URL:-}
+    volumes:
+      - ./scripts/backup_to_r2.sh:/usr/local/bin/backup_to_r2.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    mem_limit: 512m
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  # ── Light-refit shell — profile `training`, never always-on ───────────────
+  # Same full image as `etl`. Interactive use only:
+  #   docker compose --profile training run --rm training \
+  #     python3 /app/scripts/train_volume_oof.sh ...
+  # Full TFT/GNN retrains are upgrade-only on this box (see README).
+  training:
+    build:
+      context: ../../..
+      dockerfile: backend/Dockerfile
+    image: gridiron-etl:full
+    profiles: ["training"]
+    command: sleep infinity
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    mem_limit: 2.5g
+    restart: "no"
+    user: appuser
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  # ── Observability — profile `observability`, diagnostic windows only ──────
+  # Reuses the shared infra/ configs (same flags as infra/docker-compose.yml).
+  # The `backend:8000` scrape target resolves via the api network alias above.
+  # WARNING: this profile does NOT fit in 4 GB alongside serving (~1.9 GB
+  # extra). Enable for a diagnostic window, then `... down` it. See README.
+  mlflow:
+    image: python:3.11-slim
+    profiles: ["observability"]
+    command:
+      - /bin/sh
+      - -c
+      - >
+        pip install --no-cache-dir mlflow psycopg2-binary && exec mlflow server
+        --host 0.0.0.0 --port 5001
+        --backend-store-uri postgresql+psycopg2://$${POSTGRES_USER:-oracle}:$${POSTGRES_PASSWORD}@db:5432/mlflow_release
+        --serve-artifacts --artifacts-destination /mlflow/artifacts
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oracle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:15091:5001"
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.107.0
+    # TODO(deploy): pin the digest observed at deploy.
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ../../otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
+    depends_on:
+      - jaeger
+    mem_limit: 256m
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  # Included because the shared otel-collector config exports to jaeger:4317;
+  # without it the collector logs export errors all window long.
+  jaeger:
+    image: jaegertracing/all-in-one:1.59
+    # TODO(deploy): pin the digest observed at deploy.
+    profiles: ["observability"]
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    command:
+      - "--collector.otlp.grpc.host-port=:4317"
+      - "--collector.otlp.http.host-port=:4318"
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:18686:16686"
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:16686/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    # TODO(deploy): pin the digest observed at deploy.
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    volumes:
+      - ../../prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:19090:9090"
+    depends_on:
+      - api
+    mem_limit: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # No `user:`: the image manages its own data-dir ownership; overriding
+    # risks breaking the named-volume chown on first start.
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    # TODO(deploy): pin the digest observed at deploy.
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    volumes:
+      - ../../alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:19093:9093"
+    mem_limit: 128m
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
+  mlflow_artifacts:
+  prometheus_data:
