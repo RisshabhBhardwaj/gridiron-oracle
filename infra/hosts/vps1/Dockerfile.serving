@@ -81,5 +81,6 @@ USER appuser
 EXPOSE 8000
 # entrypoint.sh seeds SETTINGS_FILE when empty, then execs a SINGLE-worker
 # uvicorn (PORT honoured, default 8000). No --reload, no --workers flag:
-# single worker is deliberate (C++ handle is not thread-safe; 2 vCores).
+# single worker is deliberate (brief mandate; C++ handle is not
+# thread-safe), leaving headroom for the training slice on this shared box.
 CMD ["/app/entrypoint.sh"]

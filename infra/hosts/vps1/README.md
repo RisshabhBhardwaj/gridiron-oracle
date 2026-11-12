@@ -5,8 +5,9 @@ nothing here has run against a live host. This directory is the complete
 Gridiron layout for ONE shared OVH VPS-4 (8 vCores, 24 GB RAM, 200 GB disk,
 4 GB swap, Ubuntu 24.04, tunnel-only ingress), host to Gridiron AND the
 separate ATS project. The `ovh-vps1` slug names the task, not the box. This
-file supersedes the big-box plan in `docs/MIGRATION.md` in *layout* only —
-that file is untouched and still describes the data-move runbook.
+file is the executable companion to the rewritten `docs/MIGRATION.md`
+(shared VPS-4 plan): MIGRATION describes the move end to end, this directory
+is the exact layout it deploys.
 
 ## Host envelopes (owner decision 2026-11-12)
 
@@ -75,11 +76,11 @@ under EDT — the UTC column is authoritative.
 | `--profile observability up -d prometheus alertmanager otel-collector` | The always-fittable trio (see "Observability fit"). |
 | `--profile observability up -d mlflow` (or `jaeger`) | One-at-a-time only, trio down (see "Observability fit"). |
 
-## Memory budget (provisional until measurement lands)
+## Memory budget (measured 2026-11-12 — see docs/perf/VPS1_MEASUREMENTS.md)
 
 | Service | `mem_limit` | Notes |
 |---|---|---|
-| `api` (lean serving) | 1 GB | Worst-case cap assuming heavy ML present. The lean image (no torch/CUDA) should land far below; keep the cap until the serving-import measurement lands. |
+| `api` (lean serving) | 1 GB | Serving imports zero heavy libs in artifact-backed mode (measured). Observed 84–142 MB on an empty DB (lower bound — re-measure against the snapshot in the Docker rehearsal); keep the 1 GB cap. |
 | `db` (postgres:18) | 700 MB | `shared_buffers` 256 MB + 20 conns + vacuum headroom. |
 | `cloudflared` | 128 MB | Single tunnel, one hostname. |
 | **Steady site total** | **~1.83 GB** | **≤ 2.5 GB envelope. ✓** |
@@ -89,8 +90,12 @@ under EDT — the UTC column is authoritative.
 | Observability trio | 448 MB | prometheus 256m + alertmanager 64m + otel 128m. Site + trio ≈ 2.28 GB ≤ 2.5 GB ✓. |
 | mlflow / jaeger | 512m each, OFF | Do not fit alongside the site — see "Observability fit". |
 
-Pointer: the serving-import measurement and the one-fold training profile
-(parallel work) decide whether caps shrink or the envelope is busted.
+Measured verdicts: one lgbm fold peaks ~0.35 GB — FITS the 10 GB training cap
+(~3.5%); full tree-OOF retrain projects to ~8–10 h on 5 capped vCores (fits
+the weekend window). ETL real RSS unmeasured (snapshot was down) — `etl`
+stays capped at 1.5 GB until the Docker rehearsal measures it.
+`TRAIN_SMALL_CMD`/`TRAIN_FULL_CMD` stay unset until the rehearsal pins the
+recipes; full TFT/GNN retrains wait for their own fold profile.
 
 ## Training slice
 
@@ -137,8 +142,10 @@ Pointer: the serving-import measurement and the one-fold training profile
 # 1. Bootstrap (as root). Key material comes from the owner's
 #    ~/.ssh/ovh_boxes.pub (public-key PATH only — never copied anywhere):
 SSH_PUBKEY="$(cat ~/.ssh/ovh_boxes.pub)" bash scripts/bootstrap.sh
-#    Then open a NEW ssh deploy@<vps-ip> session and confirm it works
-#    BEFORE closing this one.
+#    Then open a NEW ssh session (the VPS-4 host — address in the internal
+#    brief, never in this repo) and confirm it works BEFORE closing this one.
+#    On the FIRST connect ever, verify the ED25519 host key against the
+#    fingerprint in the internal brief; never accept a changed key silently.
 
 # 2. Check out the repo at the pinned commit, standard path /srv/gridiron:
 sudo mkdir -p /srv && sudo chown deploy:deploy /srv

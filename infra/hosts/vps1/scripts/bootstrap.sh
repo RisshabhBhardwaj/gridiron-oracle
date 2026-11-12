@@ -95,7 +95,7 @@ EOF
   log "sshd reloaded with hardening"
 else
   log "SKIPPING sshd hardening: $AUTH_KEYS is empty (would lock you out)."
-  log "Re-run with a key: SSH_PUBKEY=\"\$(cat ~/.ssh/id_ed25519.pub)\" bash $0"
+  log "Re-run with a key: SSH_PUBKEY=\"\$(cat ~/.ssh/ovh_boxes.pub)\" bash $0"
 fi
 
 # ── 3. Firewall: deny incoming, allow 22 only ────────────────────────────────
@@ -225,5 +225,6 @@ log "timezone: $(timedatectl show --property=Timezone --value 2>/dev/null || dat
 
 echo
 echo 'bootstrap: DONE. Before closing THIS session:'
-echo "  ssh ${DEPLOY_USER}@<vps-ip>   # open a NEW session and confirm it works"
+echo "  ssh ${DEPLOY_USER}@<the VPS-4 host — address in the internal brief>"
+echo "  # open a NEW session and confirm it works"
 echo '  Only then close this one. Root login and password auth are now off.'
