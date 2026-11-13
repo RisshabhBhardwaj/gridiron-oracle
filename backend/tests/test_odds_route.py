@@ -377,7 +377,7 @@ def test_low_remaining_header_trips_429_with_no_upstream_spend(monkeypatch):
 
     first = client.get("/odds", params={"markets": MARKET})
     assert first.status_code == 200
-    assert len(calls) == 1
+    assert len(calls) == 2
 
     # 12 remaining is below the floor of 50: the next cold market is refused
     # without reaching upstream at all.
@@ -387,7 +387,7 @@ def test_low_remaining_header_trips_429_with_no_upstream_spend(monkeypatch):
     assert refused.json() == {
         "detail": "Odds quota low: 12 requests remaining (floor 50); upstream call skipped"
     }
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_remaining_at_or_above_floor_still_calls_upstream(monkeypatch):
@@ -406,7 +406,7 @@ def test_remaining_at_or_above_floor_still_calls_upstream(monkeypatch):
 
     assert client.get("/odds", params={"markets": MARKET}).status_code == 200
     assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 def test_warm_cache_is_served_after_the_floor_trips(monkeypatch):
@@ -416,9 +416,12 @@ def test_warm_cache_is_served_after_the_floor_trips(monkeypatch):
 
     def _handler(request):
         calls.append(request)
-        remaining = "400" if len(calls) == 1 else "3"
+        # The second market's last call spends the quota down to 3.
+        remaining = "3" if len(calls) == 4 else "400"
+        # Two-step flow: the events list is a list, each per-event body one object.
+        body = EVENTS if request.url.path.endswith("/events") else EVENTS[0]
         return httpx.Response(
-            200, headers={"x-requests-remaining": remaining}, json=EVENTS, request=request
+            200, headers={"x-requests-remaining": remaining}, json=body, request=request
         )
 
     _fake_upstream(monkeypatch, _handler)
@@ -426,17 +429,17 @@ def test_warm_cache_is_served_after_the_floor_trips(monkeypatch):
     assert client.get("/odds", params={"markets": MARKET}).status_code == 200
     # A second market spends the quota down to 3, tripping the floor.
     assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
-    assert len(calls) == 2
+    assert len(calls) == 4
 
     # The first market is cached: served without an upstream call.
     warm = client.get("/odds", params={"markets": MARKET})
     assert warm.status_code == 200
-    assert warm.json() == {"configured": True, "events": EVENTS}
-    assert len(calls) == 2
+    assert warm.json() == {"configured": True, "events": [EVENTS[0]]}
+    assert len(calls) == 4
 
     # A cold market is refused.
     assert client.get("/odds", params={"markets": "player_passing_tds"}).status_code == 429
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 def test_error_responses_also_feed_the_guard(monkeypatch):
@@ -472,7 +475,7 @@ def test_missing_or_unparseable_header_leaves_the_guard_open(monkeypatch, header
 
     assert client.get("/odds", params={"markets": MARKET}).status_code == 200
     assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
-    assert len(calls) == 2
+    assert len(calls) == 4
     assert odds_module._remaining is None
 
 
@@ -494,7 +497,7 @@ def test_floor_is_configurable_per_request(monkeypatch):
 
     assert client.get("/odds", params={"markets": MARKET}).status_code == 200
     assert client.get("/odds", params={"markets": "player_rushing_yards"}).status_code == 200
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 def test_floor_parses_from_env_with_safe_defaults(monkeypatch):
@@ -511,3 +514,149 @@ def test_floor_parses_from_env_with_safe_defaults(monkeypatch):
 
     monkeypatch.setenv("ODDS_MIN_REMAINING", "-5")
     assert Settings().odds_min_remaining == 0
+
+
+# ---------------------------------------------------------------------------
+# (j) Per-event fetch: player props live on /events/{id}/odds, one event at
+# a time. The bulk /sports/{sport}/odds endpoint 422s player-prop markets.
+# ---------------------------------------------------------------------------
+
+EVENT_A = {"id": "evt-a", "bookmakers": [{"key": "draftkings"}]}
+EVENT_B = {"id": "evt-b", "bookmakers": [{"key": "fanduel"}]}
+
+
+def _two_step(monkeypatch, events_body, odds_by_id, remaining="499"):
+    """Serve the events list, then per-event odds bodies.
+
+    events_body: the decoded JSON list for GET .../events (or an Exception
+    to raise instead). odds_by_id: event id -> (status, json-body) or
+    Exception to raise for that event's odds call.
+    """
+
+    def _handler(request):
+        path = request.url.path
+        if path.endswith("/sports/americanfootball_nfl/events"):
+            if isinstance(events_body, Exception):
+                raise events_body
+            return httpx.Response(
+                200,
+                headers={"x-requests-remaining": remaining},
+                json=events_body,
+                request=request,
+            )
+        for eid, resp in odds_by_id.items():
+            if path.endswith(f"/events/{eid}/odds"):
+                if isinstance(resp, Exception):
+                    raise resp
+                code, body = resp
+                return httpx.Response(
+                    code,
+                    headers={"x-requests-remaining": remaining},
+                    json=body,
+                    request=request,
+                )
+        return httpx.Response(404, json={}, request=request)
+
+    _fake_upstream(monkeypatch, _handler)
+
+
+def test_fetch_lists_events_then_merges_per_event_odds(monkeypatch):
+    seen = []
+
+    def _recording(request):
+        seen.append((request.url.path, dict(request.url.params)))
+        return _two_step_handler(request)
+
+    def _two_step_handler(request):
+        path = request.url.path
+        if path.endswith("/sports/americanfootball_nfl/events"):
+            return httpx.Response(200, json=[{"id": "evt-a"}, {"id": "evt-b"}], request=request)
+        if path.endswith("/events/evt-a/odds"):
+            return httpx.Response(200, json=EVENT_A, request=request)
+        if path.endswith("/events/evt-b/odds"):
+            return httpx.Response(200, json=EVENT_B, request=request)
+        return httpx.Response(404, json={}, request=request)
+
+    _fake_upstream(monkeypatch, _recording)
+
+    out = odds_module.fetch_odds(MARKET, TEST_KEY)
+
+    assert out == [EVENT_A, EVENT_B]
+    by_path = {p: q for p, q in seen}
+    assert "markets" not in by_path["/v4/sports/americanfootball_nfl/events"]
+    assert by_path["/v4/sports/americanfootball_nfl/events/evt-a/odds"]["markets"] == MARKET
+
+
+def test_events_list_failure_raises_that_status(monkeypatch):
+    _two_step(monkeypatch, httpx.ConnectError("down"), {})
+
+    with pytest.raises(odds_module.OddsFetchError) as excinfo:
+        odds_module.fetch_odds(MARKET, TEST_KEY)
+
+    assert excinfo.value.status_code == 502
+
+
+def test_events_list_http_error_raises_that_status(monkeypatch):
+    calls = []
+
+    def _handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(500, json={}, request=request)
+
+    _fake_upstream(monkeypatch, _handler)
+
+    with pytest.raises(odds_module.OddsFetchError) as excinfo:
+        odds_module.fetch_odds(MARKET, TEST_KEY)
+
+    assert excinfo.value.status_code == 500
+    # Fails fast at the list step: no per-event fan-out after it.
+    assert len(calls) == 1
+
+
+def test_all_event_failures_raise_first_status(monkeypatch):
+    _two_step(
+        monkeypatch,
+        [{"id": "evt-a"}, {"id": "evt-b"}],
+        {"evt-a": (422, {}), "evt-b": (422, {})},
+    )
+
+    with pytest.raises(odds_module.OddsFetchError) as excinfo:
+        odds_module.fetch_odds(MARKET, TEST_KEY)
+
+    assert excinfo.value.status_code == 422
+
+
+def test_partial_event_failure_returns_successes(monkeypatch):
+    _two_step(
+        monkeypatch,
+        [{"id": "evt-a"}, {"id": "evt-b"}],
+        {"evt-a": (200, EVENT_A), "evt-b": (422, {})},
+    )
+
+    assert odds_module.fetch_odds(MARKET, TEST_KEY) == [EVENT_A]
+
+
+def test_empty_events_list_returns_empty_not_an_error(monkeypatch):
+    _two_step(monkeypatch, [], {})
+
+    r = client.get("/odds", params={"markets": MARKET})
+
+    assert r.status_code == 200
+    assert r.json() == {"configured": True, "events": []}
+
+
+def test_event_call_failure_does_not_leak_key(monkeypatch, caplog):
+    caplog.set_level(logging.DEBUG)
+
+    def _handler(request):
+        path = request.url.path
+        if path.endswith("/sports/americanfootball_nfl/events"):
+            return httpx.Response(200, json=[{"id": "evt-a"}], request=request)
+        raise httpx.ReadTimeout(f"timed out fetching {request.url}")
+
+    _fake_upstream(monkeypatch, _handler)
+
+    with pytest.raises(odds_module.OddsFetchError):
+        odds_module.fetch_odds(MARKET, TEST_KEY)
+
+    assert TEST_KEY not in caplog.text
