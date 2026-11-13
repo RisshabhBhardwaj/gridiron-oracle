@@ -584,7 +584,10 @@ def test_fetch_lists_events_then_merges_per_event_odds(monkeypatch):
     assert out == [EVENT_A, EVENT_B]
     by_path = {p: q for p, q in seen}
     assert "markets" not in by_path["/v4/sports/americanfootball_nfl/events"]
-    assert by_path["/v4/sports/americanfootball_nfl/events/evt-a/odds"]["markets"] == MARKET
+    assert (
+        by_path["/v4/sports/americanfootball_nfl/events/evt-a/odds"]["markets"]
+        == "player_pass_yds"
+    )
 
 
 def test_events_list_failure_raises_that_status(monkeypatch):
@@ -660,3 +663,76 @@ def test_event_call_failure_does_not_leak_key(monkeypatch, caplog):
         odds_module.fetch_odds(MARKET, TEST_KEY)
 
     assert TEST_KEY not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# (k) Public long-form market keys translate to the abbreviated upstream
+# keys on the wire, and response market keys translate back before caching.
+# ---------------------------------------------------------------------------
+
+
+def _prop_handler(monkeypatch, seen):
+    def _handler(request):
+        path = request.url.path
+        if path.endswith("/sports/americanfootball_nfl/events"):
+            return httpx.Response(200, json=[{"id": "evt-a"}], request=request)
+        seen.append(dict(request.url.params))
+        return httpx.Response(
+            200,
+            json={
+                "id": "evt-a",
+                "bookmakers": [
+                    {
+                        "key": "draftkings",
+                        "markets": [
+                            {
+                                "key": "player_reception_yds",
+                                "outcomes": [
+                                    {"name": "Over", "price": -110, "point": 62.5},
+                                    {"name": "Under", "price": -110, "point": 62.5},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            request=request,
+        )
+
+    _fake_upstream(monkeypatch, _handler)
+
+
+def test_fetch_requests_abbreviated_upstream_key(monkeypatch):
+    seen = []
+    _prop_handler(monkeypatch, seen)
+
+    odds_module.fetch_odds("player_reception_yards", TEST_KEY)
+
+    assert seen and seen[0]["markets"] == "player_reception_yds"
+
+
+def test_response_market_keys_rewritten_to_public_form(monkeypatch):
+    seen = []
+    _prop_handler(monkeypatch, seen)
+
+    out = odds_module.fetch_odds("player_reception_yards", TEST_KEY)
+
+    assert out[0]["bookmakers"][0]["markets"][0]["key"] == "player_reception_yards"
+
+
+def test_receptions_identity_maps_to_itself(monkeypatch):
+    seen = []
+
+    def _handler(request):
+        path = request.url.path
+        if path.endswith("/sports/americanfootball_nfl/events"):
+            return httpx.Response(200, json=[{"id": "evt-a"}], request=request)
+        seen.append(dict(request.url.params))
+        return httpx.Response(200, json={"id": "evt-a", "bookmakers": []}, request=request)
+
+    _fake_upstream(monkeypatch, _handler)
+
+    assert odds_module.fetch_odds("player_receptions", TEST_KEY) == [
+        {"id": "evt-a", "bookmakers": []}
+    ]
+    assert seen and seen[0]["markets"] == "player_receptions"

@@ -90,6 +90,20 @@ ALLOWED_MARKETS = frozenset({
     "player_receiving_tds",
 })
 
+# Public long-form key -> abbreviated upstream key. The Odds API only serves
+# these short keys; OUR long forms never appear on the wire. The frontend
+# sends long-form and filters market.key on long-form, so responses are
+# translated back before caching/returning (see _to_public_markets).
+UPSTREAM_MARKET_KEYS = {
+    "player_reception_yards": "player_reception_yds",
+    "player_rushing_yards": "player_rush_yds",
+    "player_passing_yards": "player_pass_yds",
+    "player_receptions": "player_receptions",
+    "player_passing_tds": "player_pass_tds",
+    "player_rushing_tds": "player_rush_tds",
+    "player_receiving_tds": "player_reception_tds",
+}
+
 # Monotonic clock for the TTL. Tests replace it to exercise expiry.
 _clock = time.monotonic
 
@@ -169,6 +183,29 @@ def _decode_json(upstream: httpx.Response) -> Any:
         raise OddsFetchError(502, "Odds API error: invalid JSON") from None
 
 
+def _to_public_markets(event: Any, public_market: str, upstream_market: str) -> Any:
+    """Rewrite the requested market key back to public long-form in place.
+
+    Only the exact upstream key requested is renamed; anything else in the
+    response passes through untouched.
+    """
+    if not isinstance(event, dict):
+        return event
+    bookmakers = event.get("bookmakers")
+    if not isinstance(bookmakers, list):
+        return event
+    for book in bookmakers:
+        if not isinstance(book, dict):
+            continue
+        markets = book.get("markets")
+        if not isinstance(markets, list):
+            continue
+        for m in markets:
+            if isinstance(m, dict) and m.get("key") == upstream_market:
+                m["key"] = public_market
+    return event
+
+
 def fetch_odds(market: str, api_key: str) -> Any:
     """Fetch one market across upcoming events and return the merged list.
 
@@ -183,6 +220,7 @@ def fetch_odds(market: str, api_key: str) -> Any:
     Error text never contains the upstream body, and the key is scrubbed from
     transport error messages.
     """
+    upstream_market = UPSTREAM_MARKET_KEYS[market]
     with httpx.Client(timeout=UPSTREAM_TIMEOUT_S) as client:
         events_resp = _get_upstream(
             client, UPSTREAM_EVENTS_URL, {"apiKey": api_key}, api_key
@@ -206,7 +244,7 @@ def fetch_odds(market: str, api_key: str) -> Any:
                 continue
             params = {
                 "apiKey": api_key,
-                "markets": market,
+                "markets": upstream_market,
                 "regions": "us",
                 "oddsFormat": "american",
             }
@@ -223,7 +261,7 @@ def fetch_odds(market: str, api_key: str) -> Any:
             _log.warning("odds skipped %d event(s) for market %s", skipped, market)
         if not merged and first_error is not None:
             raise first_error
-        return merged
+        return [_to_public_markets(event, market, upstream_market) for event in merged]
 
 
 def _cached_events(market: str) -> Any:
