@@ -1,0 +1,74 @@
+# Serving-only dependency subset, derived from backend/requirements.txt.
+#
+# Rule: start from backend/requirements.txt and drop ONLY the heavy
+# training-only packages that the serving import trace shows are unused.
+# Provisional split (import trace being measured in parallel — if it shows a
+# dropped package on the serving path, add it back here and rebuild):
+#
+# KEPT (serving path):
+#   web/orm/scheduling/observability/scraper/data/booster/onnx rows below.
+#   - onnxruntime: the ONNX fast path (ml/utils run_onnx_inference via
+#     ml/inference_client) is on the serving path.
+#   - xgboost / lightgbm / catboost / scikit-learn / joblib: native
+#     booster/sklearn artefacts may load outside the ONNX fast path.
+#   - alembic/psycopg2-binary: migrations run as a one-shot from the full
+#     image, but asyncpg + sync driver stay for runtime DB access patterns.
+#
+# DROPPED (training / analysis only, not imported at serving):
+#   torch==2.11.0             (CPU wheel + CUDA avoidance; ~2.5 GB of CUDA
+#                              deps on linux/amd64 — the main serving win)
+#   pytorch-forecasting==1.7.0 (TFT retrains run in the training slice, never in serving)
+#   pymc==5.28.4               (bayesian layer fitting, offline)
+#   shap==0.51.0               (analysis; ml/shap_service.py degrades
+#                              without it — confirm on the scratch box)
+#   optuna==4.8.0              (tuning, offline)
+#   mlflow==3.11.1             (not imported on the serving path;
+#                              tracking URI is config-only)
+#
+# If the trace contradicts any drop, the fallback is one line in compose.yml:
+# point `api.build.dockerfile` at ../../../backend/Dockerfile (full image).
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+slowapi==0.1.9            # IP-based rate limiting for /predict and /backtest
+
+# ── ORM + database ────────────────────────────────────────────────────────────
+sqlmodel==0.0.38
+asyncpg==0.31.0
+psycopg2-binary==2.9.12
+alembic==1.18.4
+
+# ── Scheduling (embedded in backend process) ──────────────────────────────────
+apscheduler==3.11.2
+
+# ── Observability / tracing ───────────────────────────────────────────────────
+opentelemetry-api==1.41.1
+opentelemetry-sdk==1.41.1
+opentelemetry-exporter-otlp==1.41.1
+
+# ── Scraper deps ──────────────────────────────────────────────────────────────
+httpx==0.28.1
+rapidfuzz==3.14.5
+requests==2.33.1
+beautifulsoup4==4.14.3
+tenacity==9.1.4
+nflreadpy==0.1.5
+polars==1.40.1
+pyarrow==23.0.1
+pydantic==2.13.3
+
+# ── ML deps (serving subset — native + ONNX runtimes only) ────────────────────
+xgboost==3.2.0
+lightgbm==4.6.0
+catboost==1.2.10
+numpy==2.4.4
+pandas==2.3.3
+scikit-learn==1.8.0
+joblib==1.5.3
+onnx==1.21.0              # presence-checked by export_onnx (lazy import)
+onnxruntime==1.25.1
+# onnxmltools / skl2onnx DROPPED: model→ONNX conversion runs offline only.
+
+# ── Observability ─────────────────────────────────────────────────────────────
+prometheus-fastapi-instrumentator>=7.0  # /metrics endpoint

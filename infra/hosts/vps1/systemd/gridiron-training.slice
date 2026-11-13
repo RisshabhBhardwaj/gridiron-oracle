@@ -1,0 +1,21 @@
+# Gridiron training slice: ~10 GB / 5 CPUs, low priority.
+#
+# Host-level envelope for everything the training timers launch. The site
+# (api/db) is deliberately NOT capped, so under contention the site keeps
+# first claim on CPU by weight (20 here vs the default 100).
+#
+# Layering note (honest): a systemd Slice= on a timer-launched unit caps the
+# `docker compose run` launcher process, NOT the training container itself —
+# Docker nests container cgroups under its own hierarchy. The real container
+# enforcement lives in compose.yml (`training`: mem_limit 10g, cpus 5.0,
+# cpu_shares 128). This slice is the host-level envelope + accounting for
+# everything launched under it; both layers carry the same numbers.
+[Unit]
+Description=Gridiron training slice (~10 GB, ~5 CPUs, low priority)
+Before=slices.target
+
+[Slice]
+MemoryMax=10G
+CPUQuota=500%
+CPUWeight=20
+IOWeight=20

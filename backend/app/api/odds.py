@@ -11,6 +11,11 @@ Why it exists: the key must not reach the browser bundle, and the upstream
 quota (500 requests a month on the free tier) must not be spendable by any
 caller who names any market.
 
+Cost note: player props do not exist on the bulk /sports/{sport}/odds
+endpoint (it 422s them); each market costs one /events list call plus one
+/events/{id}/odds call per upcoming event. The 300s cache, single-flight,
+and quota floor below apply to that whole fan-out as one unit.
+
 Responses:
   no ODDS_API_KEY            200 {"configured": false}, no upstream call
   market missing or unknown  400 {"detail": "Unsupported markets value: <value>"}
@@ -62,7 +67,13 @@ _log = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 SPORT = "americanfootball_nfl"
-UPSTREAM_URL = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/"
+UPSTREAM_EVENTS_URL = f"https://api.the-odds-api.com/v4/sports/{SPORT}/events"
+
+
+def _event_odds_url(event_id: str) -> str:
+    return f"https://api.the-odds-api.com/v4/sports/{SPORT}/events/{event_id}/odds"
+
+
 UPSTREAM_TIMEOUT_S = 10.0
 CACHE_TTL_S = 300
 CACHE_CONTROL = "s-maxage=300, stale-while-revalidate=600"
@@ -78,6 +89,20 @@ ALLOWED_MARKETS = frozenset({
     "player_rushing_tds",
     "player_receiving_tds",
 })
+
+# Public long-form key -> abbreviated upstream key. The Odds API only serves
+# these short keys; OUR long forms never appear on the wire. The frontend
+# sends long-form and filters market.key on long-form, so responses are
+# translated back before caching/returning (see _to_public_markets).
+UPSTREAM_MARKET_KEYS = {
+    "player_reception_yards": "player_reception_yds",
+    "player_rushing_yards": "player_rush_yds",
+    "player_passing_yards": "player_pass_yds",
+    "player_receptions": "player_receptions",
+    "player_passing_tds": "player_pass_tds",
+    "player_rushing_tds": "player_rush_tds",
+    "player_receiving_tds": "player_reception_tds",
+}
 
 # Monotonic clock for the TTL. Tests replace it to exercise expiry.
 _clock = time.monotonic
@@ -135,40 +160,108 @@ def _redact(text: str, secret: str) -> str:
     return text.replace(secret, "[redacted]") if secret else text
 
 
-def fetch_odds(market: str, api_key: str) -> Any:
-    """Fetch one market from The Odds API and return the decoded JSON.
-
-    Kept as a single function so tests can replace it. Raises OddsFetchError.
-    Error text never contains the upstream body, and the key is scrubbed from
-    transport error messages.
-    """
-    params = {
-        "apiKey": api_key,
-        "markets": market,
-        "regions": "us",
-        "oddsFormat": "american",
-    }
+def _get_upstream(
+    client: httpx.Client, url: str, params: dict, api_key: str
+) -> httpx.Response:
+    """One upstream GET. Transport failures become 502 (key scrubbed);
+    the quota header is recorded on every answer, success or failure."""
     try:
-        with httpx.Client(timeout=UPSTREAM_TIMEOUT_S) as client:
-            upstream = client.get(UPSTREAM_URL, params=params)
+        upstream = client.get(url, params=params)
     except httpx.HTTPError as exc:
         _log.warning("odds upstream unreachable: %s", type(exc).__name__)
         reason = _redact(str(exc), api_key)
         raise OddsFetchError(502, f"Odds API unreachable: {reason}") from None
-
-    # Record the quota header on every answer, success or failure: a 429
-    # carries it too, and it is the only quota signal the guard ever sees.
     _note_remaining(upstream.headers.get(REMAINING_HEADER))
+    return upstream
 
-    if not upstream.is_success:
-        _log.warning("odds upstream returned %s", upstream.status_code)
-        raise OddsFetchError(upstream.status_code, f"Odds API error: {upstream.status_code}")
 
+def _decode_json(upstream: httpx.Response) -> Any:
     try:
         return upstream.json()
     except ValueError:
         _log.warning("odds upstream returned a non-JSON body")
         raise OddsFetchError(502, "Odds API error: invalid JSON") from None
+
+
+def _to_public_markets(event: Any, public_market: str, upstream_market: str) -> Any:
+    """Rewrite the requested market key back to public long-form in place.
+
+    Only the exact upstream key requested is renamed; anything else in the
+    response passes through untouched.
+    """
+    if not isinstance(event, dict):
+        return event
+    bookmakers = event.get("bookmakers")
+    if not isinstance(bookmakers, list):
+        return event
+    for book in bookmakers:
+        if not isinstance(book, dict):
+            continue
+        markets = book.get("markets")
+        if not isinstance(markets, list):
+            continue
+        for m in markets:
+            if isinstance(m, dict) and m.get("key") == upstream_market:
+                m["key"] = public_market
+    return event
+
+
+def fetch_odds(market: str, api_key: str) -> Any:
+    """Fetch one market across upcoming events and return the merged list.
+
+    Player props live only on /events/{id}/odds, one event at a time: first
+    list upcoming events (apiKey only), then fetch the market for each event
+    and merge the per-event objects into one list.
+
+    Kept as a single function so tests can replace it. Raises OddsFetchError.
+    A failing events list raises its own status; if every event call fails,
+    the first event status is raised; partial failures return the successes
+    (with a warning count). No events at all returns [] (not an error).
+    Error text never contains the upstream body, and the key is scrubbed from
+    transport error messages.
+    """
+    upstream_market = UPSTREAM_MARKET_KEYS[market]
+    with httpx.Client(timeout=UPSTREAM_TIMEOUT_S) as client:
+        events_resp = _get_upstream(
+            client, UPSTREAM_EVENTS_URL, {"apiKey": api_key}, api_key
+        )
+        if not events_resp.is_success:
+            _log.warning("odds events list returned %s", events_resp.status_code)
+            raise OddsFetchError(
+                events_resp.status_code, f"Odds API error: {events_resp.status_code}"
+            )
+        events = _decode_json(events_resp)
+        if not events:
+            return []
+
+        merged: list[Any] = []
+        first_error: OddsFetchError | None = None
+        skipped = 0
+        for event in events:
+            event_id = event.get("id") if isinstance(event, dict) else None
+            if not event_id:
+                skipped += 1
+                continue
+            params = {
+                "apiKey": api_key,
+                "markets": upstream_market,
+                "regions": "us",
+                "oddsFormat": "american",
+            }
+            single = _get_upstream(client, _event_odds_url(event_id), params, api_key)
+            if not single.is_success:
+                if first_error is None:
+                    first_error = OddsFetchError(
+                        single.status_code, f"Odds API error: {single.status_code}"
+                    )
+                skipped += 1
+                continue
+            merged.append(_decode_json(single))
+        if skipped:
+            _log.warning("odds skipped %d event(s) for market %s", skipped, market)
+        if not merged and first_error is not None:
+            raise first_error
+        return [_to_public_markets(event, market, upstream_market) for event in merged]
 
 
 def _cached_events(market: str) -> Any:

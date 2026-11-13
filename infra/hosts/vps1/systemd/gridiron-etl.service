@@ -1,0 +1,19 @@
+# Weekly Gridiron ETL one-shot.
+#
+# ETL EXCLUSION (owner rule: no training alongside the ETL): the schedules
+# are provably disjoint (ETL Tue 13:00 UTC; small training 01:00–07:00 UTC
+# daily; full training Fri 22:00–Mon 06:00 UTC), and this unit additionally
+# declares Conflicts= on both training units — if a training job is ever
+# running when the ETL starts (manual invocation, clock trouble), the ETL
+# wins and training is stopped. Training progress is expendable; the weekly
+# data window is not. The reverse is NOT declared: starting training during
+# the ETL hour is an operator error the schedule already prevents.
+[Unit]
+Description=Gridiron weekly ETL one-shot (Tue 13:00 UTC)
+Conflicts=gridiron-train-small.service gridiron-train-full.service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile jobs run --rm etl

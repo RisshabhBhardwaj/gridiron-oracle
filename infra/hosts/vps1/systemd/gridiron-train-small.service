@@ -1,0 +1,16 @@
+# Small training window job: 01:00–07:00 UTC daily.
+#
+# The window END is enforced by RuntimeMaxSec=6h on the unit: the job is
+# killed at 07:00 UTC even mid-run, and the missing dead-man ping surfaces
+# the overrun. Small jobs must fit in 6 hours — that is the contract.
+[Unit]
+Description=Gridiron small retrains/SHAP/backfills (01:00–07:00 UTC)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Slice=gridiron-training.slice
+Nice=10
+RuntimeMaxSec=6h
+ExecStart=/srv/gridiron/infra/hosts/vps1/scripts/train_small.sh

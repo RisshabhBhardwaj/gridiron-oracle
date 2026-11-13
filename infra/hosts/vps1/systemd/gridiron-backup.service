@@ -1,0 +1,15 @@
+# Nightly R2 backup one-shot (pg_dump -Fc → gzip → age → R2, ping on success).
+#
+# 23:00 UTC daily = 18:00 EST daily ("nightly" in owner-local terms). The hour
+# avoids the small training window (01:00–07:00 UTC) and the ETL (Tue 13:00
+# UTC). It DOES overlap the full-retrain weekend window (Fri 22:00–Mon 06:00
+# UTC) — accepted by design: pg_dump is minutes-long and the training slice
+# is deprioritized, so site + backup keep precedence. See README.
+[Unit]
+Description=Gridiron nightly R2 backup (23:00 UTC)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile jobs run --rm backup

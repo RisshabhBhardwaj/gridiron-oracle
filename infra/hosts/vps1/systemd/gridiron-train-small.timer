@@ -1,0 +1,12 @@
+# Small window: daily 01:00 UTC = daily 20:00 EST previous day (UTC-5).
+# Fires the start; the .service's RuntimeMaxSec=6h enforces the 07:00 end.
+[Unit]
+Description=Gridiron small-training window — daily 01:00 UTC (20:00 EST prev day)
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+Persistent=false
+Unit=gridiron-train-small.service
+
+[Install]
+WantedBy=timers.target

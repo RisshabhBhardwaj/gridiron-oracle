@@ -1,0 +1,21 @@
+# Weekly ETL: Tuesday 13:00 UTC = Tuesday 08:00 EST (UTC-5, November).
+#
+# The hour is DELIBERATE, not inherited: 13:00 UTC sits outside the small
+# training window (01:00–07:00 UTC) with wide clearance on both sides, keeps
+# today's standing slot (post-MNF data availability), and preserves the day.
+# The box runs on UTC (bootstrap.sh forces it) so there is no DST ambiguity;
+# no Timezone= is set on purpose. EST equivalents shift by an hour under EDT.
+#
+# Persistent=false (the default, stated): after downtime the missed ETL does
+# NOT catch up on boot — a pileup could collide with a training window.
+# A missed run surfaces via the missing HEALTHCHECKS_ETL_URL ping instead.
+[Unit]
+Description=Weekly Gridiron ETL — Tuesday 13:00 UTC (08:00 EST)
+
+[Timer]
+OnCalendar=Tue *-*-* 13:00:00
+Persistent=false
+Unit=gridiron-etl.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,18 @@
+# Nightly-backup image: stock postgres:18 (pg_dump 18 matches the server)
+# plus rclone (R2 upload), age (dump encryption) and curl (dead-man ping).
+# Kept separate from the app images on purpose: the backup path must never
+# depend on the app's Python dependency set.
+FROM postgres:18
+# TODO(deploy): pin the digest observed at deploy, e.g.
+# FROM postgres:18@sha256:<digest from `docker pull postgres:18`>
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    rclone \
+    age \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# The script is mounted read-only from ./scripts at run time (compose.yml),
+# so fixes ship without rebuilding. Default command matches compose.
+CMD ["/usr/local/bin/backup_to_r2.sh"]
