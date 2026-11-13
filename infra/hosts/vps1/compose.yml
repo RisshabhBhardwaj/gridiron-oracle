@@ -141,9 +141,11 @@ services:
     image: cloudflare/cloudflared:2026.2.0
     # TODO(deploy): pin the digest observed at deploy, e.g.
     # image: cloudflare/cloudflared:2026.2.0@sha256:<digest>
-    command: --metrics 0.0.0.0:20241 tunnel --no-autoupdate run --config /etc/cloudflared/config.yml --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
-    volumes:
-      - ./cloudflared.config.yml:/etc/cloudflared/config.yml:ro
+    # Token mode: ingress comes from the Cloudflare-side tunnel configuration
+    # (API-managed), not from a local file — --config is rejected alongside
+    # --token in current cloudflared. cloudflared.config.yml stays in the
+    # repo only as the documented ingress intent (hostname + catch-all).
+    command: --metrics 0.0.0.0:20241 tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
     depends_on:
       - api
     networks:
