@@ -6,4 +6,4 @@ compatibility_date = "2026-10-01"
 # BACKEND_API_KEY is a Pages secret set by the owner in Cloudflare.
 # Never put its value in this file or anywhere in the repo.
 [vars]
-BACKEND_URL = "https://api-production-e715.up.railway.app"
+BACKEND_URL = "https://gridiron-api.risshabh.com"
