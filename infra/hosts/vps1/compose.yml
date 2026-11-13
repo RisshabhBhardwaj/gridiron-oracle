@@ -141,7 +141,7 @@ services:
     image: cloudflare/cloudflared:2026.2.0
     # TODO(deploy): pin the digest observed at deploy, e.g.
     # image: cloudflare/cloudflared:2026.2.0@sha256:<digest>
-    command: tunnel --no-autoupdate run --metrics 0.0.0.0:20241 --config /etc/cloudflared/config.yml --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    command: --metrics 0.0.0.0:20241 tunnel --no-autoupdate run --config /etc/cloudflared/config.yml --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
     volumes:
       - ./cloudflared.config.yml:/etc/cloudflared/config.yml:ro
     depends_on:
