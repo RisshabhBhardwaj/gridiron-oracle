@@ -7,11 +7,22 @@ FROM postgres:18
 # FROM postgres:18@sha256:<digest from `docker pull postgres:18`>
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    rclone \
     age \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# rclone is pinned from the official release, NOT Debian's (Bookworm ships
+# rclone 1.60.1, whose S3 PUTs R2 answers AccessDenied; current rclone with
+# the same credentials succeeds). Bump version + sha256 together.
+ARG RCLONE_RELEASE=1.76.0
+ARG RCLONE_DEB_SHA256=9db7ee9b725bce7cdd195b9183449a4c6fb93cad3e6578e70b87c0bc7f6062e9
+RUN curl -fsSL -o /tmp/rclone.deb \
+      "https://github.com/rclone/rclone/releases/download/v${RCLONE_RELEASE}/rclone-v${RCLONE_RELEASE}-linux-amd64.deb" \
+    && echo "${RCLONE_DEB_SHA256}  /tmp/rclone.deb" | sha256sum -c - \
+    && apt-get update && apt-get install -y --no-install-recommends /tmp/rclone.deb \
+    && rm -f /tmp/rclone.deb && rm -rf /var/lib/apt/lists/* \
+    && rclone version
 
 # The script is mounted read-only from ./scripts at run time (compose.yml),
 # so fixes ship without rebuilding. Default command matches compose.

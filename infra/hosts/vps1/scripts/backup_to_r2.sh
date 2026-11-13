@@ -50,6 +50,9 @@ export RCLONE_CONFIG_R2_ENDPOINT="${R2_ENDPOINT}"
 export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
 export RCLONE_CONFIG_R2_REGION="auto"
+# The token is bucket-item scoped on purpose (no bucket-create right);
+# the bucket already exists, so rclone must not try to create it.
+export RCLONE_CONFIG_R2_NO_CHECK_BUCKET="true"
 echo "backup: uploading ..."
 rclone copyto "$FINAL" "r2:${R2_BUCKET}/${PREFIX}/${STAMP}${SUFFIX}"
 rm -f "$FINAL"
