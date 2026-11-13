@@ -152,8 +152,14 @@ services:
       - internal
     mem_limit: 128m
     restart: unless-stopped
+    # Process check only: the cloudflared image has no shell, curl, or wget,
+    # so no in-container HTTP probe is possible (a CMD-SHELL probe can never
+    # pass — that is why the service previously reported UNHEALTHY while the
+    # tunnel itself was registered and serving). Real health evidence:
+    # the metrics endpoint (0.0.0.0:20241, Prometheus-scrapable) and the
+    # external https://<hostname>/health through the tunnel.
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:20241/ready || exit 1"]
+      test: ["CMD", "cloudflared", "--version"]
       interval: 30s
       timeout: 5s
       retries: 3
