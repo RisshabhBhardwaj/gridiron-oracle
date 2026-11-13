@@ -39,12 +39,19 @@ else
   echo "backup: WARNING: AGE_RECIPIENT unset — uploading unencrypted (v1 accepted, set it)" >&2
 fi
 
-# On-the-fly `:s3` backend (no rclone.conf on disk, no secret in a file):
-# endpoint/keys travel in argv of this already-ephemeral container.
-# (R2 keys are alphanumeric — no comma-escaping needed in the backend string.)
-DEST=":s3,provider=Cloudflare,endpoint=${R2_ENDPOINT},access_key_id=${R2_ACCESS_KEY_ID},secret_access_key=${R2_SECRET_ACCESS_KEY},region=auto:${R2_BUCKET}/${PREFIX}/${STAMP}${SUFFIX}"
+# Environment-based rclone backend (no rclone.conf on disk). Do NOT build a
+# `:s3,...` connection string: rclone mangles an `https://` endpoint inside
+# one and echoes the whole string — credentials included — into its error
+# URLs (seen in the 2026-11-12 manual run). Env config keeps the keys out of
+# argv and out of any URL rclone prints.
+export RCLONE_CONFIG_R2_TYPE="s3"
+export RCLONE_CONFIG_R2_PROVIDER="Cloudflare"
+export RCLONE_CONFIG_R2_ENDPOINT="${R2_ENDPOINT}"
+export RCLONE_CONFIG_R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+export RCLONE_CONFIG_R2_REGION="auto"
 echo "backup: uploading ..."
-rclone copyto "$FINAL" "$DEST"
+rclone copyto "$FINAL" "r2:${R2_BUCKET}/${PREFIX}/${STAMP}${SUFFIX}"
 rm -f "$FINAL"
 
 # Retention is via R2 lifecycle rules on the bucket (14 daily / 8 weekly /
