@@ -18,6 +18,14 @@ _log = logging.getLogger(__name__)
 _ODDS_FLOOR_DEFAULT = 50
 
 
+def _env(name: str, default: str) -> str:
+    """Read a string setting: missing, empty, or whitespace-only values all
+    fall back to the default. (A copied `.env.example` full of `KEY=` blanks
+    must behave like those keys being absent, not like empty paths/URLs.)"""
+    raw = os.environ.get(name, "")
+    return raw if raw.strip() else default
+
+
 def _parse_odds_floor(raw: str) -> int:
     """Parse ODDS_MIN_REMAINING. Garbage falls back to the default; a floor
     below zero is meaningless, so it becomes zero (never trip on unknown)."""
@@ -61,7 +69,7 @@ class Settings:
     """
 
     def __init__(self) -> None:
-        self.database_url: str = os.environ.get(
+        self.database_url: str = _env(
             "DATABASE_URL",
             "postgresql://oracle:oracle@localhost:15439/oracle",
         )
@@ -70,27 +78,27 @@ class Settings:
             "postgresql+asyncpg://", "postgresql://"
         )
 
-        self.mlflow_tracking_uri: str = os.environ.get(
+        self.mlflow_tracking_uri: str = _env(
             "MLFLOW_TRACKING_URI", "http://localhost:15091"
         )
-        self.model_version: str = os.environ.get(
+        self.model_version: str = _env(
             "MODEL_VERSION", "latest"
         )
         # Fails closed: unknown values raise rather than falling back.
         self.product_mode: str = resolve_product_mode()  # pragma: no mutate
-        self.settings_file: str = os.environ.get(
+        self.settings_file: str = _env(
             "SETTINGS_FILE", "user_config.json"
         )
-        self.baseline_manifest_path: str = os.environ.get(
+        self.baseline_manifest_path: str = _env(
             "BASELINE_MANIFEST_PATH", "releases/current_baseline.json"
         )
-        self.artifact_invalidation_path: str = os.environ.get(
+        self.artifact_invalidation_path: str = _env(
             "ARTIFACT_INVALIDATION_PATH", "releases/artifact_invalidations.json"
         )
-        self.log_level: str = os.environ.get("LOG_LEVEL", "INFO").upper()  # pragma: no mutate
+        self.log_level: str = _env("LOG_LEVEL", "INFO").upper()  # pragma: no mutate
         self.cors_origins: list[str] = [
             o.strip()
-            for o in os.environ.get(
+            for o in _env(
                 "CORS_ORIGINS",
                 "http://localhost:5173,http://localhost:3000",
             ).split(",")
@@ -112,27 +120,27 @@ class Settings:
         self.odds_min_remaining: int = _parse_odds_floor(
             os.environ.get("ODDS_MIN_REMAINING", "50")
         )
-        self.otel_service_name: str = os.environ.get(
+        self.otel_service_name: str = _env(
             "OTEL_SERVICE_NAME",
             "gridiron-oracle-api",
         ).strip()
-        self.otel_traces_exporter: str = os.environ.get(
+        self.otel_traces_exporter: str = _env(
             "OTEL_TRACES_EXPORTER",
             "none",
         ).strip().lower()
-        self.otel_exporter_otlp_endpoint: str = os.environ.get(
+        self.otel_exporter_otlp_endpoint: str = _env(
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "",
         ).strip()
-        self.otel_exporter_otlp_protocol: str = os.environ.get(
+        self.otel_exporter_otlp_protocol: str = _env(
             "OTEL_EXPORTER_OTLP_PROTOCOL",
             "http/protobuf",
         ).strip().lower()
-        self.otel_exporter_otlp_headers: str = os.environ.get(
+        self.otel_exporter_otlp_headers: str = _env(
             "OTEL_EXPORTER_OTLP_HEADERS",
             "",
         ).strip()
-        self.otel_exporter_otlp_insecure: bool = os.environ.get(
+        self.otel_exporter_otlp_insecure: bool = _env(
             "OTEL_EXPORTER_OTLP_INSECURE",
             "false",
         ).strip().lower() in {"1", "true", "yes", "on"}
