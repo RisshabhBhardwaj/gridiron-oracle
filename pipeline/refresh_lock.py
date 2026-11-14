@@ -25,7 +25,12 @@ REFRESH_LOCK_NAMESPACE = 0x47525246
 
 # The lock is only as good as its connection. Keepalives make a silently dropped link (a NAT, a firewall)
 # fail within about a minute instead of leaving a lock that looks held on one side and is gone on the other.
-KEEPALIVES = {"keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3}
+# ``tcp_user_timeout`` (ms) covers what keepalives cannot: they only probe an idle link, so a ``SELECT 1`` sent into a
+# black hole would retransmit for about 15 minutes before failing. 30 s makes ``ensure_alive`` fail fast (review N15).
+KEEPALIVES = {
+    "keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3,
+    "tcp_user_timeout": 30000,
+}
 
 
 class RefreshAlreadyRunning(RuntimeError):

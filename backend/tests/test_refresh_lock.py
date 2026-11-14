@@ -85,6 +85,15 @@ def test_the_lock_connection_has_tcp_keepalives_so_a_dead_link_is_noticed():
     assert kwargs["keepalives_idle"] > 0 and kwargs["keepalives_interval"] > 0 and kwargs["keepalives_count"] > 0
 
 
+def test_the_lock_connection_gives_up_on_unacknowledged_data_after_30_seconds():
+    """Keepalives only run on an idle link. A SELECT 1 on a black-holed one would otherwise retransmit for ~15 min (N15)."""
+    db = SqlitePg()
+    with patch("pipeline.refresh_lock.psycopg2.connect", return_value=db) as connect:
+        with season_refresh_lock("postgres://x/y", 2026):
+            pass
+    assert connect.call_args.kwargs["tcp_user_timeout"] == 30000
+
+
 # ── the holder can prove its connection is still there (review N12) ───────────────────────
 def test_ensure_alive_runs_select_1_on_the_lock_connection():
     db = SqlitePg()
