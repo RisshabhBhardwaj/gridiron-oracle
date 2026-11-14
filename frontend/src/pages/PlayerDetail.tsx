@@ -21,6 +21,9 @@ import { provenanceLabel, weekFigureLabel } from '@/lib/forecast-provenance'
 import { isCurrentOrLater, isLiveLineWeek, isNoForecastError, parseWeek, repeatsHeroFigure, weekFigure } from '@/lib/player-page'
 import { CURRENT_SEASON, CURRENT_WEEK, LAST_FANTASY_WEEK, STATS, STAT_LABELS, statUnit } from '@/lib/constants'
 import { toneClass } from '@/lib/tokens'
+import { FOCUS_RING } from '@/lib/utils'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { AVAILABILITY_UNKNOWN_NOTE, isAvailabilityUnknown } from '@/lib/availability'
 import type { SeasonPlayerProjection, SeasonStatProjection } from '@/types/api'
 
 const STAT_ITEMS = STATS.map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }))
@@ -41,9 +44,11 @@ export function PlayerDetail() {
 
   // A link without a week or season means "now". Hold every request until the real
   // current week is known, so the page never asks for a placeholder week first.
-  const { data: current, isPlaceholderData: currentIsPlaceholder } = useCurrentSeason()
+  const { data: current, isPlaceholderData: currentIsPlaceholder, isError: currentFailed, error: currentError, refetch: refetchCurrent } = useCurrentSeason()
   const needsCurrent = parseWeek(searchParams.get('week'), -1) === -1 || parseSeason(searchParams.get('season'), -1) === -1
-  const waitingForCurrent = needsCurrent && currentIsPlaceholder
+  // If the current week cannot be learned, ask for nothing rather than a guessed week.
+  const currentUnknown = needsCurrent && currentFailed
+  const waitingForCurrent = needsCurrent && (currentIsPlaceholder || currentFailed)
   const now = { season: current?.season ?? CURRENT_SEASON, week: current?.week ?? CURRENT_WEEK }
 
   const week = parseWeek(searchParams.get('week'), now.week)
@@ -51,6 +56,7 @@ export function PlayerDetail() {
   const stat = searchParams.get('stat') ?? 'receiving_yards'
   const name = searchParams.get('name') ?? ''
   const viewed = { season, week }
+  usePageTitle(name || 'Player')
 
   const predict = usePredict({ player: name, week, season, stat, enabled: name.length > 0 && !waitingForCurrent })
   const figure = weekFigure(predict.data)
@@ -109,7 +115,7 @@ export function PlayerDetail() {
   if (!name) {
     return (
       <div className="flex flex-col gap-4">
-        <button onClick={() => navigate('/')} className="self-start text-xs font-medium text-fg-muted transition-colors hover:text-fg">
+        <button onClick={() => navigate('/')} className={`self-start rounded text-xs font-medium text-fg-muted transition-colors hover:text-fg ${FOCUS_RING}`}>
           Back to Home
         </button>
         <div className="rounded-xl border border-line bg-surface-raised p-6">
@@ -123,9 +129,9 @@ export function PlayerDetail() {
     )
   }
 
-  const loading = waitingForCurrent || predict.isLoading
+  const loading = (needsCurrent && currentIsPlaceholder) || predict.isLoading
   const noForecast = !loading && (isNoForecastError(predict.error) || (predict.data != null && figure.kind === 'none'))
-  const failed = !loading && predict.isError && !isNoForecastError(predict.error)
+  const failed = !loading && (currentUnknown || (predict.isError && !isNoForecastError(predict.error)))
   const forecast = !loading && figure.kind === 'forecast' && predict.data ? { figure, data: predict.data } : null
 
   const unit = statUnit(stat)
@@ -146,7 +152,7 @@ export function PlayerDetail() {
       <div>
         <button
           onClick={handleBack}
-          className="group mb-4 flex items-center gap-2 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
+          className={`group mb-4 flex items-center gap-2 rounded text-xs font-medium text-fg-muted transition-colors hover:text-fg ${FOCUS_RING}`}
         >
           <ChevronLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" aria-hidden="true" />
           Back
@@ -159,8 +165,11 @@ export function PlayerDetail() {
             </h1>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted">
               {position && <PositionBadge position={position} />}
-              {/* Availability (injury / status) goes here when the data exists. Not built yet: decision 0012 D3. */}
-              {/* <AvailabilityBadge playerId={player_id} /> */}
+              {/* Availability chips (Questionable / Doubtful, decision 0012 D3) are not built.
+                  Only the "Unknown" note exists: nothing for any other status. */}
+              {!loading && isAvailabilityUnknown(predict.data?.availability_status) && (
+                <span>{AVAILABILITY_UNKNOWN_NOTE}</span>
+              )}
               {team && <span className="font-medium text-fg">{team}</span>}
               <span>Week {week} · {season}{played ? ' · already played' : ''}</span>
             </p>
@@ -185,11 +194,11 @@ export function PlayerDetail() {
 
       {loading && <PlayerDetailSkeleton />}
 
-      {failed && predict.error && (
-        <div role="alert">
-          <ErrorBanner error={predict.error} onRetry={() => void predict.refetch()} />
-        </div>
-      )}
+      {failed && (currentUnknown ? (
+        <ErrorBanner error={currentError} onRetry={() => void refetchCurrent()} />
+      ) : (
+        predict.error && <ErrorBanner error={predict.error} onRetry={() => void predict.refetch()} />
+      ))}
 
       {noForecast && (
         <NoForecastBanner season={season} week={week} playerName={name}>

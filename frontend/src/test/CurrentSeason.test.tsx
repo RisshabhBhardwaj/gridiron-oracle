@@ -227,7 +227,8 @@ describe('CurrentSeason', () => {
       await screen.findByText('No forecast yet for Week 5, 2025')
       fireEvent.keyDown(window, { key: 'k', metaKey: true })
       const option = await screen.findByRole('option', { name: /Justin Jefferson/ })
-      expect(option).toHaveTextContent('No Week 5 forecast yet')
+      // "No forecast yet" is said once, under the search box; the row itself shows no figure.
+      expect(screen.getByText('No Week 5 forecast yet')).toBeInTheDocument()
       expect(option).not.toHaveTextContent('19.8')
       fireEvent.click(option)
       expect(await screen.findByText('No forecast yet for Week 5, 2025')).toBeInTheDocument()
@@ -289,6 +290,136 @@ describe('CurrentSeason', () => {
       openGames()
       await screen.findByText(/aren.t ready yet/)
       expect(calls).toBe(1)
+    })
+  })
+})
+
+describe('CurrentSeason: loading, not ready and failed are different states', () => {
+  const emptyWeek = () =>
+    http.get('/api/projections/season/:season/weeks/:week', () =>
+      HttpResponse.json({ ...factories.seasonWeekProjectionsResponse(), count: 0, projections: [] }),
+    )
+
+  it('shows no empty state and no guessed week while the current week is still loading', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    server.use(
+      http.get('/api/season/current', async () => {
+        await gate
+        return HttpResponse.json({ season: 2025, week: 5 })
+      }),
+      emptyWeek(),
+    )
+    renderWithProviders(<CurrentSeason />)
+    // Loading: a skeleton, never the empty or not-ready notices, and no "Week 1" fallback.
+    expect(screen.getByText('Loading player projections')).toBeInTheDocument()
+    expect(screen.queryByText(/No player projections/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/aren.t ready yet/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Week 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/2026 Season/)).not.toBeInTheDocument()
+    release()
+    // Once settled, empty data is a not-ready state with a next step.
+    expect(await screen.findByText(/Week 5 projections aren.t ready yet/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeInTheDocument()
+  })
+
+  it('treats a 404 and an empty list as "not ready", never as an error', async () => {
+    server.use(
+      http.get('/api/projections/season/:season/weeks/:week', () =>
+        HttpResponse.json({ detail: 'none' }, { status: 404 }),
+      ),
+    )
+    renderWithProviders(<CurrentSeason />)
+    expect(await screen.findByText(/Week 5 projections aren.t ready yet/)).toBeInTheDocument()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /see season-long projections/i })).toBeInTheDocument()
+  })
+
+  it('shows one alert with Retry for a server failure, and Retry asks again', async () => {
+    let calls = 0
+    server.use(
+      http.get('/api/projections/season/:season/weeks/:week', () => {
+        calls += 1
+        return HttpResponse.json({ detail: 'Traceback /srv/x.py' }, { status: 500 })
+      }),
+    )
+    renderWithProviders(<CurrentSeason />)
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.queryByText(/Traceback/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/aren.t ready yet/)).not.toBeInTheDocument()
+    const before = calls
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(calls).toBeGreaterThan(before))
+  })
+
+  it('shows an error with Retry, and asks for nothing else, when the current week cannot be loaded', async () => {
+    let weeklyCalls = 0
+    server.use(
+      http.get('/api/season/current', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+      http.get('/api/projections/season/:season/weeks/:week', () => {
+        weeklyCalls += 1
+        return HttpResponse.json(factories.seasonWeekProjectionsResponse())
+      }),
+    )
+    renderWithProviders(<CurrentSeason />)
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(weeklyCalls).toBe(0)
+    expect(screen.queryByText(/No player projections/)).not.toBeInTheDocument()
+  })
+
+  it('on the Games tab, a 404 for win totals is not ready and a 500 is an error', async () => {
+    server.use(
+      http.get('/api/projections/season/:season/team-wins', () =>
+        HttpResponse.json({ detail: 'none' }, { status: 404 }),
+      ),
+    )
+    const { unmount } = renderWithProviders(<CurrentSeason />)
+    fireEvent.click(screen.getByText('Games'))
+    expect(await screen.findByText(/Season win totals aren.t ready yet/)).toBeInTheDocument()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
+    unmount()
+
+    server.use(
+      http.get('/api/projections/season/:season/team-wins', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+    renderWithProviders(<CurrentSeason />)
+    fireEvent.click(screen.getByText('Games'))
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.queryByText(/win totals aren.t ready yet/)).not.toBeInTheDocument()
+  })
+
+  describe('injury status "Unknown"', () => {
+    function serveStatus(status: (i: number) => string | undefined) {
+      server.use(
+        http.get('/api/projections/season/:season/weeks/:week', () => {
+          const body = factories.seasonWeekProjectionsResponse()
+          body.projections = body.projections.map((p, i) => ({
+            ...p,
+            interval_method: 'causal_oof_conformal_90',
+            availability_status: status(i),
+          }))
+          return HttpResponse.json(body)
+        }),
+      )
+    }
+
+    it('says so once for the whole list, not on every card', async () => {
+      serveStatus(() => 'Unknown')
+      renderWithProviders(<CurrentSeason />)
+      await screen.findByText('Justin Jefferson')
+      expect(screen.getAllByText('Injury status not checked for this week')).toHaveLength(1)
+    })
+
+    it('says nothing for any other status or when the field is absent', async () => {
+      serveStatus((i) => (i === 0 ? 'Questionable' : undefined))
+      renderWithProviders(<CurrentSeason />)
+      await screen.findByText('Justin Jefferson')
+      expect(screen.queryByText(/Injury status not checked/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Questionable/)).not.toBeInTheDocument()
     })
   })
 })

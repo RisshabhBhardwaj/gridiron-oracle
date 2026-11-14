@@ -1,5 +1,6 @@
 import { TriangleAlert, WifiOff } from 'lucide-react'
 import { ApiError } from '@/lib/api-client'
+import { FOCUS_RING } from '@/lib/utils'
 
 interface ErrorBannerProps {
   error?: Error | null
@@ -12,10 +13,16 @@ export const BACKEND_UNAVAILABLE = 'backend_unavailable'
 export const BACKEND_UNAVAILABLE_MESSAGE = 'Live data is moving to a new server and will be back soon'
 
 /**
- * Plain-words failure notice. Never shows raw error text or developer
- * commands: server messages can leak paths, keys and stack traces, and a
- * fantasy player cannot act on them. Callers with a specific, user-safe
- * explanation pass it as `message`.
+ * The one failure notice every data screen uses, so an outage looks the same
+ * everywhere and is never mistaken for missing data (that is a "not ready"
+ * state, see NotReady).
+ *
+ * - It announces itself (`role="alert"`). Callers do not wrap it.
+ * - Pass `onRetry` whenever the request can be tried again: the button is always
+ *   shown then.
+ * - Never shows raw error text or developer commands: server messages can leak
+ *   paths, keys and stack traces, and a fantasy player cannot act on them.
+ *   Callers with a specific, user-safe explanation pass it as `message`.
  */
 export function ErrorBanner({ error, onRetry, message }: ErrorBannerProps) {
   // Expected while the backend moves hosts: one calm line, no error framing, no retry.
@@ -26,7 +33,7 @@ export function ErrorBanner({ error, onRetry, message }: ErrorBannerProps) {
   const isOffline = error?.message?.includes('ECONNREFUSED') || error?.message?.includes('Failed to fetch')
 
   return (
-    <div className="tone-negative relative rounded-xl p-5 flex items-start gap-4 overflow-hidden border border-tone/25 bg-gradient-to-br from-tone/10 to-tone/[0.03] shadow-[0_4px_24px_rgb(var(--tone)/0.08)]">
+    <div role="alert" className="tone-negative relative rounded-xl p-5 flex items-start gap-4 overflow-hidden border border-tone/25 bg-gradient-to-br from-tone/10 to-tone/[0.03] shadow-[0_4px_24px_rgb(var(--tone)/0.08)]">
       {/* Glow edge */}
       <div className="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-xl bg-gradient-to-b from-tone to-tone/20" />
 
@@ -51,8 +58,9 @@ export function ErrorBanner({ error, onRetry, message }: ErrorBannerProps) {
         </p>
         {onRetry && (
           <button
+            type="button"
             onClick={onRetry}
-            className="mt-3 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 bg-tone/15 border border-tone/30 text-tone hover:bg-tone/25"
+            className={`mt-3 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 bg-tone/15 border border-tone/30 text-tone hover:bg-tone/25 ${FOCUS_RING}`}
           >
             Retry
           </button>

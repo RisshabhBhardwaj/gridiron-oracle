@@ -6,21 +6,26 @@ import { useSeasonProjections } from '@/hooks/useSeasonProjections'
 import { useSearch } from '@/context/SearchContext'
 import type { SearchablePlayer } from '@/context/SearchContext'
 import { CURRENT_SEASON, CURRENT_WEEK, POSITIONS } from '@/lib/constants'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
 
 // Labels must track NavBar's NAV_LINKS — /projections and /season were
 // repointed at CurrentSeason and SeasonReview, and the hero kept advertising
 // the old destinations.
 const QUICK_LINKS = [
-  { to: '/projections', label: 'Current Season', meta: 'Weekly boards, team wins, and game forecasts' },
-  { to: '/season', label: 'Season Review', meta: 'How our projections compared with reality' },
-  { to: '/backtest', label: 'Backtesting', meta: 'Past results, season by season' },
+  { to: '/projections', label: PAGE_NAMES.projections, meta: 'Weekly boards, team wins, and game forecasts' },
+  { to: '/season', label: PAGE_NAMES.season, meta: 'How our projections compared with reality' },
+  { to: '/backtest', label: PAGE_NAMES.backtest, meta: 'Past results, season by season' },
 ]
 
 export function Home() {
-  const { data: currentSeasonData, isPlaceholderData } = useCurrentSeason()
+  const { data: currentSeasonData, isPlaceholderData, isError: currentFailed } = useCurrentSeason()
+  usePageTitle()
   const week = currentSeasonData?.week ?? CURRENT_WEEK
   const season = currentSeasonData?.season ?? CURRENT_SEASON
-  const seasonResolved = !isPlaceholderData
+  // Home loads the season list only to feed the search box; nothing on this page shows it,
+  // so a failure here is silent (search has its own unavailable state).
+  const seasonResolved = !isPlaceholderData && !currentFailed
 
   const { setPlayers, setDefaults, open } = useSearch()
 

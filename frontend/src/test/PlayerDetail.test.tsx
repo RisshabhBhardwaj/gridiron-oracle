@@ -102,6 +102,43 @@ describe('PlayerDetail', () => {
       expect(screen.queryByText(/questionable|out for|injur|doubtful/i)).not.toBeInTheDocument()
     })
 
+    it('says "Injury status not checked for this week" only when the status is Unknown', async () => {
+      server.use(
+        http.get('/api/predict', () =>
+          HttpResponse.json({ ...factories.predictResponse(), availability_status: 'Unknown' }),
+        ),
+      )
+      renderPlayer()
+      expect(await screen.findByText('Injury status not checked for this week')).toBeInTheDocument()
+    })
+
+    it('says nothing about injuries for any other status', async () => {
+      server.use(
+        http.get('/api/predict', () =>
+          HttpResponse.json({ ...factories.predictResponse(), availability_status: 'Questionable' }),
+        ),
+      )
+      renderPlayer()
+      await screen.findByText('MIN')
+      expect(screen.queryByText(/Injury status not checked/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/questionable/i)).not.toBeInTheDocument()
+    })
+
+    it('shows an error with Retry, and asks for no forecast, when the current week cannot be loaded', async () => {
+      let predictCalls = 0
+      server.use(
+        http.get('/api/season/current', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+        http.get('/api/predict', () => {
+          predictCalls += 1
+          return HttpResponse.json(factories.predictResponse())
+        }),
+      )
+      renderPlayer('/player/test-001?stat=receiving_yards&name=Justin+Jefferson')
+      expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+      expect(predictCalls).toBe(0)
+    })
+
     it('keeps name, position and team on screen while there is no forecast', async () => {
       noForecast()
       renderPlayer('/player/test-001?week=5&season=2027&stat=receiving_yards&name=Justin+Jefferson')

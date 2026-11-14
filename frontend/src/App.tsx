@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { NavBar } from './components/layout/NavBar'
 import { PageShell } from './components/layout/PageShell'
 import { SearchProvider, useSearch } from './context/SearchContext'
+import { CardGridSkeleton, LoadingRegion, PageHeaderSkeleton } from './components/shared/Skeletons'
 
 // Route-level chunks keep the landing experience small; analytics-heavy pages
 // (charts, backtest tables, settings) are fetched only when the user opens them.
@@ -16,6 +17,16 @@ const BacktestExplorer = lazy(async () => ({ default: (await import('./pages/Bac
 const Settings = lazy(async () => ({ default: (await import('./pages/Settings')).Settings }))
 // The search dialog (and the dialog library behind it) is only needed once someone opens search.
 const PlayerSearch = lazy(async () => ({ default: (await import('./components/PlayerSearch')).PlayerSearch }))
+
+/** Shown while a route's code downloads: the shape every page starts with (header, then cards). */
+function RouteFallback() {
+  return (
+    <LoadingRegion label="Loading page" className="flex flex-col gap-6">
+      <PageHeaderSkeleton />
+      <CardGridSkeleton count={4} />
+    </LoadingRegion>
+  )
+}
 
 /** Loads the search dialog the first time search is opened, then keeps it mounted. */
 function SearchHost() {
@@ -39,7 +50,7 @@ export function App() {
         <NavBar />
         <SearchHost />
         <PageShell>
-          <Suspense fallback={<div className="p-8 text-fg-muted">Loading view…</div>}>
+          <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/"                element={<Home />} />
               <Route path="/projections"     element={<CurrentSeason />} />

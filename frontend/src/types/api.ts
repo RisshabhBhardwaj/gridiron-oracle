@@ -63,6 +63,8 @@ export interface PredictResponse {
   weighting: string
   weights_reason: string | null
   fantasy_scoring: FantasyScoring
+  /** Injury-report status for the week. Optional: the API may not send it yet. "Unknown" = not checked. */
+  availability_status?: string | null
 }
 
 export interface WeekPlayerProjection {
@@ -110,6 +112,13 @@ export interface SeasonStatProjection {
   p90: number
 }
 
+/** GET /health. Only the fields the site reads. */
+export interface HealthResponse {
+  status: string
+  /** false = model artifacts are not ready to serve; null/absent = not reported. */
+  artifact_mode_ready?: boolean | null
+}
+
 export interface SeasonPlayerProjection {
   player_id: string
   player_name: string
@@ -122,6 +131,8 @@ export interface SeasonPlayerProjection {
   degraded: boolean
   interval_method: string
   p_active: number | null
+  /** Injury-report status for the week. Optional: the API may not send it yet. "Unknown" = not checked. */
+  availability_status?: string | null
 }
 
 export interface SeasonProjectionsResponse {
