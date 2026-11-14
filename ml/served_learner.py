@@ -5,11 +5,30 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
-_ROOT = Path(__file__).resolve().parents[1]
-# The pinned candidate set in releases/current_baseline.json. Keep in step with
-# the baseline's selection_policy artifact; tests/test_served_learner.py checks it.
-_DEFAULT = _ROOT / "releases" / "candidates" / "causal_20260821_fixed" / "CONSTRAINED_STACK_SELECTION.json"
+from ml.artifact_manifest import ManifestError, get_manifest, verify_file_digest
+
+
+def default_selection_path() -> Optional[Path]:
+    """The selection file the release manifest pins, digest-checked.
+
+    Read from ``artifacts.selection_policy`` in the manifest (honouring
+    ``BASELINE_MANIFEST_PATH``), so a re-freeze moves disclosure with the pin.
+    Returns None when the manifest or its pin is missing or altered; disclosure
+    then reports ``unknown`` rather than naming a learner from another release.
+    """
+    try:
+        manifest = get_manifest()
+        artifacts = manifest.raw.get("artifacts") or {}
+        relpath = str((artifacts.get("selection_policy") or [None])[0] or "")
+        if not relpath or relpath not in manifest.digests:
+            return None
+        path = manifest.root / relpath
+        verify_file_digest(path, manifest.digests[relpath])
+    except (ManifestError, OSError, AttributeError, TypeError):
+        return None
+    return path
 
 
 @lru_cache(maxsize=4)
@@ -21,8 +40,8 @@ def _decisions(path: str) -> dict[str, dict]:
 
 def served_learner(stat: str, position: str, *, path: Path | None = None) -> str:
     """Return ``ridge_stack``, ``lgbm_identity``, or ``unknown`` for a cell."""
-    manifest = path or _DEFAULT
-    if not manifest.is_file():
+    manifest = path or default_selection_path()
+    if manifest is None or not manifest.is_file():
         return "unknown"
     key = f"{stat}:{str(position).upper()}"
     entry = _decisions(str(manifest)).get(key) or {}

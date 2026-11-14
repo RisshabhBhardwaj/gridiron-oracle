@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from ml.served_learner import _DEFAULT, served_learner
+from ml import artifact_manifest
+from ml.served_learner import default_selection_path, served_learner
 
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "releases" / "current_baseline.json"
@@ -35,7 +36,7 @@ def _cells(selection: str) -> list[str]:
 
 
 def test_default_disclosure_reads_the_pinned_selection() -> None:
-    assert Path(_DEFAULT).resolve() == _pinned_selection_path().resolve()
+    assert default_selection_path().resolve() == _pinned_selection_path().resolve()
 
 
 def test_pinned_artifacts_match_their_recorded_digests() -> None:
@@ -71,3 +72,15 @@ def test_served_learner_discloses_ridge_stack_cells() -> None:
 
 def test_unpinned_cell_is_unknown() -> None:
     assert served_learner("not_a_stat", "QB") == "unknown"
+
+
+def test_missing_manifest_discloses_unknown(monkeypatch, tmp_path) -> None:
+    # Naming a learner from some other release would be a false disclosure.
+    monkeypatch.setenv("BASELINE_MANIFEST_PATH", str(tmp_path / "absent.json"))
+    artifact_manifest.clear_cache()
+    try:
+        assert default_selection_path() is None
+        assert served_learner("carries", "RB") == "unknown"
+    finally:
+        monkeypatch.delenv("BASELINE_MANIFEST_PATH")
+        artifact_manifest.clear_cache()
