@@ -632,3 +632,38 @@ def test_module_imports_no_bayesian_tracking_or_simulation_stack() -> None:
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stderr
+
+
+# ── L1: rows skipped because another approved run serves them are counted, and are an error ──
+def _skip_route(n):
+    return ("-- sr:skipped", (["n"], [(n,)]))
+
+
+def test_the_forward_write_counts_the_rows_it_skipped_and_refuses_when_any(manifest) -> None:
+    conn = make_conn()
+    conn.routes.append(_skip_route(3))
+    with pytest.raises(ForwardGuardError, match="skipped") as e:
+        go(conn, manifest)
+    assert e.value.guard == "L1"
+    assert ("rollback",) in conn.log and conn.commits == 0, "the forecast_runs row must roll back with the refusal"
+    assert not any(e[0] == "batch" for e in conn.log), "nothing may be upserted once rows would be skipped"
+
+
+def test_the_forward_write_reports_rows_written_and_zero_skipped(manifest) -> None:
+    conn = make_conn()
+    conn.routes.append(_skip_route(0))
+    report = go(conn, manifest)
+    assert report["rows_skipped_approved"] == 0
+    assert report["rows_written"] == report["projection_rows"]
+    insert = next(e for e in conn.log if e[0] == "execute" and "INSERT INTO forecast_runs" in e[1])
+    summary = json.loads(insert[2][5])
+    assert summary["rows_written"] == report["projection_rows"] and summary["rows_skipped_approved"] == 0
+
+
+def test_the_skip_count_is_scoped_to_the_week_and_checks_only_approved_other_runs(manifest) -> None:
+    conn = make_conn()
+    conn.routes.append(_skip_route(0))
+    go(conn, manifest)
+    q = next(e for e in conn.log if e[0] == "execute" and "-- sr:skipped" in e[1])
+    assert "season = %s AND p.week = %s" in q[1] or "p.season = %s AND p.week = %s" in q[1]
+    assert "IS DISTINCT FROM" in q[1] and "= ANY(" in q[1]

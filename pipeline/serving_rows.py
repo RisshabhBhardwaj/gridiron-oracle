@@ -155,6 +155,33 @@ def upsert_attributions(cur, attr: pd.DataFrame, approved_literal: str) -> int:
     return len(rows)
 
 
+def count_rows_served_by_another_approved_run(cur, df: pd.DataFrame) -> int:
+    """How many of ``df``'s rows ``upsert_projections`` would skip (review L1).
+
+    A row is skipped when the same (player, game, stat) is already served under another approved
+    run id. ``execute_batch`` reports no row counts, so the writer cannot count them; this does, in
+    the caller's transaction, for one forward week.
+    """
+    if df.empty:
+        return 0
+    approved_literal = approved_array_literal(approved_pipeline_run_ids())
+    season, week = int(df["season"].iloc[0]), int(df["week"].iloc[0])
+    cur.execute(
+        "-- sr:skipped\nSELECT count(*) FROM projections p JOIN unnest(%s::text[], %s::text[], %s::text[], %s::text[]) "
+        "AS k(player_id, game_id, stat, run_id) "
+        "ON p.player_id::text = k.player_id AND p.game_id::text = k.game_id AND p.stat::text = k.stat "
+        "WHERE p.season = %s AND p.week = %s "
+        f"AND COALESCE(p.pipeline_run_id = ANY({approved_literal}), false) "
+        "AND p.pipeline_run_id IS DISTINCT FROM k.run_id",
+        (
+            [str(v) for v in df["player_id"]], [str(v) for v in df["game_id"]],
+            [str(v) for v in df["stat"]], [str(v) for v in df["pipeline_run_id"]], season, week,
+        ),
+    )
+    row = cur.fetchone()
+    return int(row[0]) if row else 0
+
+
 def upsert_projections(conn, df: pd.DataFrame, attributions: pd.DataFrame | None = None) -> int:
     """Write this run's rows. A row already served under another approved run is never changed.
 

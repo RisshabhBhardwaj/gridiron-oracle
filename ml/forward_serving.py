@@ -56,6 +56,7 @@ from pipeline.availability_store import NoAvailabilitySnapshot, load_availabilit
 from pipeline.serving_rows import (
     attach_causal_conformal_intervals,
     attach_derived_fantasy_projection,
+    count_rows_served_by_another_approved_run,
     upsert_projections,
 )
 
@@ -609,6 +610,16 @@ def run_forward(
                 cur.execute("DELETE FROM projections WHERE season = %s AND week = %s", (season, week))
                 report["rows_replaced"] = int(cur.rowcount)
                 summary["rows_replaced"] = report["rows_replaced"]
+            # The upsert silently skips a row another approved run already serves. For a new forward
+            # week that must not happen: count first and refuse, so "N written" is never a guess.
+            skipped = count_rows_served_by_another_approved_run(cur, df)
+            if skipped:
+                raise ForwardGuardError(
+                    "L1", f"{skipped} of {len(df)} rows are already served by another approved run and would "
+                          "be skipped; nothing was written. Use --replace-week (with a dump) to rewrite a served week."
+                )
+            report["rows_skipped_approved"] = summary["rows_skipped_approved"] = 0
+            report["rows_written"] = summary["rows_written"] = int(len(df))
             cur.execute(
                 "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
                 "VALUES (%s, %s, %s, %s, %s, %s)",
