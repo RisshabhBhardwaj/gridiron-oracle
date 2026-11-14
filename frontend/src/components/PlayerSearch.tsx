@@ -2,7 +2,12 @@ import { useId, useRef, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { ChevronRight, Search, X } from 'lucide-react'
-import { useSearch } from '@/context/SearchContext'
+import { useSearch, type SearchablePlayer } from '@/context/SearchContext'
+import { useCurrentSeason } from '@/hooks/useCurrentSeason'
+import { useSeasonProjections } from '@/hooks/useSeasonProjections'
+import { POSITIONS } from '@/lib/constants'
+import { FOCUS_RING } from '@/lib/utils'
+import { NOT_READY_PRIMARY } from '@/components/shared/NotReady'
 import { weekFigureLabel } from '@/lib/forecast-provenance'
 import { PositionBadge } from '@/components/PositionBadge'
 import { positionTone, toneClass } from '@/lib/tokens'
@@ -17,7 +22,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
  * focus stays in the input, arrow keys move the highlighted option, Enter opens it.
  */
 export function PlayerSearch() {
-  const { isOpen, close, query, setQuery, results, defaultWeek, defaultSeason, defaultStat } = useSearch()
+  const { isOpen, close, query, setQuery, players, setPlayers, results, defaultWeek, defaultSeason, defaultStat } = useSearch()
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
@@ -27,11 +32,65 @@ export function PlayerSearch() {
     if (isOpen) setActiveIndex(0)
   }, [isOpen, query, results.length])
 
+  // Search normally lists the players the open page already loaded. When that list is
+  // empty (the page failed, or has not loaded them), load them here, so an outage is
+  // reported as an outage and never as "No players found".
+  const current = useCurrentSeason()
+  const currentFailed = current.isError
+  const currentResolved = !current.isPlaceholderData && !current.isError
+  const needFeed = isOpen && players.length === 0
+  const feed = useSeasonProjections({
+    season: current.data?.season ?? defaultSeason,
+    startWeek: 1,
+    positions: [...POSITIONS],
+    enabled: needFeed && currentResolved,
+  })
+  const feedRows = feed.data?.projections
+  useEffect(() => {
+    // Only when search is open with nothing to list: never replace the weekly figures a page loaded.
+    if (!needFeed || !feedRows || feedRows.length === 0) return
+    // Season rows carry no weekly figure, so each player opens as "no forecast" until a page loads Week figures.
+    const list: SearchablePlayer[] = feedRows.map((r) => ({
+      player_id: r.player_id,
+      player_name: r.player_name,
+      position: r.position,
+      team: r.team,
+      stat: defaultStat,
+      projection: null,
+    }))
+    setPlayers(list)
+  }, [needFeed, feedRows, defaultStat, setPlayers])
+
+  const feedState: 'ready' | 'loading' | 'unavailable' | 'empty' =
+    players.length > 0
+      ? 'ready'
+      : currentFailed || feed.isError
+        ? 'unavailable'
+        : !currentResolved || feed.isPending
+          ? 'loading'
+          : 'empty'
+
+  const withoutFigure = results.filter((p) => p.projection == null).length
+  const noForecastNote =
+    feedState !== 'ready' || withoutFigure === 0
+      ? null
+      : withoutFigure === results.length
+        ? `No Week ${defaultWeek} forecast yet`
+        : `Players without a figure have no Week ${defaultWeek} forecast yet`
+
   const helperText = useMemo(() => {
+    if (feedState === 'unavailable') return 'Search is unavailable. Try again.'
+    if (feedState === 'loading') return 'Loading players…'
+    if (feedState === 'empty') return 'Player projections are not published yet.'
     if (query.length === 0) return 'Start typing a first name, last name, team, or position.'
     if (results.length === 0) return `No players found for "${query}".`
     return `${results.length} match${results.length !== 1 ? 'es' : ''} for "${query}".`
-  }, [query, results.length])
+  }, [feedState, query, results.length])
+
+  function retryFeed() {
+    if (currentFailed) void current.refetch()
+    if (feed.isError) void feed.refetch()
+  }
 
   const activePlayer = results[activeIndex] ?? null
   const optionId = (index: number) => `${listId}-option-${index}`
@@ -93,7 +152,7 @@ export function PlayerSearch() {
           />
           <DialogClose
             aria-label="Close search"
-            className="flex items-center rounded-md p-1 text-fg-muted transition-colors hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className={clsx('flex items-center rounded-md p-1 text-fg-muted transition-colors hover:text-fg', FOCUS_RING)}
           >
             <kbd className="hidden rounded border border-white/10 bg-white/[0.08] px-2 py-0.5 font-mono text-[10px] sm:inline">ESC</kbd>
             <X className="size-5 sm:hidden" aria-hidden="true" />
@@ -104,8 +163,22 @@ export function PlayerSearch() {
         <div className="max-h-[min(20rem,60dvh)] overflow-y-auto">
           <div className="border-b border-white/[0.04] px-5 py-2 text-[11px] text-fg-muted" aria-live="polite">
             {helperText}
+            {noForecastNote && <span className="block">{noForecastNote}</span>}
           </div>
-          {results.length === 0 ? (
+          {feedState === 'unavailable' ? (
+            <div className="flex flex-col items-center gap-3 px-5 py-8 text-center">
+              <p className="text-sm text-fg-muted">Player search could not load. Your connection or our service may be down.</p>
+              <button type="button" onClick={retryFeed} className={NOT_READY_PRIMARY}>
+                Retry
+              </button>
+            </div>
+          ) : feedState === 'loading' ? (
+            <div className="px-5 py-8 text-center text-sm text-fg-muted">One moment…</div>
+          ) : feedState === 'empty' ? (
+            <div className="px-5 py-8 text-center text-sm text-fg-muted">
+              Check back soon. You can still open a player from the Current Season page.
+            </div>
+          ) : results.length === 0 ? (
             <div className="px-5 py-8 text-center text-sm text-fg-muted">
               {query.length > 0
                 ? 'Try a shorter prefix or search by team / position.'
@@ -142,16 +215,13 @@ export function PlayerSearch() {
                         <p className="text-[11px] text-fg-muted">{player.team ?? 'UNK'}</p>
                       </div>
 
-                      <div className="flex-shrink-0 text-right">
-                        {player.projection != null ? (
-                          <>
-                            <p className="glow-text font-display text-xl text-tone">{player.projection.toFixed(1)}</p>
-                            <p className="text-[10px] text-fg-muted">{weekFigureLabel(defaultWeek, player.stat)}</p>
-                          </>
-                        ) : (
-                          <p className="max-w-[9rem] text-[11px] leading-snug text-fg-muted">No Week {defaultWeek} forecast yet</p>
-                        )}
-                      </div>
+                      {/* Only a real figure goes here. "No forecast yet" is said once, under the search box. */}
+                      {player.projection != null && (
+                        <div className="flex-shrink-0 text-right">
+                          <p className="glow-text font-display text-xl text-tone">{player.projection.toFixed(1)}</p>
+                          <p className="text-[10px] text-fg-muted">{weekFigureLabel(defaultWeek, player.stat)}</p>
+                        </div>
+                      )}
 
                       <ChevronRight
                         className={clsx('size-4 flex-shrink-0 transition-opacity', isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}

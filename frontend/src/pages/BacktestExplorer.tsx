@@ -17,6 +17,9 @@ import { POSITIONS } from '@/lib/constants'
 import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf, verdictSentence } from '@/lib/evidence'
 import { positionTone, toneClass, token } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
+import { ChartFrameSkeleton, LoadingRegion, Skeleton, TableSkeleton } from '@/components/shared/Skeletons'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
 
 function seriesColor(position: string): string {
   const tone = positionTone(position)
@@ -83,13 +86,15 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
 ]
 
-function Skeleton() {
+/** Same blocks, in the same order, as the loaded page: verdict, controls, chart, table. */
+function BacktestSkeleton() {
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading results" role="status">
-      <div className="skeleton h-32 rounded-xl" />
-      <div className="skeleton h-16 rounded-xl" />
-      <div className="skeleton h-80 rounded-xl" />
-    </div>
+    <LoadingRegion label="Loading results" className="flex flex-col gap-6">
+      <Skeleton className="h-32 rounded-xl" />
+      <Skeleton className="h-[4.5rem] rounded-xl" />
+      <ChartFrameSkeleton height={280} />
+      <TableSkeleton rows={6} columns={5} />
+    </LoadingRegion>
   )
 }
 
@@ -97,7 +102,8 @@ export function BacktestExplorer() {
   const [stat, setStat] = useState('receiving_yards')
   const [chosen, setChosen] = useState<string[]>([...POSITIONS])
 
-  const { data, isLoading, isError, error, refetch } = useBacktest({ stat })
+  const { data, isPending, isError, error, refetch } = useBacktest({ stat })
+  usePageTitle(PAGE_NAMES.backtest)
 
   const stats = useMemo(() => (data ? statsIn(data.available) : [stat]), [data, stat])
   const statItems = useMemo(() => stats.map((s) => ({ value: s, label: statLabel(s) })), [stats])
@@ -136,13 +142,15 @@ export function BacktestExplorer() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1 border-b border-line/60 pb-5">
-        <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Backtest</h1>
+        <h1 className="font-display text-2xl font-bold tracking-wider text-fg">{PAGE_NAMES.backtest}</h1>
         <p className="text-sm text-fg-muted">
           How our projections did on past seasons, compared with simple methods. Each prediction uses only what was known before the game.
         </p>
       </header>
 
-      {isLoading && <Skeleton />}
+      {isPending && <BacktestSkeleton />}
+      {/* Nothing published for this stat yet (a 404, or the evidence not mounted): not an error. */}
+      {data === null && <EvidenceUnavailable onRetry={() => void refetch()} />}
       {isError && (isEvidenceUnavailable(error) ? <EvidenceUnavailable onRetry={() => void refetch()} /> : <ErrorBanner error={error} onRetry={() => void refetch()} />)}
 
       {data && (

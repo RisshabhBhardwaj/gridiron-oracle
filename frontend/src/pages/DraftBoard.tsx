@@ -26,6 +26,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { LegacyRow } from '@tanstack/react-table/legacy'
 import { DataTable, type TableColumn } from '@/components/ui/data-table'
 import type { DraftBoardPlayer, PickedItem } from '@/types/api'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
 
 type Mode = 'board' | 'mock'
 type SortKey = 'adp' | 'model_rank' | 'value_vs_adp' | 'model_fantasy_ppr'
@@ -394,6 +396,7 @@ export function DraftBoard() {
   }, [showDraftAction, isUserTurn])
 
   const isBoard = mode === 'board'
+  usePageTitle(isBoard ? PAGE_NAMES.draft : 'Mock Draft Simulator')
   const board = data ?? null
   const notReady = !isLoading && !error && data === null
   const windowOver =
@@ -474,7 +477,7 @@ export function DraftBoard() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold font-display tracking-wider text-fg">
-              {mode === 'board' ? 'Draft Board' : 'Mock Draft Simulator'}
+              {mode === 'board' ? PAGE_NAMES.draft : 'Mock Draft Simulator'}
             </h1>
             <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-accent/10 text-accent border border-accent/20">
               {season} Season
@@ -690,11 +693,7 @@ export function DraftBoard() {
         </p>
       )}
 
-      {error && (
-        <div role="alert">
-          <ErrorBanner error={error} onRetry={() => refetch()} />
-        </div>
-      )}
+      {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
 
       {isLoading && <DraftBoardSkeleton />}
 

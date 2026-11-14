@@ -7,7 +7,11 @@ import { useSeasonWeekProjections } from '@/hooks/useSeasonWeekProjections'
 import { useTeamWins } from '@/hooks/useTeamWins'
 import { useTeamGames } from '@/hooks/useTeamGames'
 import { useSearch } from '@/context/SearchContext'
-import { SkeletonCard } from '@/components/shared/LoadingSpinner'
+import { CardGridSkeleton, LoadingRegion, Skeleton } from '@/components/shared/Skeletons'
+import { NotReady, NOT_READY_PRIMARY, NOT_READY_SECONDARY } from '@/components/shared/NotReady'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
+import { AVAILABILITY_UNKNOWN_NOTE, isAvailabilityUnknown } from '@/lib/availability'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
@@ -80,8 +84,8 @@ function PlayerCard({ row, onClick, statKey, week }: PlayerCardProps) {
           <p className="text-[11px] text-fg-muted mt-0.5">{row.team ?? 'UNK'}</p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-1.5">
-          {/* Slot: the availability chip (Questionable / Doubtful, decision 0012 D3) goes
-              here once the API sends a status. Nothing is built until that field exists. */}
+          {/* Slot: the availability chip (Questionable / Doubtful, decision 0012 D3) is not
+              built. Only the "Unknown" note exists, once above the grid (see CurrentSeason). */}
           <PositionBadge position={row.position} />
         </div>
       </div>
@@ -122,8 +126,11 @@ export function CurrentSeason() {
   // which `season` is the offline fallback. Firing the child queries against it
   // produced a full duplicate request set for the wrong season on every mount,
   // including a /team-games 404 in the console.
-  const { data: seasonMeta, isPlaceholderData } = useCurrentSeason()
-  const seasonResolved = !isPlaceholderData
+  const { data: seasonMeta, isPlaceholderData, isError: currentFailed, error: currentError, refetch: refetchCurrent } = useCurrentSeason()
+  // Until /season/current answers, `season` and `week` are fallbacks. Nothing that depends
+  // on them (week picker, season badge, lists) shows a value, so no wrong "Week 1" flashes.
+  const seasonResolved = !isPlaceholderData && !currentFailed
+  usePageTitle(PAGE_NAMES.projections)
   const season = seasonMeta?.season ?? CURRENT_SEASON
   const currentWeek = seasonMeta?.week ?? 1
 
@@ -202,6 +209,23 @@ export function CurrentSeason() {
 
   const freshness = activeTab === 'weekly' ? weeklyQuery.data?.data_freshness : seasonQuery.data?.data_freshness
 
+  const listQuery = activeTab === 'weekly' ? weeklyQuery : seasonQuery
+  // isPending (not isLoading) is true for a query that is waiting to start, so the
+  // empty state can never show before the first answer.
+  const listPending = !seasonResolved || listQuery.isPending
+  const allPositions = selectedPositions.length >= POSITIONS.length
+  const anyAvailabilityUnknown =
+    activeTab === 'weekly' && visibleList.some((r) => isAvailabilityUnknown(r.availability_status))
+
+  if (currentFailed) {
+    return (
+      <div className="flex flex-col gap-6">
+        <h1 className="text-2xl font-bold font-display tracking-wider text-fg">{PAGE_NAMES.projections}</h1>
+        <ErrorBanner error={currentError} onRetry={() => void refetchCurrent()} />
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -209,11 +233,15 @@ export function CurrentSeason() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold font-display tracking-wider text-fg">
-              Current Season
+              {PAGE_NAMES.projections}
             </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-accent/10 text-accent border border-accent/20">
-              {season} Season
-            </span>
+            {seasonResolved ? (
+              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-accent/10 text-accent border border-accent/20">
+                {season} Season
+              </span>
+            ) : (
+              <Skeleton className="h-6 w-24 rounded-full" />
+            )}
           </div>
           <p className="text-xs text-fg-muted mt-1">
             Rest-of-season projections, team win totals, and matchup forecasts.
@@ -238,20 +266,24 @@ export function CurrentSeason() {
           {(activeTab === 'weekly' || activeTab === 'games') && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-fg-muted" id="week-label">Week:</span>
-              <Select
-                items={WEEK_ITEMS}
-                value={String(selectedWeek)}
-                onValueChange={(v) => { if (v) setPickedWeek(Number(v)) }}
-              >
-                <SelectTrigger aria-labelledby="week-label" className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {WEEK_ITEMS.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {seasonResolved ? (
+                <Select
+                  items={WEEK_ITEMS}
+                  value={String(selectedWeek)}
+                  onValueChange={(v) => { if (v) setPickedWeek(Number(v)) }}
+                >
+                  <SelectTrigger aria-labelledby="week-label" className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEEK_ITEMS.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Skeleton className="h-8 w-24 rounded-md" />
+              )}
             </div>
           )}
 
@@ -320,17 +352,31 @@ export function CurrentSeason() {
             <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">
               Projected Season Win Totals
             </h2>
-            {teamWinsQuery.isLoading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="h-16 rounded-lg bg-surface-overlay animate-pulse" />
-                ))}
-              </div>
+            {!seasonResolved || teamWinsQuery.isPending ? (
+              <LoadingRegion label="Loading win totals">
+                <CardGridSkeleton compact count={8} />
+              </LoadingRegion>
             ) : teamWinsQuery.error ? (
-              <ErrorBanner error={teamWinsQuery.error} />
+              <ErrorBanner error={teamWinsQuery.error} onRetry={() => void teamWinsQuery.refetch()} />
+            ) : !teamWinsQuery.data || teamWinsQuery.data.teams.length === 0 ? (
+              <NotReady
+                title="Season win totals aren't ready yet"
+                actions={
+                  <>
+                    <button type="button" onClick={() => void teamWinsQuery.refetch()} className={NOT_READY_PRIMARY}>
+                      Check again
+                    </button>
+                    <button type="button" onClick={() => setActiveTab('season')} className={NOT_READY_SECONDARY}>
+                      See season-long projections
+                    </button>
+                  </>
+                }
+              >
+                Team win totals appear here once they are published.
+              </NotReady>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2">
-                {teamWinsQuery.data?.teams.slice(0, 16).map((t) => (
+                {teamWinsQuery.data.teams.slice(0, 16).map((t) => (
                   <div
                     key={t.team}
                     className="p-2.5 rounded-lg bg-surface-raised/60 border border-line/50 flex flex-col items-center"
@@ -353,33 +399,23 @@ export function CurrentSeason() {
             <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">
               Week {selectedWeek} Matchup Projections
             </h2>
-            {teamGamesQuery.isLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="h-28 rounded-xl bg-surface-overlay animate-pulse" />
-                ))}
-              </div>
+            {!seasonResolved || teamGamesQuery.isPending ? (
+              <LoadingRegion label="Loading matchups">
+                <CardGridSkeleton wide count={4} />
+              </LoadingRegion>
             ) : teamGamesQuery.error ? (
               <ErrorBanner error={teamGamesQuery.error} onRetry={() => void teamGamesQuery.refetch()} />
             ) : teamGamesQuery.data === null ? (
-              <div
-                role="status"
-                className="tone-info flex flex-col items-start gap-3 rounded-xl border border-tone/[0.22] bg-tone/[0.05] p-5"
+              <NotReady
+                title={`Matchup forecasts for Week ${selectedWeek} aren't ready yet`}
+                actions={
+                  <button type="button" onClick={() => setActiveTab('season')} className={NOT_READY_PRIMARY}>
+                    See season-long projections
+                  </button>
+                }
               >
-                <p className="text-sm font-semibold text-tone">
-                  Matchup forecasts for Week {selectedWeek} aren&apos;t ready yet
-                </p>
-                <p className="text-xs leading-relaxed text-fg-muted">
-                  Season win totals are above. Season-long player projections are ready now.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('season')}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-tone/[0.35] bg-tone/15 px-3 py-1.5 text-xs font-semibold text-tone transition-all duration-150 hover:brightness-110 active:scale-[0.98]"
-                >
-                  See season-long projections
-                </button>
-              </div>
+                Season win totals are above. Season-long player projections are ready now.
+              </NotReady>
             ) : (teamGamesQuery.data || []).length === 0 ? (
               <div className="text-center p-8 text-fg-muted border border-dashed border-line rounded-xl">
                 No games scheduled or predicted for Week {selectedWeek}.
@@ -453,20 +489,52 @@ export function CurrentSeason() {
               </button>
             </NoForecastBanner>
           )}
+          {anyAvailabilityUnknown && (
+            <p className="text-xs text-fg-muted">{AVAILABILITY_UNKNOWN_NOTE}</p>
+          )}
           {simulationShown && (
             <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">
               {noticeLabel(weeklyRows ?? [])}
             </h2>
           )}
-          {(activeTab === 'weekly' ? weeklyQuery.isLoading : seasonQuery.isLoading) ? (
-            <SkeletonCard count={8} />
-          ) : (activeTab === 'weekly' ? weeklyQuery.error : seasonQuery.error) ? (
-            <ErrorBanner error={(activeTab === 'weekly' ? weeklyQuery.error : seasonQuery.error)!} />
+          {listPending ? (
+            <LoadingRegion label="Loading player projections">
+              <CardGridSkeleton count={8} />
+            </LoadingRegion>
+          ) : listQuery.error ? (
+            <ErrorBanner error={listQuery.error} onRetry={() => void listQuery.refetch()} />
           ) : visibleList.length === 0 ? (
             // On the Weekly tab with only simulated rows the banner above is the answer.
-            weeklyNeedsNotice ? null : (
-              <div className="text-center p-12 text-fg-muted border border-dashed border-line rounded-xl">
-                No player projections found matching the active filters.
+            weeklyNeedsNotice ? null : allPositions ? (
+              <NotReady
+                title={
+                  activeTab === 'weekly'
+                    ? `Week ${selectedWeek} projections aren't ready yet`
+                    : `${season} season-long projections aren't ready yet`
+                }
+                actions={
+                  <>
+                    <button type="button" onClick={() => void listQuery.refetch()} className={NOT_READY_PRIMARY}>
+                      Check again
+                    </button>
+                    {activeTab === 'weekly' && (
+                      <button type="button" onClick={() => setActiveTab('season')} className={NOT_READY_SECONDARY}>
+                        See season-long projections
+                      </button>
+                    )}
+                  </>
+                }
+              >
+                Projections show up here as soon as they are published.
+              </NotReady>
+            ) : (
+              <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line p-10 text-center">
+                <p className="text-sm text-fg-muted">
+                  No {selectedPositions.join(', ')} players to show for this view.
+                </p>
+                <button type="button" onClick={() => setSelectedPositions([...POSITIONS])} className={NOT_READY_SECONDARY}>
+                  Show all positions
+                </button>
               </div>
             )
           ) : (

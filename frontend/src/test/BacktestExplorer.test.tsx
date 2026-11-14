@@ -86,6 +86,27 @@ describe('BacktestExplorer', () => {
     expect(screen.getByRole('button', { name: 'QB' })).toBeEnabled()
   })
 
+  it('is "not ready" for a 404 and an error with Retry for a 500', async () => {
+    server.use(http.get('/api/backtest', () => HttpResponse.json({ detail: 'none' }, { status: 404 })))
+    const first = renderBacktest()
+    expect(await screen.findByText(/Past results aren.t available right now/)).toBeInTheDocument()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
+    first.unmount()
+
+    server.use(http.get('/api/backtest', () => HttpResponse.json({ detail: 'Traceback' }, { status: 500 })))
+    renderBacktest()
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.queryByText(/Past results aren.t available/)).not.toBeInTheDocument()
+  })
+
+  it('is called "Backtest" in its heading and its browser tab title', async () => {
+    renderBacktest()
+    expect(screen.getByRole('heading', { level: 1, name: 'Backtest' })).toBeInTheDocument()
+    await waitFor(() => expect(document.title).toBe('Backtest · Gridiron Oracle'))
+  })
+
   it('shows a designed unavailable state, with the next step, on a 503', async () => {
     server.use(
       http.get('/api/backtest', () =>

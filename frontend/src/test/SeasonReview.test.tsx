@@ -65,6 +65,20 @@ describe('SeasonReview', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Stat:' })).toHaveTextContent('Rushing Yards'))
   })
 
+  it('is "not ready" for a 404 and an error with Retry for a 500', async () => {
+    server.use(http.get('/api/backtest', () => HttpResponse.json({ detail: 'none' }, { status: 404 })))
+    const first = renderWithProviders(<SeasonReview />)
+    expect(await screen.findByText(/Past results aren.t available right now/)).toBeInTheDocument()
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument()
+    first.unmount()
+
+    server.use(http.get('/api/backtest', () => HttpResponse.json({ detail: 'Traceback' }, { status: 500 })))
+    renderWithProviders(<SeasonReview />)
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.queryByText(/Past results aren.t available/)).not.toBeInTheDocument()
+  })
+
   it('shows a designed unavailable state on a 503', async () => {
     server.use(
       http.get('/api/backtest', () =>
