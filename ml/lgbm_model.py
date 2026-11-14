@@ -346,14 +346,16 @@ def _walk_forward_cv(
 
 
 def _fold_attribution_collector(
-    features: list[str], sink: list[pd.DataFrame]
-) -> Callable[[lgb.LGBMRegressor, pd.DataFrame, pd.DataFrame], None]:
+    features: list[str], sink: list[pd.DataFrame], enabled: bool = True
+) -> Optional[Callable[[lgb.LGBMRegressor, pd.DataFrame, pd.DataFrame], None]]:
     """Build an ``on_fold`` callback that appends this fold's bucket attributions.
 
     Uses the same sentinel-filled frame the fold model predicted on, and checks
     the contributions add up to the OOF prediction before keeping them.
     """
     from ml.bucket_attribution import assert_additive, lgbm_bucket_contributions, with_keys
+    if not enabled:
+        return None
 
     def _collect(model: lgb.LGBMRegressor, val_df: pd.DataFrame, oof_rows: pd.DataFrame) -> None:
         X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL).infer_objects(copy=False)
@@ -469,7 +471,7 @@ def train(
     attr_parts: list[pd.DataFrame] = []
     fold_results, oof_df, final_model = _walk_forward_cv(
         df, folds, features, target_col, best_params,
-        on_fold=_fold_attribution_collector(features, attr_parts) if collect_attributions else None,
+        on_fold=_fold_attribution_collector(features, attr_parts, enabled=collect_attributions),
     )
 
     if not fold_results:
@@ -581,11 +583,9 @@ def train(
         pseudo_run_id = new_pseudo_run_id()
         oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm", position=position_filter or "all")
 
-    attr_path: Optional[Path] = None
-    if collect_attributions and oof_path is not None and attr_parts:
-        from ml.bucket_attribution import write_attribution_file
+    from ml.bucket_attribution import write_collected_attributions
 
-        attr_path = write_attribution_file(pd.concat(attr_parts, ignore_index=True), oof_path)
+    attr_path = write_collected_attributions(collect_attributions, attr_parts, oof_path)
 
     return LGBMTrainResult(
         fold_results=fold_results,

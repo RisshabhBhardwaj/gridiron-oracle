@@ -682,12 +682,7 @@ def stack(
         selected_mae = min_base_mae
         serving_oof_df = meta_oof_df.copy()
         serving_oof_df["y_pred"] = serving_oof_df[f"{best_base}_pred"]
-        # Identity selection: the served value is the base learner itself.
-        serving_oof_df["meta_intercept"] = 0.0
-        for col in pred_cols:
-            serving_oof_df[f"meta_w_{col.removesuffix('_pred')}"] = (
-                1.0 if col == f"{best_base}_pred" else 0.0
-            )
+        _set_identity_meta_weights(serving_oof_df, pred_cols, best_base)
 
     promotion_path = out_dir / f"promotion_{target}_{position_filter or 'all'}.json"
     promotion_path.write_text(json.dumps({
@@ -928,11 +923,10 @@ def stack(
         pseudo_run_id = new_pseudo_run_id()
         oof_path = _save_stack_oof(serving_oof_df, target, pseudo_run_id, out_dir, position_filter)
 
-    attr_path: Optional[Path] = None
-    if collect_attributions:
-        if oof_path is None:
-            raise AttributionError("attributions requested but no stack OOF was written")
-        attr_path = write_stack_attribution(serving_oof_df, [Path(p) for p in oof_paths], oof_path)
+    attr_path = (
+        _stack_attribution_if_requested(serving_oof_df, oof_paths, oof_path)
+        if collect_attributions else None
+    )
 
     return StackResult(
         meta_fold_results=meta_fold_results,
@@ -951,6 +945,22 @@ def stack(
         oof_path=oof_path,
         attr_path=attr_path,
     )
+
+
+def _set_identity_meta_weights(df: pd.DataFrame, pred_cols: list[str], best_base: str) -> None:
+    """Identity selection: the served value is the base learner itself (weight 1, others 0)."""
+    df["meta_intercept"] = 0.0
+    for col in pred_cols:
+        df[f"meta_w_{col.removesuffix('_pred')}"] = 1.0 if col == f"{best_base}_pred" else 0.0
+
+
+def _stack_attribution_if_requested(
+    serving_oof_df: pd.DataFrame, oof_paths, oof_path: Optional[Path]
+) -> Path:
+    """Attributions were requested: fail closed unless a stack OOF exists to sit beside."""
+    if oof_path is None:
+        raise AttributionError("attributions requested but no stack OOF was written")
+    return write_stack_attribution(serving_oof_df, [Path(p) for p in oof_paths], oof_path)
 
 
 def write_stack_attribution(

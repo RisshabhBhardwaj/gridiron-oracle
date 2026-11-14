@@ -179,6 +179,19 @@ def attribution_path_for(oof_path) -> Path:
     return oof_path.with_name(f"attr_{oof_path.stem}.parquet")
 
 
+def write_collected_attributions(
+    enabled: bool, parts: Sequence[pd.DataFrame], oof_path
+) -> Optional[Path]:
+    """Write the per-fold attributions a trainer collected, beside its OOF.
+
+    Returns None when attributions were not requested, no OOF file was
+    written, or no fold produced any (nothing to explain).
+    """
+    if not enabled or oof_path is None or not parts:
+        return None
+    return write_attribution_file(pd.concat(parts, ignore_index=True), oof_path)
+
+
 def write_attribution_file(frame: pd.DataFrame, oof_path) -> Path:
     """Write per-row attributions beside their OOF CSV and return the path.
 
