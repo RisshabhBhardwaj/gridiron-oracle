@@ -273,6 +273,12 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
       HEALTHCHECKS_TRAIN_SMALL_URL: ${HEALTHCHECKS_TRAIN_SMALL_URL:-}
       HEALTHCHECKS_TRAIN_FULL_URL: ${HEALTHCHECKS_TRAIN_FULL_URL:-}
+      # Persistent output root (scripts/train_window.sh). `run --rm` deletes
+      # the container, so rebuilds must live on this volume to survive and to
+      # resume after a window ends. Owned by appuser via backend/Dockerfile.
+      TRAIN_OUT_ROOT: /train_out
+    volumes:
+      - train_out:/train_out
     depends_on:
       db:
         condition: service_healthy
@@ -426,5 +432,6 @@ networks:
 
 volumes:
   pgdata:
+  train_out:
   mlflow_artifacts:
   prometheus_data:

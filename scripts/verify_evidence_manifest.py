@@ -15,6 +15,8 @@ ignored directories.
     python scripts/verify_evidence_manifest.py            # verify
     python scripts/verify_evidence_manifest.py --update   # re-hash entries
     python scripts/verify_evidence_manifest.py --strict   # provisional drift fails too
+    python scripts/verify_evidence_manifest.py --register 'reports/eval_causal_*.csv' \\
+        --produced-by scripts/run_causal_evals.py --description 'Per-cell causal eval'
 
 Exit codes: 0 clean · 1 drift in a `frozen` entry (or any entry under
 `--strict`) · 2 manifest itself is malformed.
@@ -313,6 +315,65 @@ def update() -> int:
     return 0
 
 
+def register(
+    manifest: dict,
+    patterns: list[str],
+    *,
+    produced_by: str,
+    description: str,
+    root: Path = REPO_ROOT,
+) -> list[str]:
+    """Add provisional entries for unlisted files matching ``patterns``.
+
+    Only files under a watched directory (``reports/``, ``ml/experiments/``) are
+    eligible: serving artifacts belong to the serving manifest, and anything
+    else is not evidence this registry tracks. Already-listed paths are left
+    alone. Returns the paths added.
+    """
+    if not produced_by or not description:
+        raise ValueError("produced_by and description are required")
+    listed = {entry["path"] for entry in manifest["artifacts"]}
+    added: list[str] = []
+    for pattern in patterns:
+        for path in sorted(root.glob(pattern)):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            if rel in listed:
+                continue
+            if not any(rel.startswith(d.rstrip("/") + "/") for d in WATCHED_DIRS):
+                raise ValueError(f"{rel} is not under a watched directory ({', '.join(WATCHED_DIRS)})")
+            manifest["artifacts"].append(
+                {
+                    "path": rel,
+                    "sha256": sha256(path),
+                    "bytes": path.stat().st_size,
+                    "status": "provisional",
+                    "produced_by": produced_by,
+                    "description": description,
+                }
+            )
+            listed.add(rel)
+            added.append(rel)
+    return added
+
+
+def register_cli(patterns: list[str], produced_by: str, description: str) -> int:
+    manifest = load_manifest()
+    try:
+        added = register(manifest, patterns, produced_by=produced_by, description=description)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    manifest["artifacts"].sort(key=lambda entry: entry["path"])
+    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n")
+    for rel in added:
+        print(f"registered {rel}")
+    print(f"{len(added)} entr{'y' if len(added) == 1 else 'ies'} added (status: provisional).")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--update", action="store_true", help="re-hash listed entries")
@@ -321,7 +382,14 @@ def main() -> int:
         action="store_true",
         help="treat provisional drift and unlisted evidence as failures",
     )
+    parser.add_argument("--register", nargs="+", metavar="GLOB", help="add unlisted evidence files as provisional entries")
+    parser.add_argument("--produced-by", help="with --register: the script that produced the files")
+    parser.add_argument("--description", help="with --register: what the files are")
     args = parser.parse_args()
+    if args.register:
+        if not args.produced_by or not args.description:
+            parser.error("--register needs --produced-by and --description")
+        return register_cli(args.register, args.produced_by, args.description)
     return update() if args.update else verify(strict=args.strict)
 
 

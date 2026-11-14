@@ -252,3 +252,120 @@ class TestPredictCarriesWeightingLabel:
         assert body["weighting"] == "user"
         assert body["weights_reason"] is None
         assert body["projection"]["receiving_yards"] == pytest.approx(18.8)
+
+
+class _FakeCursor:
+    def __init__(self, row):
+        self._row = row
+        self.executed = []
+
+    def execute(self, sql, params):
+        self.executed.append((sql, params))
+
+    def fetchone(self):
+        return self._row
+
+
+class _FakeConn:
+    def __init__(self, row):
+        self.cursor_obj = _FakeCursor(row)
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def close(self):
+        pass
+
+
+def _stored(monkeypatch, row):
+    """Point the real loader at a fake database returning ``row``."""
+    conns: list[_FakeConn] = []
+
+    def connect(_url):
+        conns.append(_FakeConn(row))
+        return conns[-1]
+
+    import psycopg2
+
+    monkeypatch.setattr(psycopg2, "connect", connect)
+    from backend.app.services import projection
+
+    monkeypatch.setattr(projection, "load_approved_pipeline_run_ids", lambda *a: frozenset({"run_a"}))
+    return conns
+
+
+def _db_row(projection=17.5, kalman_form=4.0):
+    # projection, base, unweighted, then BUCKET_KEYS in order
+    buckets = [kalman_form, 1.0, 2.0, 0.5, 0.25, 0.25, 0.0]
+    base = 10.0
+    unweighted = projection - base - sum(buckets)
+    return (projection, base, unweighted, *buckets)
+
+
+class TestStoredAttributionLoader:
+    def test_loader_returns_buckets_keyed_by_name(self, monkeypatch):
+        _stored(monkeypatch, _db_row())
+        got = weighting.load_bucket_attributions("p", 12, 2025, "receiving_yards")
+        assert list(got) == list(bw.BUCKET_KEYS)
+        assert got["kalman_form"] == 4.0
+
+    def test_query_requires_matching_run_id_and_approved_run(self, monkeypatch):
+        conns = _stored(monkeypatch, _db_row())
+        weighting.load_bucket_attributions("p", 12, 2025, "receiving_yards")
+        sql, params = conns[0].cursor_obj.executed[0]
+        assert "a.pipeline_run_id = p.pipeline_run_id" in sql
+        assert "p.pipeline_run_id = ANY" in sql
+        assert ["run_a"] in params
+
+    def test_no_row_means_no_attribution(self, monkeypatch):
+        _stored(monkeypatch, None)
+        assert weighting.load_bucket_attributions("p", 12, 2025, "receiving_yards") is None
+
+    def test_drifted_row_is_ignored_not_used(self, monkeypatch):
+        row = list(_db_row())
+        row[1] += 0.01  # base no longer adds up to the served projection
+        _stored(monkeypatch, tuple(row))
+        assert weighting.load_bucket_attributions("p", 12, 2025, "receiving_yards") is None
+
+    def test_database_failure_means_no_attribution(self, monkeypatch):
+        import psycopg2
+
+        def boom(_url):
+            raise psycopg2.OperationalError("down")
+
+        monkeypatch.setattr(psycopg2, "connect", boom)
+        assert weighting.load_bucket_attributions("p", 12, 2025, "receiving_yards") is None
+
+
+class TestStoredAttributionsChangeServedNumbers:
+    def test_defaults_are_identity_and_skip_the_lookup(self, monkeypatch):
+        conns = _stored(monkeypatch, _db_row())
+        out = apply_settings_to_row(**_row_kwargs())
+        assert out.projection == 17.5
+        assert out.weighting == "default"
+        assert conns == []
+
+    def test_non_default_weights_move_the_number_by_the_stored_share(self, monkeypatch):
+        _stored(monkeypatch, _db_row(projection=17.5, kalman_form=4.0))
+        settings = _default_settings(
+            weights={**bw.DEFAULT_BUCKET_WEIGHTS, "kalman_form": 50.0}
+        )
+        out = apply_settings_to_row(**_row_kwargs(settings=settings))
+        assert out.projection == pytest.approx(17.5 + (50.0 / 35.0 - 1) * 4.0)
+        assert out.weighting == "user"
+
+    def test_weights_raising_one_bucket_and_lowering_another_net_out(self, monkeypatch):
+        _stored(monkeypatch, _db_row())
+        weights = {**bw.DEFAULT_BUCKET_WEIGHTS, "kalman_form": 45.0, "seasonal_baseline": 10.0}
+        out = apply_settings_to_row(**_row_kwargs(settings=_default_settings(weights=weights)))
+        expected = 17.5 + (45 / 35 - 1) * 4.0 + (10 / 20 - 1) * 1.0
+        assert out.projection == pytest.approx(expected)
+
+    def test_non_default_weights_fall_back_when_no_row_is_stored(self, monkeypatch):
+        _stored(monkeypatch, None)
+        settings = _default_settings(
+            weights={**bw.DEFAULT_BUCKET_WEIGHTS, "kalman_form": 50.0}
+        )
+        out = apply_settings_to_row(**_row_kwargs(settings=settings))
+        assert out.projection == 17.5
+        assert out.weights_reason == "no_attribution"

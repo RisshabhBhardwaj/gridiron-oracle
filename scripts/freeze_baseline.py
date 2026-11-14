@@ -23,7 +23,52 @@ from ml.artifact_manifest import REQUIRED_SERVING_CELLS
 
 
 def _git(args: list[str]) -> str:
-    return subprocess.check_output(["git", *args], text=True).strip()
+    return subprocess.check_output(["git", *args], text=True, cwd=ROOT).strip()
+
+
+def _env_commit() -> str:
+    """The deployed commit named by the platform, same variables the runtime reads."""
+    return (
+        os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("GIT_COMMIT_SHA") or ""
+    ).strip()
+
+
+def _has_worktree() -> bool:
+    try:
+        _git(["rev-parse", "HEAD"])
+        return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
+def _head_commit() -> str:
+    """Commit being frozen: git HEAD, or the platform variable where the box has no .git.
+
+    The training container and the box's /srv/gridiron copy ship without .git.
+    The API's readiness check (RuntimeStatusService) has the same fallback and
+    requires the manifest commit to equal that variable exactly, so freeze must
+    record the same value. With neither source there is nothing honest to
+    record, so freezing stops.
+    """
+    if _has_worktree():
+        return _git(["rev-parse", "HEAD"])
+    commit = _env_commit()
+    if not commit:
+        raise RuntimeError(
+            "No git worktree and no GIT_COMMIT_SHA/RAILWAY_GIT_COMMIT_SHA: cannot "
+            "record which commit this release was frozen from."
+        )
+    return commit
+
+
+def _branch() -> str:
+    return _git(["rev-parse", "--abbrev-ref", "HEAD"]) if _has_worktree() else "unknown"
+
+
+def _is_dirty() -> bool:
+    # Without a worktree the tree is a file copy of a named commit; its
+    # cleanliness cannot be inspected here, and the manifest says so below.
+    return bool(_git(["status", "--porcelain"])) if _has_worktree() else False
 
 
 def _carry_forward_artifact_pins(payload: dict, current_path: Path) -> None:
@@ -106,7 +151,7 @@ def _materialize_run_id() -> str:
     run_id = str(report.get("pipeline_run_id") or "").strip()
     if (
         report.get("dry_run")
-        or report.get("git_commit") != _git(["rev-parse", "HEAD"])
+        or report.get("git_commit") != _head_commit()
         or cells != set(REQUIRED_SERVING_CELLS)
         or not run_id
     ):
@@ -150,11 +195,17 @@ def main() -> int:
             print(f"Refusing to freeze baseline: {exc}", file=sys.stderr)
             return 2
 
+    try:
+        head = _head_commit()
+    except RuntimeError as exc:
+        print(f"Refusing to freeze baseline: {exc}", file=sys.stderr)
+        return 2
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "git_commit": _git(["rev-parse", "HEAD"]),
-        "git_branch": _git(["rev-parse", "--abbrev-ref", "HEAD"]),
-        "git_dirty": bool(_git(["status", "--porcelain"])),
+        "git_commit": head,
+        "git_branch": _branch(),
+        "git_dirty": _is_dirty(),
+        "git_provenance": "worktree" if _has_worktree() else "env:GIT_COMMIT_SHA",
         "model_version": settings.model_version,
         "product_mode": settings.product_mode,
         "mlflow_tracking_uri": settings.mlflow_tracking_uri,

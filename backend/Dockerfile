@@ -67,6 +67,9 @@ RUN apt-get purge -y build-essential cmake git \
 # SETTINGS_FILE on a fresh volume.
 RUN useradd --system --uid 10001 --create-home appuser \
     && chown -R appuser:appuser /app
+# Mount point for the vps1 `training` service's persistent `train_out` volume.
+# Docker seeds an empty named volume with this directory's ownership.
+RUN mkdir -p /train_out && chown appuser:appuser /train_out
 USER appuser
 
 EXPOSE 8000

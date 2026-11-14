@@ -353,6 +353,33 @@ class ArtifactManifest:
             for stat, position in cells
         }
 
+    def resolve_attribution(self, stat: str, position: str, *, verify: bool = True) -> Path:
+        """
+        Absolute path to the pinned bucket-attribution file for a cell.
+
+        The file sits beside the pinned stack as ``attr_<stack stem>.parquet``
+        and must be listed under ``artifacts`` (so ``artifact_digests`` pins
+        it). Missing, unpinned and modified files all raise; there is no
+        fallback, because a number re-weighted from the wrong attributions
+        would be a plausible wrong answer.
+        """
+        from ml.bucket_attribution import attribution_path_for
+
+        relpath = attribution_path_for(self.stack_relpath(stat, position)).as_posix()
+        if relpath not in self.digests:
+            raise ManifestEntryMissing(
+                f"{self.path} pins no bucket attributions for {stat}/{position} "
+                f"(expected {relpath} under 'artifacts' and 'artifact_digests')."
+            )
+        absolute = self.root / relpath
+        if not absolute.exists():
+            raise FileNotFoundError(
+                f"Manifest pins {relpath} for {stat}/{position}, but the file is missing."
+            )
+        if verify:
+            self.require_digest(relpath, absolute)
+        return absolute
+
     def resolve_coefficient(self, stat: str, position: str, *, verify: bool = True) -> Path:
         """Resolve the executable, SHA-pinned Ridge coefficient artifact for a cell."""
         key = (stat, position.upper())

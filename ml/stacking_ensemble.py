@@ -104,6 +104,13 @@ from ml.artifact_manifest import (
 )
 from ml.utils import RUN_ID_FILE_CHARS, TARGET_COL_MAP, _compute_metrics, new_pseudo_run_id
 from ml.reliability import promotion_gate
+from ml.bucket_attribution import (
+    AttributionError,
+    assert_additive,
+    attribution_path_for,
+    blend as blend_attributions,
+    write_attribution_file,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -163,6 +170,7 @@ class StackResult:
     selected_mae: float               # held-out MAE of the executable selection
     run_id: Optional[str]             # MLflow run ID; None if MLflow disabled
     oof_path: Optional[Path]          # Path to saved stacked OOF CSV
+    attr_path: Optional[Path] = None  # Per-row bucket attributions of the served value (opt-in)
 
 
 # ── OOF loading and alignment ─────────────────────────────────────────────────
@@ -417,6 +425,12 @@ def _meta_walk_forward_cv(
         meta_oof["max_train_season"] = int(train_df["season"].max())
         for col in pred_cols:
             meta_oof[col] = val_df[col].values
+        # The fold's Ridge, stored per row, so a served value can be explained:
+        # y_pred = meta_intercept + sum_l meta_w_<l> * <l>_pred (see
+        # ml/bucket_attribution.py). Not written to the stack CSV.
+        meta_oof["meta_intercept"] = float(ridge.intercept_)
+        for col, coef in zip(pred_cols, ridge.coef_):
+            meta_oof[f"meta_w_{col.removesuffix('_pred')}"] = float(coef)
         meta_oof = meta_oof.reset_index(drop=True)
 
         meta_fold_results.append(MetaFoldResult(
@@ -552,6 +566,7 @@ def stack(
     mlflow_experiment: Optional[str] = None,
     out_dir: Optional[Path] = None,
     use_elasticnet: bool = False,
+    collect_attributions: bool = False,
 ) -> StackResult:
     """
     Train Ridge meta-learner on aligned base-learner OOF predictions.
@@ -667,6 +682,12 @@ def stack(
         selected_mae = min_base_mae
         serving_oof_df = meta_oof_df.copy()
         serving_oof_df["y_pred"] = serving_oof_df[f"{best_base}_pred"]
+        # Identity selection: the served value is the base learner itself.
+        serving_oof_df["meta_intercept"] = 0.0
+        for col in pred_cols:
+            serving_oof_df[f"meta_w_{col.removesuffix('_pred')}"] = (
+                1.0 if col == f"{best_base}_pred" else 0.0
+            )
 
     promotion_path = out_dir / f"promotion_{target}_{position_filter or 'all'}.json"
     promotion_path.write_text(json.dumps({
@@ -907,6 +928,12 @@ def stack(
         pseudo_run_id = new_pseudo_run_id()
         oof_path = _save_stack_oof(serving_oof_df, target, pseudo_run_id, out_dir, position_filter)
 
+    attr_path: Optional[Path] = None
+    if collect_attributions:
+        if oof_path is None:
+            raise AttributionError("attributions requested but no stack OOF was written")
+        attr_path = write_stack_attribution(serving_oof_df, [Path(p) for p in oof_paths], oof_path)
+
     return StackResult(
         meta_fold_results=meta_fold_results,
         oof_df=serving_oof_df,
@@ -922,7 +949,32 @@ def stack(
         selected_mae=selected_mae,
         run_id=run_id,
         oof_path=oof_path,
+        attr_path=attr_path,
     )
+
+
+def write_stack_attribution(
+    serving_oof_df: pd.DataFrame,
+    base_oof_paths: list[Path],
+    stack_oof_path: Path,
+) -> Path:
+    """Blend the base learners' stored attributions into the stack's, and save them.
+
+    Fails closed: every base OOF needs its attribution file, every stack row
+    needs a row in each, and the blend must add up to the served value.
+    """
+    learner_attr: dict[str, pd.DataFrame] = {}
+    for path in base_oof_paths:
+        attr_file = attribution_path_for(path)
+        if not attr_file.exists():
+            raise AttributionError(
+                f"{attr_file.name} not found beside {Path(path).name}; "
+                "train the base learners with --attributions"
+            )
+        learner_attr[Path(path).stem.split("_")[0]] = pd.read_parquet(attr_file)
+    blended = blend_attributions(learner_attr, serving_oof_df)
+    assert_additive(blended, context=f"stack {stack_oof_path.name}")
+    return write_attribution_file(blended, stack_oof_path)
 
 
 # ── CLI helpers ───────────────────────────────────────────────────────────────
@@ -1120,6 +1172,11 @@ def main() -> None:
              "it can no longer resurrect a killed learner. Use it to narrow "
              "within the allowlist, not to define policy.",
     )
+    parser.add_argument(
+        "--attributions", action="store_true",
+        help="Also write the stack's per-row bucket attributions (needs the base "
+             "learners' attr_*.parquet beside their OOFs).",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -1176,6 +1233,7 @@ def main() -> None:
         position_filter=position_filter,
         mlflow_tracking_uri=mlflow_tracking_uri,
         out_dir=Path(args.out_dir),
+        collect_attributions=args.attributions,
     )
 
     print(f"\n{'═' * 70}")
