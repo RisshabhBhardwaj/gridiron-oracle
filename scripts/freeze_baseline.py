@@ -71,6 +71,23 @@ def _is_dirty() -> bool:
     return bool(_git(["status", "--porcelain"])) if _has_worktree() else False
 
 
+def _redact_url(url: str | None) -> str | None:
+    """Drop the password from a connection URL before it is written to a tracked file.
+
+    The baseline is committed to a public repository. It records which database
+    the freeze ran against (scheme, user, host, database), never the credential.
+    """
+    if not url:
+        return url
+    try:
+        from sqlalchemy.engine import make_url
+
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        # Not a parseable URL: record nothing rather than risk a secret.
+        return "<unparseable; redacted>"
+
+
 def _carry_forward_artifact_pins(payload: dict, current_path: Path) -> None:
     """
     Preserve the ``artifacts`` list and recompute ``artifact_digests``.
@@ -216,7 +233,7 @@ def main() -> int:
             "readiness_verify_command": "python scripts/verify_release_readiness.py",
         },
         "environment": {
-            "DATABASE_URL": os.environ.get("DATABASE_URL", settings.database_url),
+            "DATABASE_URL": _redact_url(os.environ.get("DATABASE_URL", settings.database_url)),
             "BASELINE_MANIFEST_PATH": settings.baseline_manifest_path,
             "ARTIFACT_INVALIDATION_PATH": settings.artifact_invalidation_path,
         },

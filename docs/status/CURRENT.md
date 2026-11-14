@@ -8,13 +8,15 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 
 - Live at `https://gridiron.risshabh.com` and `https://gridiron-oracle.pages.dev` (Pages project `gridiron-oracle`, owner's personal Cloudflare account). Runbook: `docs/runbooks/frontend-cloudflare-pages.md`. Decision: [0009](../decisions/0009-frontend-on-cloudflare-pages.md).
 - **LIVE on the VPS-4 (2026-11-12):** production is the `main` build (`49c2706` + `BACKEND_URL` commit `2d9d372`; Pages deploy `d77a1738`): Pages Function proxy → `https://gridiron-api.risshabh.com` (Cloudflare Tunnel to the shared OVH VPS-4 in BHS) → api on the box. Seed = restored `gor_prod_20261010` (2232 games, alembic 0026). Verified live by the manager: site 200, `/api/season/current` 200, season projections 200 (706 rows), `/api/odds` 200 configured with 25 events (events-endpoint + market-key translation fix), settings PUT 403, `/api/docs` 404, only 22/tcp open on the box. Host layout: `infra/hosts/vps1/` + `docs/runbooks/vps4-shared-host.md`; `/srv/HOST.md` on the box; ATS notified (its `/srv/ats` envelope reserved, not deployed by Gridiron).
-- **Rerun done 2026-11-14 (decision [0011](../decisions/0011-causal-rerun-2026-11-14.md)):** release `causal_20261114` is served (frozen from C2 `226e0ec`, evidence C3 `c3dfc11`). `/health` reports `artifact_mode_ready: true`. Status reads `degraded` only because MLflow is not deployed on the box; that check is reported but not required. 158/160 cell-seasons beat both naive and trailing-3; 157/160 beat Marcel. Bucket weights now move served numbers, and `served_learner` is disclosed per cell. `feature_matrix` freshness lapses 24 h after the last ETL (2026-11-15 13:40 UTC), and then readiness drops to warn until the next run. Still open: healthchecks URLs (owner), `AGE_RECIPIENT` (owner), the forward-week producer (see Open questions), `agent/cloudflare-live` retirement. Vercel project `gridiron-oracle` was retired 2026-11-12.
+- **Rerun done 2026-11-14 (decision [0011](../decisions/0011-causal-rerun-2026-11-14.md)):** release `causal_20261114` is served (frozen from C2 `226e0ec`, evidence C3 `c3dfc11`). `/health` reports `artifact_mode_ready: true`. Status reads `degraded` only because MLflow is not deployed on the box; that check is reported but not required. 158/160 cell-seasons beat both naive and trailing-3; 157/160 beat Marcel. Bucket weights now move served numbers, and `served_learner` is disclosed per cell. `feature_matrix` freshness lapses 24 h after the last ETL (2026-11-15 13:40 UTC), and readiness then stays at warn until the ETL runs again (coordinator accepted this). Still open: healthchecks URLs (owner), the forward-week producer (see Open questions), `agent/cloudflare-live` retirement. Vercel project `gridiron-oracle` was retired 2026-11-12.
 - The old live-parity branch `agent/cloudflare-live` (`cfb46f9`, local only) is superseded by the `main` deploy above; retire it once `main` has soaked.
 
 ## Box B host (verified 2026-11-14 by the Claude manager)
 
 - Manager changed 2026-11-13: Muse cancelled; the Claude Gridiron manager now owns Gridiron and the Box B host layer (`/srv/HOST.md`) for Gridiron, ATS and statuta. Host key matches the internal brief.
-- Timers (2026-11-14 after the rerun): backup daily 23:00 UTC passes (uploads **unencrypted** because `AGE_RECIPIENT` is unset). `train-small` (daily 01:00) and `train-full` (Fri 22:00) are re-enabled with pinned recipes (`bash scripts/train_window.sh small|full`); neither promotes. `gridiron-etl.timer` is back on (Tue 13:00 UTC; measured 1.16 of 1.5 GiB peak, decision 0011).
+- Timers (2026-11-14): backup daily 23:00 UTC, **age-encrypted since 2026-11-14 16:01 UTC** (private key only in the owner's macOS Keychain, service `gridiron-backup-age`; `infra/hosts/vps1/README.md`; test-decrypt passed, 41 tables). `train-small` (daily 01:00) and `train-full` (Fri 22:00) are re-enabled with pinned recipes (`bash scripts/train_window.sh small|full`); neither promotes. `gridiron-etl.timer` is **off** (coordinator, 2026-11-14 15:40 UTC) until the forward producer lands; it fit memory (1.16 of 1.5 GiB peak, decision 0011), but every run would stop at step 7.
+- DB password **rotated 2026-11-14 15:48 UTC** (dump first; `.env` `POSTGRES_PASSWORD` and `DATABASE_URL`; api and training recreated). The old one had been printed in a session and was also committed in `releases/current_baseline.json` (`c3dfc11`, public); it no longer works. Api was unhealthy for about 3.5 min during the swap (the URL held the old password percent-encoded). `freeze_baseline.py` now redacts the password, and gitleaks has a URL-password rule.
+- `main` is protected by two rulesets (2026-11-14): no force-push or deletion for anyone; the six CI checks are required, with a repository-admin bypass so direct pushes still work.
 - ATS backup timer (21:30 UTC, owner-approved) **installed 2026-11-14** (ATS main 68a2137, runs as `deploy`, containerised pg_dump → age → rclone); first run uploaded and size-verified. `/srv/HOST.md` has the timer/owner table.
 - Rerun 2026-11-14: production DB backfilled to 2019-2026 (feature_matrix 91,299 rows, Elo with 0 nulls), alembic 20261114_0027; 32-cell OOF rebuild took 51 min; serving gap 6 min 47 s. `weekly_refresh.py` passes steps 1-6 and stops at step 7 (no forward-week `projections` rows; decision 0011). Box dumps and rollback: `~/rerun_backup/`, `docs/runbooks/vps4-causal-rerun.md`.
 
@@ -62,12 +64,11 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 ## Next steps (priority order)
 
-1. Forward-week weekly projections (approved 2026-11-14): fit and pin final base models per cell, load the pinned files instead of the latest MLflow run, move the guards ahead of the `projections` write, wire the step into `weekly_refresh.py`, then re-freeze. Architect review first (decision 0011). Until then, every in-season refresh stops at step 7.
+1. Forward-week weekly projections (approved 2026-11-14): architect review done, decision 0012 (proposed) on branch `agent/fwd-architect`. Next: owner answers to its open questions, then one worker builds commits 1-7; the manager runs the box fit, the pinning and the re-freeze. The ETL timer stays off until then.
 2. Freshness vs cadence: readiness needs `feature_matrix` under 24 h, but the ETL is weekly, so readiness lapses about a day after each run. Decide between a daily ETL and a coverage-based freshness check (decision 0011).
-3. UI review and polish pass (decision 0010 item 3) now that data is fresh.
+3. UI phase 2 (decision 0010 item 3): Claude lead running on `agent/ui-phase2`, starting with Season Review and Backtest reading the served release's causal evals (they read a stale 2026-08-22 CSV today). Phase 1 critique: `.agent-work/gridiron/ui-review-2026-11-14/` (local).
 4. Owner-only migration steps (VPS order, DNS, secrets, data move, old-host teardown): checklist in `docs/MIGRATION.md`.
-5. Owner: turn on branch protection with the required checks (CI is green on `main`).
-6. Follow-ups: normalize `summary.errors` failure decision; odds quota guard needs a shared cache before multi-replica serving.
+5. Follow-ups: normalize `summary.errors` failure decision; odds quota guard needs a shared cache before multi-replica serving.
 
 ## To-dos and reminders
 
@@ -83,9 +84,10 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 - Baseline re-freeze: **done 2026-11-14** (decisions 0010, 0011).
 - Forward-week producer: approved by the coordinator 2026-11-14. Scope is larger than first thought (fitted base models must be pinned; see Next steps).
-- Owner: rotate the production DB password? It was printed into a session's tool output (not a file) by the Alembic `%` crash on 2026-11-14.
 - Owner: create a healthchecks.io account and the four checks, then paste the ping URLs into the box `.env` (`HEALTHCHECKS_*_URL`).
-- Owner: set `AGE_RECIPIENT` (an age public key) so Gridiron backups are encrypted.
+- Owner: the backup age key exists only in the Mac's login Keychain. Back it up (password manager or iCloud Keychain), or every encrypted backup is lost with the Mac.
+- Owner: the public mock draft shows real Sleeper handles (the owner's and league-mates'). Keep them public, or switch to generic team names?
+- Owner: git history keeps a dead box password (`c3dfc11`) and a `localhost` dev password (August baselines). Both no longer matter, so no history rewrite is planned unless the owner wants one.
 - K and DEF are in the league's starting lineup but not modelled (out of scope by design). Confirm the owner wants that to stay.
 - Is `verify_db.py` wanted? It was archived on 2026-10-07 as unreferenced.
 

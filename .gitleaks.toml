@@ -1,0 +1,15 @@
+# Extends the default gitleaks rules. Default rules miss a password embedded in
+# a connection URL (found 2026-11-14 in releases/current_baseline.json).
+[extend]
+useDefault = true
+
+[[rules]]
+id = "connection-url-password"
+description = "Password inside a database or broker connection URL"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|amqps?)(?:\+[a-z0-9]+)?://[^:@/\s"']+:([^@/\s"']{3,})@'''
+secretGroup = 1
+keywords = ["://"]
+
+[rules.allowlist]
+# Redacted or placeholder passwords, and variable references.
+regexes = ['''^(?:\*+|x+|password|pass|changeme|postgres|secret|test|oracle|\$\{[^}]+\}|\$[A-Z_]+|<[^>]+>|%[^%]+%)$''']

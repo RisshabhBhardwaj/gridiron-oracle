@@ -36,3 +36,21 @@ def test_a_worktree_wins_over_the_variable(monkeypatch):
     monkeypatch.setattr(mod, "_git", lambda args: "deadbeef")
     monkeypatch.setenv("GIT_COMMIT_SHA", "abc123")
     assert mod._head_commit() == "deadbeef"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://oracle:s3cr%40t-pw@db:5432/oracle",
+        "postgresql://oracle:plainpw@localhost/oracle",
+    ],
+)
+def test_database_url_password_is_never_recorded(url):
+    out = mod._redact_url(url)
+    assert "s3cr" not in out and "plainpw" not in out
+    assert "***" in out and "@" in out and "oracle" in out
+
+
+def test_unparseable_url_is_redacted_entirely():
+    assert mod._redact_url("not a url :pw@") == "<unparseable; redacted>"
+    assert mod._redact_url(None) is None

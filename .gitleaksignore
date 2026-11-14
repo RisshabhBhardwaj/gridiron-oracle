@@ -1,2 +1,13 @@
 # Test placeholder for the odds route tests (backend/tests/test_odds_route.py), not a credential.
 9a97d4d3925cb6510b907459dd0ec1b965610831:backend/tests/test_odds_route.py:generic-api-key:29
+
+# connection-url-password rule (added 2026-11-14). Test placeholders, a compose variable
+# reference, and the Box B database password in releases/current_baseline.json from c3dfc11.
+# That password was rotated on 2026-11-14 15:48 UTC and no longer works; freeze_baseline.py
+# now redacts it. Never add a live credential here.
+c3dfc11faf2c9445d310c8302ee40c3769a1ef88:releases/current_baseline.json:connection-url-password:217
+22cc65699cfcc5330edfc38972442fa05cb960cc:backend/tests/test_pipeline_cov_ingest_schema.py:connection-url-password:171
+a97cef3fa275441f907187d8b88fadb51c9a0e1f:infra/hosts/vps1/compose.yml:connection-url-password:270
+8dbe294e2e01dbd1bf65a5abf55cd58a5269965b:backend/tests/test_weekly_refresh_integration.py:connection-url-password:602
+8dbe294e2e01dbd1bf65a5abf55cd58a5269965b:backend/tests/test_weekly_refresh_integration.py:connection-url-password:621
+40b675a2e6106fef4a4bd4f96fb585031ef84522:backend/tests/test_snapshot_tools.py:connection-url-password:32

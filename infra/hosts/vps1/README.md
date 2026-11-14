@@ -214,10 +214,21 @@ tunnel-only by design).
   lifecycle rules (14 daily / 8 weekly / 12 monthly — owner-side, still
   [VERIFY] per PLATFORM_SETUP §7.4; never expire the newest verified
   restore).
+- **Encryption key (since 2026-11-14).** Backups are age-encrypted to the
+  recipient in the box `.env` (`AGE_RECIPIENT`, a public key). The matching
+  private key lives **only** in the owner's macOS Keychain as a generic
+  password, service `gridiron-backup-age`, account `gridiron`. It is never on
+  the box, never in git, never printed. Decrypt on the Mac:
+  `security find-generic-password -s gridiron-backup-age -w | age -d -i - FILE.dump.gz.age | gunzip > FILE.dump`,
+  then `pg_restore -l FILE.dump` to check it. Losing that Keychain item makes
+  every encrypted backup unreadable: keep it in the owner's Keychain backup
+  (iCloud Keychain or an exported copy in the password manager). Backups
+  before 2026-11-14 16:01 UTC are gzip only.
 - **The stack restores from R2 alone.** No OVH backup option is used or
   needed — deliberate, since order-time options on this region are final.
   A restore needs only: a fresh Ubuntu 24.04 box (any region), this repo,
-  the `.env` values, and read access to the R2 bucket.
+  the `.env` values, read access to the R2 bucket, and the age key from the
+  owner's Keychain (decrypt on the Mac, then copy the plain dump over).
 - **Restore drill (monthly):** restore into a scratch container, run the SQL
   smoke file (row counts per table, alembic head), compare with the counts
   recorded at backup time, destroy the scratch container. A drill that has
