@@ -93,7 +93,7 @@ The builder is causal by construction, but parity with the training columns is *
 
 ### 7. Refresh wiring, run id, idempotency, rollback (Q6)
 
-Place a new step **4b `forward_producer`** right after step 4 (`scripts/weekly_refresh.py:273-296`): it needs steps 1-3's data, runs before steps 5-7, and writes under the run's own pending id (`weekly_auto_<season>_pending_<uuid>`, 2026-11-14 addendum: a shared name let the next promotion serve a failed run's unchecked rows). Same failure handling as the other steps (log, dead letter, return 1).
+Place a new step **4b `forward_producer`** right after step 4 (`scripts/weekly_refresh.py:273-296`): it needs steps 1-3's data, runs before steps 5-7, and writes under the run's own pending id (`weekly_auto_<season>_pending_<uuid>`, 2026-11-14 addendum: a shared name let the next promotion serve a failed run's unchecked rows). Same failure handling as the other steps (log, dead letter, return 1). One refresh per season at a time (round 4): a session-level advisory lock on its own connection, held for the whole run, because the start-of-run cleanup deletes every pending row of the season; step 8 also refuses unless the week's pending row count equals the `projection_rows` the producer recorded.
 
 Guards, all before any write to `projections`:
 

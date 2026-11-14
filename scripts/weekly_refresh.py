@@ -20,7 +20,7 @@ import logging
 import os
 import sys
 import time
-from contextlib import closing
+from contextlib import ExitStack, closing
 from pathlib import Path
 
 import psycopg2
@@ -34,7 +34,8 @@ from ml import season_constants
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.availability_refresh import default_run_ids, reapply_latest_availability
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
-from pipeline.pending_runs import clear_leftovers, new_pending_run_id, require_run_producer
+from pipeline.pending_runs import clear_leftovers, new_pending_run_id, require_run_intact
+from pipeline.refresh_lock import season_refresh_lock
 from pipeline.schema import normalize_dsn
 from pipeline.week_archive import discard_week, restore_week
 from pipeline.staging_retention import purge_processed_staging, purge_stale_staging
@@ -311,6 +312,25 @@ def run_weekly_refresh(
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
 
+    # One refresh per season at a time (review N8): the cleanup below deletes every pending row of the season,
+    # so a second refresh must not start while this one is between its checks and its promotion. The lock
+    # lives on its own connection until this function returns; a dead process frees it.
+    step_name = "refresh_lock"
+    with ExitStack() as held:
+        try:
+            held.enter_context(season_refresh_lock(dsn, season))
+        except (Exception, SystemExit) as exc:
+            logger.error("[%s] FAILED: %s", step_name, exc)
+            _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+            return 1
+        return _refresh_steps(dsn, season, start_week, replace_week, pending_run_id, approved_run_id, t_start)
+
+
+def _refresh_steps(
+    dsn: str, season: int, start_week: int, replace_week: bool, pending_run_id: str, approved_run_id: str,
+    t_start: float,
+) -> int:
+    """Steps 2-10 of the weekly refresh, run while the season's refresh lock is held."""
     # Clear what earlier runs left (review N1): restore an archived week or stop, then delete leftover
     # pending rows so a failed or killed run's unchecked rows can never be served.
     step_name = "clear_leftovers"
@@ -501,8 +521,8 @@ def run_weekly_refresh(
         logger.info("Step 8: Performing atomic promotion...")
         with psycopg2.connect(dsn) as conn:
             with conn.cursor() as cur:
-                # Only a run whose own producer wrote its forecast_runs row is promoted.
-                require_run_producer(cur, season, start_week, pending_run_id)
+                # Only a run whose producer wrote its forecast_runs row, and whose rows are all still there.
+                require_run_intact(cur, season, start_week, pending_run_id)
                 promote_run_id(
                     cur,
                     season=season,

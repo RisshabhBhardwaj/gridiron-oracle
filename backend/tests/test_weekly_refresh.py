@@ -19,7 +19,8 @@ from scripts.weekly_refresh import (
 _PATCHED_STEPS = {
     "dead_letter": "scripts.weekly_refresh._write_dead_letter",
     "clear_leftovers": "scripts.weekly_refresh.clear_leftovers",
-    "run_producer": "scripts.weekly_refresh.require_run_producer",
+    "refresh_lock": "scripts.weekly_refresh.season_refresh_lock",
+    "run_intact": "scripts.weekly_refresh.require_run_intact",
     "upsert_playerids": "scripts.weekly_refresh.upsert_playerids",
     "stack": "scripts.materialize_stack_projections.main",
     "availability": "pipeline.availability_store.capture_snapshot",
@@ -534,8 +535,8 @@ def test_every_step_and_the_promotion_use_the_runs_own_pending_id():
     assert m["team_game"].call_args.kwargs["pipeline_run_id"] == pid
     promoted = [c.args[1] for c in m["cursor"].execute.call_args_list if "UPDATE" in c.args[0]]
     assert promoted and all(params[-1] == pid and params[0] == "weekly_auto_2026" for params in promoted)
-    m["run_producer"].assert_called_once()
-    assert m["run_producer"].call_args.args[1:] == (2026, 3, pid)
+    m["run_intact"].assert_called_once()
+    assert m["run_intact"].call_args.args[1:] == (2026, 3, pid)
 
 
 def test_two_refreshes_get_different_pending_ids():
@@ -579,7 +580,7 @@ def test_a_run_whose_producer_left_no_row_is_not_promoted_and_the_week_is_restor
 
     summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
     with _weekly_refresh_with_orchestrator(summary) as m:
-        m["run_producer"].side_effect = RunNotProducedError("no forward_projections row")
+        m["run_intact"].side_effect = RunNotProducedError("no forward_projections row")
         m["cursor"].fetchone.side_effect = [(2,), (False,)]
         rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
     assert rc == 1
@@ -619,3 +620,31 @@ def test_a_failed_reapply_fails_the_producer_step_and_restores_the_week():
     assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
     m["simulation"].assert_not_called()
     m["restore"].assert_called_once()
+
+
+# ── one refresh per season at a time, and step 8 checks the rows are still there (review N8) ──
+def test_the_season_refresh_lock_is_taken_after_the_approval_check_and_before_the_cleanup():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["refresh_lock"].return_value.__enter__.side_effect = lambda *a: order.append("lock")
+        m["clear_leftovers"].side_effect = lambda *a, **k: order.append("clear_leftovers")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    assert order[:3] == ["lock", "clear_leftovers", "stack"] or order[:2] == ["lock", "clear_leftovers"]
+    assert m["refresh_lock"].call_args.args[1] == 2026
+
+
+def test_a_refresh_that_cannot_take_the_season_lock_stops_before_any_write():
+    from pipeline.refresh_lock import RefreshAlreadyRunning
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["refresh_lock"].return_value.__enter__.side_effect = RefreshAlreadyRunning("a refresh of season 2026 is running")
+        m["cursor"].fetchone.side_effect = [(2,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    m["clear_leftovers"].assert_not_called()
+    m["orchestrator_run"].assert_not_called()
+    m["restore"].assert_not_called()  # it changed nothing, so it has nothing to put back
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/refresh_lock"

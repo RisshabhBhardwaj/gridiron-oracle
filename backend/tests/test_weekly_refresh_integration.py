@@ -196,16 +196,26 @@ def _ingest_mocked(summary: OrchestratorSummary):
     """Replace the network calls and the forward producer. Step 3's upsert still runs against the database.
 
     The producer needs the pinned models and a network snapshot. The stand-in writes what promotion checks:
-    the ``forecast_runs`` row that names this run's pending id (``require_run_producer``).
+    the ``forecast_runs`` row that names this run's pending id (``require_run_intact``).
     """
 
     def produce(dsn, season, week, *, replace_week=False, pending_id=None):
+        # One forward row under the run's own id, and the row count the promotion guard compares it to.
+        _execute(
+            dsn,
+            """
+            INSERT INTO projections (player_id, game_id, season, week, stat, position,
+                                     projection, pipeline_run_id, max_train_season)
+            VALUES ('STANDIN-FWD', %s, %s, %s, 'fantasy_ppr', 'QB', 12.0, %s, 2025)
+            """,
+            (f"{season}_{week:02d}_BBB_AAA", season, week, pending_id),
+        )
         _execute(
             dsn,
             "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
             "VALUES (%s, %s, %s, now(), 0, %s)",
             (f"forward_projections_{season}_w{week:02d}_{uuid.uuid4().hex[:8]}", season, week,
-             json.dumps({"kind": "forward_projections", "pipeline_run_id": pending_id})),
+             json.dumps({"kind": "forward_projections", "pipeline_run_id": pending_id, "projection_rows": 1})),
         )
         return {}
 

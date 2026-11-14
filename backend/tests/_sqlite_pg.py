@@ -41,7 +41,8 @@ class _Cursor:
         self._db.statements.append(sql)
         self._cur.execute(sql.replace("%s", "?"), tuple(params or ()))
         self.rowcount = self._cur.rowcount
-        self._boolean = "pg_try_advisory_xact_lock" in sql  # Postgres returns a bool here, sqlite an int
+        # Postgres returns a bool from the lock functions, sqlite an int.
+        self._boolean = any(f in sql for f in ("pg_try_advisory_xact_lock", "pg_try_advisory_lock", "pg_advisory_unlock"))
 
     def fetchone(self):
         row = self._cur.fetchone()
@@ -67,14 +68,28 @@ class SqlitePg:
         self.raw.create_function("starts_with", 2, lambda s, p: int(s is not None and str(s).startswith(p)))
         self.raw.create_function("NOW", 0, lambda: "2026-09-25T00:00:00")
         self.raw.create_function("pg_try_advisory_xact_lock", 2, self._try_lock)
+        self.raw.create_function("pg_try_advisory_lock", 2, self._try_session_lock)
+        self.raw.create_function("pg_advisory_unlock", 2, self._session_unlock)
         self.raw.executescript(SCHEMA)
         self.statements: list[str] = []
         self.held_elsewhere: set[tuple[int, int]] = set()  # advisory keys another session holds
         self.lock_attempts: list[tuple[int, int]] = []
+        self.session_locks: set[tuple[int, int]] = set()  # session-level advisory locks currently held
 
     def _try_lock(self, namespace: int, key: int) -> int:
         self.lock_attempts.append((namespace, key))
         return 0 if (namespace, key) in self.held_elsewhere else 1
+
+    def _try_session_lock(self, namespace: int, key: int) -> int:
+        if (namespace, key) in self.session_locks:
+            return 0
+        self.session_locks.add((namespace, key))
+        return 1
+
+    def _session_unlock(self, namespace: int, key: int) -> int:
+        held = (namespace, key) in self.session_locks
+        self.session_locks.discard((namespace, key))
+        return int(held)
 
     def cursor(self) -> _Cursor:
         return _Cursor(self)
@@ -113,8 +128,12 @@ class SqlitePg:
         self.raw.commit()
 
     def add_forecast_run(self, key: str, pending_id: str, *, season: int = 2026, week: int = 3,
-                         kind: str = "forward_projections") -> None:
-        summary = json.dumps({"kind": kind, "pipeline_run_id": pending_id})
+                         kind: str = "forward_projections", rows: int | None = 2) -> None:
+        """``rows`` is the ``projection_rows`` the producer records; None leaves the field out."""
+        fields = {"kind": kind, "pipeline_run_id": pending_id}
+        if rows is not None:
+            fields["projection_rows"] = rows
+        summary = json.dumps(fields)
         self.raw.execute(
             "INSERT INTO forecast_runs VALUES (?, ?, ?, ?)", (key, season, week, summary))
         self.raw.commit()

@@ -6,7 +6,8 @@ row of the season, including rows a failed or killed run left behind that no ste
 * each run gets ``weekly_auto_<season>_pending_<uuid>``; step 8 promotes exactly that id;
 * ``clear_leftovers`` runs at the start of every refresh and removes what earlier runs left (and puts
   back a week a killed ``--replace-week`` run had archived);
-* ``require_run_producer`` refuses a promotion whose forward producer never wrote its ``forecast_runs`` row.
+* ``require_run_intact`` refuses a promotion whose forward producer never wrote its ``forecast_runs`` row,
+  or whose rows are no longer the number the producer recorded (a second refresh cleared them).
 
 ``projections`` is unique on (player_id, game_id, stat) with no run id, so a run's upsert takes over a
 row with the same key. Rows a later run does not rewrite keep the older id until the cleanup removes them.
@@ -123,23 +124,58 @@ def clear_leftovers(
     return report
 
 
-def require_run_producer(cur, season: int, week: int, pending_id: str) -> None:
-    """Refuse to promote a pending id whose forward producer never recorded itself for the week."""
+def _recorded_rows(cur, season: int, week: int, pending_id: str) -> list:
     cur.execute(
-        "-- pr:producer\nSELECT count(*) FROM forecast_runs "
+        "-- pr:producer\nSELECT source_summary->>'projection_rows' FROM forecast_runs "
         "WHERE season = %s AND week = %s "
         "AND source_summary->>'kind' = 'forward_projections' AND source_summary->>'pipeline_run_id' = %s",
         (season, week, pending_id),
     )
-    row = cur.fetchone()
-    if not row or int(row[0]) == 0:
+    return [r[0] for r in cur.fetchall()]
+
+
+def require_run_producer(cur, season: int, week: int, pending_id: str) -> None:
+    """Refuse to promote a pending id whose forward producer never recorded itself for the week."""
+    if not _recorded_rows(cur, season, week, pending_id):
         raise RunNotProducedError(
             f"no forward_projections forecast_runs row for {pending_id} (season={season} week={week}); "
             "this run's producer did not write, so nothing is promoted"
         )
 
 
+def require_run_intact(cur, season: int, week: int, pending_id: str) -> int:
+    """Promotion guard: the producer wrote for this run, and every row it wrote is still there.
+
+    Runs inside the promotion transaction, before the relabel. Refuses when the week holds none of the run's
+    rows, or a different number than the producer recorded (``projection_rows``): something deleted or
+    rewrote them after step 7 (review N8). Nothing is written, so the archive of a replaced week stays.
+    Returns the count.
+    """
+    recorded = _recorded_rows(cur, season, week, pending_id)
+    if not recorded:
+        require_run_producer(cur, season, week, pending_id)  # raises with the "no row" message
+    expected = {None if r is None else int(r) for r in recorded}
+    if None in expected or len(expected) != 1:
+        raise RunNotProducedError(
+            f"the forward_projections row for {pending_id} (season={season} week={week}) records no single "
+            "row count to check the promotion against; nothing is promoted"
+        )
+    cur.execute(
+        "-- pr:count\nSELECT count(*) FROM projections WHERE season = %s AND week = %s AND pipeline_run_id = %s",
+        (season, week, pending_id),
+    )
+    found = int(cur.fetchone()[0])
+    (want,) = expected
+    if found == 0 or found != want:
+        raise RunNotProducedError(
+            f"{pending_id} has {found} projection rows for season={season} week={week}, but its producer wrote "
+            f"{want}; the rows changed after step 7 (another refresh's cleanup?). Nothing is promoted and the "
+            "archived week, if any, is kept."
+        )
+    return found
+
+
 __all__ = [
     "LeftoverRunsError", "RunNotProducedError", "clear_leftovers", "new_pending_run_id", "pending_prefix",
-    "require_run_producer",
+    "require_run_intact", "require_run_producer",
 ]

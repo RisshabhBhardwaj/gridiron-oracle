@@ -8,7 +8,7 @@ import pytest
 from backend.tests._sqlite_pg import SqlitePg
 from pipeline.pending_runs import (
     LeftoverRunsError, RunNotProducedError, clear_leftovers, new_pending_run_id, pending_prefix,
-    require_run_producer,
+    require_run_intact, require_run_producer,
 )
 
 APPROVED = "weekly_auto_2026"
@@ -163,3 +163,54 @@ def test_the_guard_needs_the_forward_producer_row_for_this_season_and_week(seaso
     db.add_forecast_run("k", NEW, season=season, week=week, kind=kind)
     with pytest.raises(RunNotProducedError):
         require_run_producer(db.cursor(), 2026, 3, NEW)
+
+
+# ── the promotion guard also checks the rows are still there (review N8) ─────────────────
+def _produced(db: SqlitePg, *, recorded: int, present: int) -> None:
+    db.add_forecast_run("forward_projections_2026_w03_x", NEW, rows=recorded)
+    for i in range(present):
+        db.add_projection(f"P{i}", NEW, week=3)
+
+
+def test_the_intact_guard_passes_when_the_rows_match_what_the_producer_recorded():
+    db = SqlitePg()
+    _produced(db, recorded=3, present=3)
+    require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+def test_the_intact_guard_refuses_a_run_whose_rows_were_deleted():
+    db = SqlitePg()
+    _produced(db, recorded=3, present=0)
+    with pytest.raises(RunNotProducedError, match="0 .*3|3 .*0"):
+        require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+@pytest.mark.parametrize("present", [1, 5])
+def test_the_intact_guard_refuses_a_count_that_differs_from_the_recorded_one(present):
+    db = SqlitePg()
+    _produced(db, recorded=3, present=present)
+    with pytest.raises(RunNotProducedError, match=NEW):
+        require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+def test_the_intact_guard_counts_only_this_runs_rows_for_this_week():
+    db = SqlitePg()
+    _produced(db, recorded=2, present=2)
+    db.add_projection("OTHER-RUN", OLD, week=3)
+    db.add_projection("OTHER-WEEK", NEW, week=2)
+    require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+def test_the_intact_guard_refuses_a_producer_row_that_recorded_no_count():
+    db = SqlitePg()
+    db.add_forecast_run("forward_projections_2026_w03_x", NEW, rows=None)
+    db.add_projection("P0", NEW, week=3)
+    with pytest.raises(RunNotProducedError, match="count"):
+        require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+def test_the_intact_guard_still_needs_the_producer_row():
+    db = SqlitePg()
+    db.add_projection("P0", NEW, week=3)
+    with pytest.raises(RunNotProducedError, match="forward_projections"):
+        require_run_intact(db.cursor(), 2026, 3, NEW)

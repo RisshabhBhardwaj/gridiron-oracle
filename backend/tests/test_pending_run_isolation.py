@@ -19,7 +19,8 @@ from backend.tests._sqlite_pg import SqlitePg
 from backend.tests.test_weekly_refresh import (
     _CLEAN_FEATURES, _CLEAN_INGEST, _CLEAN_NORMALIZE, _summary, _weekly_refresh_with_orchestrator,
 )
-from pipeline.pending_runs import clear_leftovers, require_run_producer
+from pipeline.pending_runs import clear_leftovers, require_run_intact
+from pipeline.refresh_lock import REFRESH_LOCK_NAMESPACE, season_refresh_lock
 from scripts.weekly_refresh import run_weekly_refresh
 
 APPROVED = "weekly_auto_2026"
@@ -40,7 +41,8 @@ def _db() -> SqlitePg:
     return db
 
 
-def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bool = True) -> int:
+def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bool = True,
+         after_gate=None, replace_week: bool = False) -> int:
     """One weekly refresh whose heavy steps write the rows the real ones would. Returns the exit code."""
 
     def stack(*_a, **_k) -> int:
@@ -51,9 +53,12 @@ def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bo
 
     def forward(conn, season, week, **kw) -> dict:
         rid = kw.get("pending_id") or SHARED_NAME  # a producer that was not given an id uses the shared name
+        if kw.get("replace_week"):  # the real producer archives the served week before it writes
+            db.run("INSERT INTO projections_replaced (player_id, game_id, stat, season, week, pipeline_run_id) "
+                   "VALUES ('OLD-WEEK3', 'g', 's', 2026, ?, ?)", (week, APPROVED))
         db.add_projection(f"{tag}-fwd", rid)
         db.add_projection("SHARED-fwd", rid)
-        db.add_forecast_run(f"forward_projections_2026_w03_{tag}", rid)
+        db.add_forecast_run(f"forward_projections_2026_w03_{tag}", rid, rows=2)
         return {"rows_served": 2}
 
     def simulation(**kw) -> None:
@@ -71,14 +76,18 @@ def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bo
         m = stack_.enter_context(_weekly_refresh_with_orchestrator(summary))
         stack_.enter_context(patch("psycopg2.connect", return_value=db))
         # The harness stubs these two; here the real ones run against the table.
-        m["run_producer"].side_effect = require_run_producer
+        m["run_intact"].side_effect = require_run_intact
         if cleanup:
             m["clear_leftovers"].side_effect = clear_leftovers
+        stack_.enter_context(patch("pipeline.refresh_lock.psycopg2.connect", return_value=db))
+        m["refresh_lock"].side_effect = season_refresh_lock  # the real lock, on the same table
         m["stack"].side_effect = stack
+        if after_gate is not None:
+            m["acceptance"].side_effect = lambda *a, **k: (after_gate(), 0)[1]
         m["forward"].side_effect = forward
         m["simulation"].side_effect = simulation
         m["team_game"].side_effect = team_game
-        return run_weekly_refresh("postgres://dummy", season=2026)
+        return run_weekly_refresh("postgres://dummy", season=2026, replace_week=replace_week)
 
 
 def _ids(db: SqlitePg) -> set[str]:
@@ -130,3 +139,42 @@ def test_two_runs_never_share_a_pending_id():
     pending_ids = {s.split('"pipeline_run_id": "')[1].split('"')[0] for s in summaries}
     assert len(pending_ids) == 2, f"both runs used {pending_ids}"
     assert all(p.startswith(SHARED_NAME + "_") for p in pending_ids), pending_ids
+
+
+# ── two refreshes of one season must not overlap (review N8) ──────────────────────────────
+def test_a_second_refresh_while_the_first_holds_the_season_lock_refuses_and_deletes_nothing():
+    db = _db()
+    db.add_projection("A-fwd", "weekly_auto_2026_pending_" + "a" * 32)  # run A's rows, mid-run
+    db.session_locks.add((REFRESH_LOCK_NAMESPACE, 2026))                # and A holds the lock
+
+    assert _run(db, "B") == 1
+
+    assert db.run("SELECT count(*) FROM projections WHERE player_id = 'A-fwd'")[0][0] == 1
+    assert not any(s.lstrip().upper().startswith("DELETE") for s in db.statements)
+    assert db.served() == {"OLD-SERVED"}
+    assert db.session_locks == {(REFRESH_LOCK_NAMESPACE, 2026)}  # B did not release A's lock
+
+
+def test_the_lock_is_released_after_a_failed_run_and_after_a_killed_one():
+    db = _db()
+    with pytest.raises(KeyboardInterrupt):
+        _run(db, "A", die_in_simulation=True)
+    assert db.session_locks == set()
+    assert _run(db, "B") == 0  # the next refresh is not locked out
+    assert db.session_locks == set()
+
+
+def _delete_pending_rows() -> None:
+    raise AssertionError("replaced by the test")
+
+
+def test_step_8_refuses_when_the_pending_rows_vanished_after_step_7_and_the_archive_survives():
+    db = _db()
+
+    def another_cleanup_ran() -> None:  # what a second refresh's clear_leftovers would have done
+        db.run("DELETE FROM projections WHERE starts_with(pipeline_run_id, 'weekly_auto_2026_pending')")
+
+    assert _run(db, "A", after_gate=another_cleanup_ran, replace_week=True) == 1
+
+    assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]  # not discarded
+    assert db.served() == {"OLD-SERVED"}  # and nothing was promoted
