@@ -11,3 +11,6 @@ a97cef3fa275441f907187d8b88fadb51c9a0e1f:infra/hosts/vps1/compose.yml:connection
 8dbe294e2e01dbd1bf65a5abf55cd58a5269965b:backend/tests/test_weekly_refresh_integration.py:connection-url-password:602
 8dbe294e2e01dbd1bf65a5abf55cd58a5269965b:backend/tests/test_weekly_refresh_integration.py:connection-url-password:621
 40b675a2e6106fef4a4bd4f96fb585031ef84522:backend/tests/test_snapshot_tools.py:connection-url-password:32
+# Placeholder URLs in the redaction test itself (test_freeze_baseline_provenance.py), not credentials.
+27d7012d11d042a0a76ee10838b75c74a02dab1a:backend/tests/test_freeze_baseline_provenance.py:connection-url-password:44
+27d7012d11d042a0a76ee10838b75c74a02dab1a:backend/tests/test_freeze_baseline_provenance.py:connection-url-password:45
