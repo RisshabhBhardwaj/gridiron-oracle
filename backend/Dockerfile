@@ -13,12 +13,16 @@ WORKDIR /app
 
 # Install deps first (better layer caching)
 COPY backend/requirements.txt /app/requirements.txt
-# Add build-essential and cmake for compiling the C++ engine
+# Add build-essential and cmake for compiling the C++ engine.
+# libgomp1 is LightGBM's OpenMP runtime. It must be installed explicitly:
+# otherwise it arrives only as a build-essential dependency and the
+# `autoremove` below deletes it, so `import lightgbm` fails at run time.
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
     curl \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 # Install the CPU-only torch build first. The default PyPI wheel for linux/amd64
 # drags in several GB of nvidia-* CUDA runtime packages a CPU box never uses.
@@ -61,6 +65,8 @@ RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release 
 RUN apt-get purge -y build-essential cmake git \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+# Fail the build, not a training run, if the purge took a native library.
+RUN python3 -c "import lightgbm, catboost, xgboost, sklearn, shap, torch"
 
 # Run as non-root (audit A-04). 8000 is unprivileged, so uvicorn needs no
 # capabilities. /app stays owned by appuser so entrypoint.sh can seed

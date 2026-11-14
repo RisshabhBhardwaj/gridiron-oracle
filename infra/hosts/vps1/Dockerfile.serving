@@ -40,6 +40,8 @@ COPY infra/hosts/vps1/requirements-serving.txt /app/requirements-serving.txt
 # libboost-all-dev: the engine needs Boost.Beast/Asio headers (mirrors CI,
 # which installs the same package). Purged with the build tools afterwards —
 # Beast/Asio are header-only, so the runtime binary needs no Boost libs.
+# libgomp1: LightGBM's OpenMP runtime, installed explicitly so the
+# autoremove below keeps it (as a build-essential dependency it is removed).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -47,6 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-all-dev \
     curl \
     ca-certificates \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r /app/requirements-serving.txt
 
@@ -80,6 +83,8 @@ RUN cd /app/engine && rm -rf build && cmake -B build -DCMAKE_BUILD_TYPE=Release 
 RUN apt-get purge -y build-essential cmake git libboost-all-dev \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+# Fail the build, not a request, if the purge took a native library.
+RUN python3 -c "import lightgbm, catboost, xgboost, sklearn"
 
 # Run as non-root (audit A-04). 8000 is unprivileged, so uvicorn needs no
 # capabilities. /app stays owned by appuser so entrypoint.sh can seed
