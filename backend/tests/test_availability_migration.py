@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PREV = "20261114_0027"
 REV = "20261114_0028"
 NEXT = "20261114_0029"
+HEAD = "20261114_0030"
 
 
 def _cfg() -> Config:
@@ -57,7 +58,8 @@ def _sql(fn, *args) -> str:
 
 def test_single_head_and_chain() -> None:
     script = ScriptDirectory.from_config(_cfg())
-    assert script.get_heads() == [NEXT]
+    assert script.get_heads() == [HEAD]
+    assert script.get_revision(HEAD).down_revision == NEXT
     assert script.get_revision(REV).down_revision == PREV
     assert script.get_revision(NEXT).down_revision == REV
 

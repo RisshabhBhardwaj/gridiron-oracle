@@ -1,10 +1,12 @@
 """``--replace-week`` of the weekly refresh (decision 0012 D4, commit 7).
 
 The producer never overwrites rows an approved run already serves. Replacing a served
-week is therefore a manual, flagged action taken after a database dump. The delete and the
-insert run in one transaction inside ``run_forward`` (tested in test_forward_serving.py), so a
-failure keeps the old week. This file covers the command line: it must refuse without a dump
-and never run from a timer.
+week is therefore a manual, flagged action taken after a database dump. The archive copy, the
+delete and the insert run in one transaction inside ``run_forward`` (tested in test_forward_serving.py),
+so a failure inside the producer leaves the old week served. A failure in steps 5-8 restores the
+archive (test_weekly_refresh.py, test_week_archive.py); a kill between the producer and the promotion
+does not, and needs ``scripts/restore_replaced_week.py``. This file covers the command line: it must
+refuse without a dump and never run from a timer.
 """
 from __future__ import annotations
 

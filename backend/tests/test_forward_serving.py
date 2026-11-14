@@ -60,6 +60,8 @@ def make_conn(
     reports: list[tuple] | None = None,
     avail_fetched: datetime | None = None,
     lock: bool = True,
+    archived: int = 0,
+    old_rows: int = 120,
 ) -> FakeConn:
     frame = forward_frame() if frame is None else frame
     kickoff = kickoff or AS_OF + timedelta(days=5)
@@ -88,6 +90,9 @@ def make_conn(
         ("FROM availability_reports", (
             ["player_id", "report_status", "practice_status", "roster_status", "date_modified"], reports)),
         ("-- wk:lock", (["locked"], [(lock,)])),  # last: tests address routes above by index
+        ("-- wa:columns", (["column_name"], [("id",), ("player_id",), ("game_id",), ("season",), ("week",), ("stat",)])),
+        ("-- wa:existing", (["n"], [(archived,)])),
+        ("INSERT INTO projections_replaced", (["x"], [(1,)] * old_rows)),
     ])
 
 
@@ -463,17 +468,47 @@ def _delete(conn):
     return [i for i, w in enumerate(conn.log) if w[0] == "execute" and w[1].lstrip().upper().startswith("DELETE")]
 
 
-def test_replace_week_deletes_and_inserts_in_one_transaction(manifest) -> None:
-    conn = make_conn()
+def _stmt(conn, prefix):
+    return [i for i, w in enumerate(conn.log) if w[0] == "execute" and w[1].lstrip().upper().startswith(prefix)]
+
+
+def test_replace_week_archives_then_deletes_then_inserts_in_one_transaction(manifest) -> None:
+    conn = make_conn(old_rows=120)
     report = go(conn, manifest, replace_week=True)
+    archive = _stmt(conn, "INSERT INTO PROJECTIONS_REPLACED")
     deletes = _delete(conn)
-    assert len(deletes) == 1
+    assert len(archive) == 1 and len(deletes) == 1
+    archive_sql, archive_params = conn.log[archive[0]][1:3]
+    assert "FROM projections WHERE season = %s AND week = %s" in archive_sql and archive_params == (SEASON, WEEK)
     delete_sql, params = conn.log[deletes[0]][1:3]
     assert "FROM projections" in delete_sql and params == (SEASON, WEEK)
     insert_at = next(i for i, w in enumerate(conn.log) if w[0] == "batch" and "INSERT INTO projections" in w[1])
-    assert deletes[0] < insert_at
+    assert archive[0] < deletes[0] < insert_at  # the old rows are copied before they are removed
     assert conn.commits == 1 and ("rollback",) not in conn.log
-    assert "rows_replaced" in report
+    assert report["rows_replaced"] == report["rows_archived"] == 120
+
+
+def test_replace_week_refuses_when_an_earlier_replace_left_its_archive_behind(manifest) -> None:
+    conn = make_conn(archived=300)
+    with pytest.raises(ForwardGuardError, match="projections_replaced") as e:
+        go(conn, manifest, replace_week=True)
+    assert e.value.guard == "M1"
+    assert conn.writes == [] and conn.commits == 0
+
+
+def test_replace_week_refuses_an_autocommit_connection(manifest) -> None:
+    conn = make_conn()
+    conn.autocommit = True  # a DELETE would commit on its own: the replace could no longer be atomic
+    with pytest.raises(ForwardGuardError, match="autocommit") as e:
+        go(conn, manifest, replace_week=True)
+    assert e.value.guard == "M1"
+    assert conn.writes == []
+
+
+def test_without_replace_week_the_archive_is_never_touched(manifest) -> None:
+    conn = make_conn()
+    go(conn, manifest)
+    assert not any("projections_replaced" in e[1] for e in conn.log if e[0] == "execute")
 
 
 def test_a_failed_insert_after_the_delete_rolls_everything_back(manifest, monkeypatch) -> None:

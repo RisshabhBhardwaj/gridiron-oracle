@@ -23,6 +23,7 @@ _PATCHED_STEPS = {
     "availability": "pipeline.availability_store.capture_snapshot",
     "features": "scripts.build_forward_features.build_forward_snapshot",
     "forward": "ml.forward_serving.run_forward",
+    "restore": "scripts.weekly_refresh.restore_week",
     "simulation": "scripts.materialize_season_simulation.materialize",
     "team_game": "scripts.materialize_team_game_predictions.materialize",
     "acceptance": "scripts.verify_season_acceptance.main",
@@ -62,6 +63,7 @@ def _weekly_refresh_with_orchestrator(summary: OrchestratorSummary):
         mocks["availability"].return_value = {"snapshot_id": "avail_x"}
         mocks["features"].return_value = {"pipeline_run_id": "forward_features_2026_w03_x", "feature_rows": 900}
         mocks["forward"].return_value = {"rows_served": 700}
+        mocks["restore"].return_value = 120
         mocks["acceptance"].return_value = 0
         mocks["purge_processed"].return_value = 0
         mocks["purge_stale"].return_value = 0
@@ -393,7 +395,7 @@ def test_replace_week_is_handed_to_the_producer_not_done_as_a_separate_delete():
     assert rc == 0
     assert m["forward"].call_args.kwargs["replace_week"] is True
     executed = [c.args[0] for c in m["cursor"].execute.call_args_list]
-    assert not any("DELETE FROM projections" in sql for sql in executed)
+    assert not any("DELETE FROM projections WHERE" in sql for sql in executed)
 
 
 def test_a_refused_replace_week_dead_letters_under_the_producer_step():
@@ -417,3 +419,76 @@ def test_the_weekly_run_never_passes_the_availability_override_or_replace_by_def
     kwargs = m["forward"].call_args.kwargs
     assert kwargs.get("replace_week") is False
     assert "allow_no_availability" not in kwargs
+
+
+# ── M1: a failure after the producer must leave the old week served ───────────────────────
+def _run_replace_failing_at(step: str):
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        if step == "simulation":
+            m["simulation"].side_effect = RuntimeError("simulation exploded")
+        elif step == "team_game":
+            m["team_game"].side_effect = RuntimeError("team game exploded")
+        elif step == "acceptance":
+            m["acceptance"].return_value = 1
+        if step == "promote":
+            with patch("scripts.weekly_refresh.promote_run_id", side_effect=RuntimeError("promote exploded")):
+                rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+        else:
+            rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+        return rc, m
+
+
+@pytest.mark.parametrize("step", ["simulation", "team_game", "acceptance", "promote"])
+def test_a_failure_after_the_producer_restores_the_archived_week(step):
+    rc, m = _run_replace_failing_at(step)
+    assert rc == 1
+    m["restore"].assert_called_once()
+    assert m["restore"].call_args.args[1:] == (2026, 3)  # (conn, season, week)
+    sources = [c.args[1] for c in m["dead_letter"].call_args_list]
+    assert any(src.startswith("weekly_refresh/") for src in sources)
+
+
+@pytest.mark.parametrize("step", ["simulation", "acceptance", "promote"])
+def test_without_replace_week_a_failure_never_restores(step):
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        if step == "simulation":
+            m["simulation"].side_effect = RuntimeError("boom")
+        if step == "acceptance":
+            m["acceptance"].return_value = 1
+        if step == "promote":
+            with patch("scripts.weekly_refresh.promote_run_id", side_effect=RuntimeError("boom")):
+                rc = run_weekly_refresh("postgres://dummy", season=2026)
+        else:
+            rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    m["restore"].assert_not_called()
+
+
+def test_a_failed_restore_is_reported_loudly_and_the_run_still_fails():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        m["simulation"].side_effect = RuntimeError("simulation exploded")
+        m["restore"].side_effect = RuntimeError("another writer holds the lock")
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    sources = [c.args[1] for c in m["dead_letter"].call_args_list]
+    assert "weekly_refresh/restore_replaced_week" in sources  # the week is unserved: someone must be told
+
+
+def test_a_successful_replace_discards_the_archive_in_the_promotion_transaction():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0
+    m["restore"].assert_not_called()
+    calls = m["cursor"].execute.call_args_list
+    relabel = next(i for i, c in enumerate(calls) if "UPDATE projections" in c.args[0])
+    discard = next(i for i, c in enumerate(calls) if "DELETE FROM projections_replaced" in c.args[0])
+    assert relabel < discard
+    assert calls[discard].args[1] == (2026, 3)

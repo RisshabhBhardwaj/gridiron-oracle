@@ -32,6 +32,7 @@ from ml import season_constants
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
 from pipeline.schema import normalize_dsn
+from pipeline.week_archive import discard_week, restore_week
 from pipeline.staging_retention import purge_processed_staging, purge_stale_staging
 from scraper.adapters.ff_playerids import upsert_playerids
 from scripts.prune_stale_pipeline_runs import (
@@ -182,6 +183,26 @@ def promote_run_id(
         """,
         (approved_run_id, season, start_week, pending_run_id),
     )
+
+
+def _restore_after_failure(dsn: str, season: int, week: int, replace_week: bool) -> None:
+    """After ``--replace-week`` the old week is archived. Put it back when the refresh fails.
+
+    A no-op without ``--replace-week`` and when nothing was archived. A failed restore leaves the week
+    unserved, so it is logged at CRITICAL and dead-lettered under its own source.
+    """
+    if not replace_week:
+        return
+    try:
+        with closing(psycopg2.connect(dsn)) as conn:
+            restored = restore_week(conn, season, week)
+        logger.error("--replace-week: the refresh failed; restored %d archived rows for week %d", restored, week)
+    except Exception as exc:
+        logger.critical("--replace-week: RESTORE FAILED, week %d may be unserved: %s", week, exc, exc_info=True)
+        _write_dead_letter(
+            dsn, "weekly_refresh/restore_replaced_week",
+            f"restore of the archived week {week} failed: {exc}. Run scripts/restore_replaced_week.py", season,
+        )
 
 
 def log_database_size(cur) -> None:
@@ -338,6 +359,7 @@ def run_weekly_refresh(
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        _restore_after_failure(dsn, season, start_week, replace_week)
         return 1
 
     # 5. Materialize season simulation with pending run id
@@ -361,6 +383,7 @@ def run_weekly_refresh(
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        _restore_after_failure(dsn, season, start_week, replace_week)
         return 1
 
     # 6. Materialize team game predictions
@@ -377,6 +400,7 @@ def run_weekly_refresh(
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        _restore_after_failure(dsn, season, start_week, replace_week)
         return 1
 
     # 7. Verification / acceptance check
@@ -443,6 +467,7 @@ def run_weekly_refresh(
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED (acceptance check aborted promotion): %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        _restore_after_failure(dsn, season, start_week, replace_week)
         return 1
 
     # 8. Atomic Promote in a single transaction
@@ -458,11 +483,14 @@ def run_weekly_refresh(
                     pending_run_id=pending_run_id,
                     approved_run_id=approved_run_id,
                 )
+                # Same transaction: the archived old week is dropped only if the promotion commits.
+                discard_week(cur, season, start_week)
             conn.commit()
         logger.info("Atomic promotion complete.")
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        _restore_after_failure(dsn, season, start_week, replace_week)
         return 1
 
     # 9. Retention & pruning
@@ -539,9 +567,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--replace-week",
         action="store_true",
-        help="MANUAL ONLY, never from a timer: the producer deletes the target week's projection rows "
-             "and writes them again in one transaction (a failure keeps the old week). Requires "
-             "--dump-path to a non-empty database dump.",
+        help="MANUAL ONLY, never from a timer: the producer archives the target week's projection rows to "
+             "projections_replaced, deletes them and writes the new ones in one transaction (a failure inside "
+             "the producer rolls back). A later failure restores the archive; a promotion discards it. A kill "
+             "between the two needs scripts/restore_replaced_week.py. Requires --dump-path to a non-empty dump.",
     )
     parser.add_argument(
         "--dump-path",

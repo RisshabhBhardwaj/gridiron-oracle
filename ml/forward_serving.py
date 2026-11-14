@@ -53,6 +53,7 @@ from ml.product_mode import ARTIFACT_BACKED, resolve_product_mode
 from ml.utils import FEATURE_COLS, MISSING_VALUE_SENTINEL
 from pipeline.availability import UNKNOWN, AvailabilityResult, is_served
 from pipeline.availability_store import NoAvailabilitySnapshot, load_availability
+from pipeline.week_archive import archive_week, archived_rows
 from pipeline.week_lock import try_lock_week
 from pipeline.serving_rows import (
     attach_causal_conformal_intervals,
@@ -522,8 +523,10 @@ def run_forward(
 ) -> dict:
     """Run G1-G5, compute every row, then write once. Returns a report.
 
-    ``replace_week`` (manual, after a dump) deletes the week's existing projection rows in the same
-    transaction as the insert, so a failure leaves the old week served.
+    ``replace_week`` (manual, after a dump) copies the week's existing projection rows to
+    ``projections_replaced``, deletes them and inserts the new ones in one transaction, so a failure
+    inside the producer rolls back and leaves the old week served. After the producer, the weekly
+    refresh restores the copy on any failure and discards it on promotion (``pipeline.week_archive``).
     """
     started = now()
     mode = product_mode or resolve_product_mode()
@@ -605,6 +608,11 @@ def run_forward(
         "availability_override": allow_no_availability, "replace_week": replace_week,
         "rows_not_served": not_served, "memory": memory,
     }
+    if replace_week and getattr(conn, "autocommit", False) is True:
+        raise ForwardGuardError(
+            "M1", "--replace-week needs a transaction: this connection is in autocommit mode, so the "
+                  "delete would commit on its own. Nothing was written."
+        )
     try:
         # One writer per week: the Friday refresh updates these same rows. Held until the commit below.
         if not try_lock_week(conn, season, week):
@@ -614,9 +622,15 @@ def run_forward(
             )
         with conn.cursor() as cur:
             if replace_week:
-                cur.execute("DELETE FROM projections WHERE season = %s AND week = %s", (season, week))
-                report["rows_replaced"] = int(cur.rowcount)
-                summary["rows_replaced"] = report["rows_replaced"]
+                leftover = archived_rows(cur, season, week)
+                if leftover:
+                    raise ForwardGuardError(
+                        "M1", f"projections_replaced still holds {leftover} rows for season={season} week={week} "
+                              "from an earlier replace. Restore them (scripts/restore_replaced_week.py) or "
+                              "promote the week before replacing it again. Nothing was written."
+                    )
+                report["rows_replaced"] = report["rows_archived"] = archive_week(cur, season, week)
+                summary["rows_replaced"] = summary["rows_archived"] = report["rows_replaced"]
             # The upsert silently skips a row another approved run already serves. For a new forward
             # week that must not happen: count first and refuse, so "N written" is never a guess.
             skipped = count_rows_served_by_another_approved_run(cur, df)
