@@ -71,7 +71,7 @@ under EDT — the UTC column is authoritative.
 | Command | What starts |
 |---|---|
 | `docker compose up -d` (no profile) | `api` + `db` + `cloudflared`. The steady state. |
-| Timers (systemd, never `up -d`) | `etl` (Tue 13:00 UTC), `backup` (daily 23:00 UTC), `training` via `scripts/train_small.sh` / `train_full.sh`. One-shots carry `profiles:` + `restart: "no"`, so plain `up -d` never starts them. |
+| Timers (systemd, never `up -d`) | `etl` (Tue 13:00 UTC), `availability` (Fri 22:00 UTC, not enabled by default; see below), `backup` (daily 23:00 UTC), `training` via `scripts/train_small.sh` / `train_full.sh`. One-shots carry `profiles:` + `restart: "no"`, so plain `up -d` never starts them. |
 | `--profile training run --rm training ...` | Interactive refits in the exact full image. |
 | `--profile observability up -d prometheus alertmanager otel-collector` | The always-fittable trio (see "Observability fit"). |
 | `--profile observability up -d mlflow` (or `jaeger`) | One-at-a-time only, trio down (see "Observability fit"). |
@@ -85,6 +85,7 @@ under EDT — the UTC column is authoritative.
 | `cloudflared` | 128 MB | Single tunnel, one hostname. |
 | **Steady site total** | **~1.83 GB** | **≤ 2.5 GB envelope. ✓** |
 | `etl` one-shot | 1.5 GB | Training-idle window (Tue 13:00 UTC), draws from host slack. KNOWN TIGHT SPOT: combined site + ETL ≈ 3.3 GB exceeds the site line — fits only because the training slice is idle then. First thing to tighten against the ETL peak-RSS measurement. |
+| `availability` one-shot | 512 MB (a guess, not measured) | Fri 22:00 UTC. Fetches one small source and updates status rows; loads no models. Record its peak RSS on the first run. |
 | `backup` one-shot | 512 MB | Daily 23:00 UTC. Site + backup ≈ 2.33 GB ≤ 2.5 GB ✓ (fits even inside the site line). |
 | `training` | 10 GB / 5 CPUs / shares 128 | Slice + container caps (see "Training slice"). |
 | Observability trio | 448 MB | prometheus 256m + alertmanager 64m + otel 128m. Site + trio ≈ 2.28 GB ≤ 2.5 GB ✓. |
@@ -192,6 +193,10 @@ sudo cp systemd/* /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now gridiron-etl.timer gridiron-backup.timer \
   gridiron-train-small.timer gridiron-train-full.timer
+#    The Friday availability refresh is NOT in this list. Enable it by hand
+#    (`sudo systemctl enable --now gridiron-availability.timer`) only after the
+#    forward producer has run once and served a week. It has no Conflicts=:
+#    Fri 22:00 UTC is also the full retrain's start, and this job takes seconds.
 #    Set TRAIN_SMALL_CMD / TRAIN_FULL_CMD (see "Training slice") and the
 #    four healthchecks.io URLs in .env; a missing ping after a scheduled
 #    run is the alert. Logs: journalctl -u gridiron-<name>.

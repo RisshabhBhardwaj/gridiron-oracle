@@ -206,6 +206,32 @@ services:
     # (the container is removed after each run).
     logging: *logging
 
+  # ── Friday availability refresh — one-shot, never `up -d` ─────────────────
+  # Updates availability_status on the next forward week (scripts/refresh_availability.py).
+  # No models are loaded. mem_limit is a guess, not a measurement: record the peak RSS on the
+  # first run and tighten it.
+  availability:
+    image: gridiron-etl:full
+    profiles: ["jobs"]
+    command: ["python3", "/app/scripts/refresh_availability.py"]
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
+      PRODUCT_MODE: artifact_backed
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    mem_limit: 512m
+    restart: "no"
+    user: appuser
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
   # ── Nightly R2 backup — cron one-shot, never `up -d` ──────────────────────
   backup:
     build:

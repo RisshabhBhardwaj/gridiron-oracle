@@ -1,0 +1,16 @@
+# Friday availability refresh one-shot (Fri 22:00 UTC): updates only the status column of the
+# next forward week's rows (decision 0012 addendum). No models are loaded and no prediction changes.
+#
+# NO Conflicts= on purpose. Fri 22:00 UTC is also the start of the full retrain window, and the
+# ETL's Conflicts= would stop it. This job fetches one small source and updates a few hundred rows
+# in seconds, so the two overlap harmlessly; the training slice has its own cgroup.
+#
+# Not installed or enabled by the repo: the owner enables it after the forward producer has run once.
+[Unit]
+Description=Gridiron Friday availability refresh one-shot (Fri 22:00 UTC)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile jobs run --rm availability

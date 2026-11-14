@@ -469,7 +469,18 @@ Step 4b runs after the stack step and before the simulation. In this order, and 
 
 Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
 
-Inactives: the NFL publishes game-day inactives about 90 minutes before kickoff. The Tuesday refresh sees only injury reports, so a Questionable player is served with his status shown. The weekly refresh does not see inactives; do not expect it to.
+Inactives: the NFL publishes game-day inactives about 90 minutes before kickoff. The Tuesday refresh sees only injury reports, so a Questionable player is served with his status shown. Neither the weekly refresh nor the Friday job sees inactives; do not expect either to.
+
+#### Friday availability refresh (`gridiron-availability.timer`, not enabled)
+
+`scripts/refresh_availability.py` fetches a new availability snapshot and changes only `availability_status` on the next forward week's rows, in one transaction, recorded in `forecast_runs` as `availability_refresh_<season>_w<WW>_<stamp>`. It never changes a prediction. It refuses (exit 1, nothing written) when the week has scores, has no forward rows, or has a kickoff at or before the new `as_of`: in a week with a Thursday game it refuses on Friday, by design. Run it by hand once, in the same container as step 20, before enabling the timer:
+
+```bash
+docker compose --profile jobs run --rm availability
+echo "exit $?"
+```
+
+Then `sudo cp systemd/gridiron-availability.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now gridiron-availability.timer`. Fri 22:00 UTC is also the full retrain's start; the unit declares no `Conflicts=` so it never stops training. Record the job's peak RSS on the first run (`mem_limit: 512m` is a guess).
 
 #### `--replace-week` (manual only)
 
