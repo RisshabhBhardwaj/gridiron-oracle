@@ -48,6 +48,7 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
   {
     header: 'Player-games',
+    hideOnPhone: true,
     accessorKey: 'n',
     align: 'right',
     mono: true,
@@ -69,6 +70,7 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
   {
     header: 'Trailing 3',
+    hideOnPhone: true,
     accessorKey: 'trailing3_score',
     align: 'right',
     mono: true,
@@ -76,6 +78,7 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
   {
     header: 'Marcel',
+    hideOnPhone: true,
     accessorKey: 'marcel_score',
     align: 'right',
     mono: true,

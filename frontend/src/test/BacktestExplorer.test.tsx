@@ -25,7 +25,7 @@ describe('BacktestExplorer', () => {
   it('leads with a plain verdict and a link to the data', async () => {
     renderBacktest()
     const verdict = await screen.findByRole('region', { name: 'Verdict' })
-    expect(verdict).toHaveTextContent(/Better than the simple method in 7 of 8 player-stat seasons/)
+    expect(verdict).toHaveTextContent(/Better than the simple method in 7 of 8 season tests/)
     const link = within(verdict).getByRole('link', { name: /Download all the numbers/ })
     expect(link).toHaveAttribute('href', '/api/backtest/table.csv')
   })
@@ -34,7 +34,7 @@ describe('BacktestExplorer', () => {
     renderBacktest()
     const verdict = await screen.findByRole('region', { name: 'Verdict' })
     // The first sentence is a count, with no percent.
-    expect(verdict).toHaveTextContent(/Better than the simple method in 7 of 8 player-stat seasons\.On yards/)
+    expect(verdict).toHaveTextContent(/Better than the simple method in 7 of 8 season tests\.On yards/)
     expect(verdict).toHaveTextContent(/On yards and fantasy points, our average miss is \d+\.\d% smaller\./)
     expect(verdict).not.toHaveTextContent(/on average\./)
   })

@@ -74,7 +74,7 @@ export function toneGain(v: BacktestVerdict): number | null {
 
 /**
  * One plain sentence: better or not than the simple method, and by how much.
- * `noun` names what is counted, e.g. "player-stat seasons" or "positions".
+ * `noun` names what is counted, e.g. "season tests" or "positions".
  * The percent appears only when all the cells share one scoring metric.
  */
 export function verdictSentence(v: BacktestVerdict, noun: string): string {

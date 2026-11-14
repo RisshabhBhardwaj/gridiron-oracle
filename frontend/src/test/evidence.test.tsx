@@ -9,21 +9,21 @@ const v = (improvement_by_metric: BacktestVerdict['improvement_by_metric'], over
 
 describe('verdictSentence', () => {
   it('adds the percent when every cell shares one metric', () => {
-    const s = verdictSentence(v({ mae: { cell_seasons: 10, mean_pct: 10.4 } }), 'player seasons')
-    expect(s).toBe('Better than the simple method in 9 of 10 player seasons, by 10.4% on average.')
+    const s = verdictSentence(v({ mae: { cell_seasons: 10, mean_pct: 10.4 } }), 'season tests')
+    expect(s).toBe('Better than the simple method in 9 of 10 season tests, by 10.4% on average.')
   })
 
   it('keeps the percent for a count stat on its own (one metric)', () => {
-    const s = verdictSentence(v({ poisson_deviance: { cell_seasons: 10, mean_pct: 50.2 } }), 'player seasons')
+    const s = verdictSentence(v({ poisson_deviance: { cell_seasons: 10, mean_pct: 50.2 } }), 'season tests')
     expect(s).toContain('by 50.2% on average')
   })
 
   it('never blends metrics: a mixed verdict is the count alone', () => {
     const s = verdictSentence(
       v({ mae: { cell_seasons: 5, mean_pct: 10.5 }, poisson_deviance: { cell_seasons: 5, mean_pct: 50.2 } }),
-      'player-stat seasons',
+      'season tests',
     )
-    expect(s).toBe('Better than the simple method in 9 of 10 player-stat seasons.')
+    expect(s).toBe('Better than the simple method in 9 of 10 season tests.')
   })
 })
 

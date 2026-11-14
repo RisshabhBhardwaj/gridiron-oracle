@@ -15,7 +15,7 @@ export function EvidenceVerdict({
   lead,
 }: {
   verdict: BacktestVerdict
-  /** What is counted, for example "player-stat seasons". */
+  /** What is counted, for example "season tests". */
   noun: string
   /** Path of the downloadable table, as the api returns it (no /api prefix). */
   tableUrl: string

@@ -52,6 +52,7 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
   {
     header: 'Trailing 3',
+    hideOnPhone: true,
     accessorKey: 'trailing3_score',
     align: 'right',
     mono: true,
@@ -59,6 +60,7 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
   {
     header: 'Marcel',
+    hideOnPhone: true,
     accessorKey: 'marcel_score',
     align: 'right',
     mono: true,
@@ -73,6 +75,7 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
   {
     header: 'Player-games',
+    hideOnPhone: true,
     accessorKey: 'n',
     align: 'right',
     mono: true,
@@ -146,7 +149,7 @@ export function BacktestExplorer() {
         <>
           <EvidenceVerdict
             verdict={data.release_verdict}
-            noun="player-stat seasons"
+            noun="season tests"
             tableUrl={data.table_url}
             lead={seasonsText ? `All stats and positions, ${seasonsText}` : undefined}
           />
@@ -170,7 +173,7 @@ export function BacktestExplorer() {
 
           <p className="text-sm text-fg" aria-live="polite">
             <span className="font-semibold">{statLabel(stat)}: </span>
-            {verdictSentence(selectionVerdict, 'player seasons')}
+            {verdictSentence(selectionVerdict, 'season tests')}
           </p>
 
           <Panel title={`How much better than the simple method, by season: ${statLabel(stat)}`}>
