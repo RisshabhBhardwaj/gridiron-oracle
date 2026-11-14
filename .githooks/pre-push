@@ -184,6 +184,9 @@ run_gitleaks() {
   esac
 }
 
+# Read the ref list once: the gate scans it, then Git LFS needs the same lines.
+PUSH_REFS="$(cat)"
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [[ "$local_sha" == "$zero_sha" ]]; then
     continue   # branch deletion: nothing published
@@ -211,11 +214,24 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   scan_sizes <<<"$(awk '!seen[$1]++' <<<"$objects")"
   scan_secrets "$commits"
   run_gitleaks "$local_sha"
-done
+done <<<"$PUSH_REFS"
 
 if [[ "$blocked" -ne 0 ]]; then
   echo "PUBLIC-PUSH GATE: push rejected. Remove non-public paths and try again." >&2
   exit 1
+fi
+
+# core.hooksPath=.githooks replaces .git/hooks, including Git LFS's own
+# pre-push hook. Chain it here so LFS objects (ml/onnx, release model files)
+# are uploaded with the push. Only after the gate passed; never in CI, where
+# this script runs against a synthetic ref list.
+lfs_attrs="$(git rev-parse --show-toplevel 2>/dev/null)/.gitattributes"
+if [[ "${CI:-}" != "true" && -n "$PUSH_REFS" ]] && grep -qs 'filter=lfs' "$lfs_attrs"; then
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    echo "PUBLIC-PUSH GATE: this repo uses Git LFS but git-lfs is not on PATH." >&2
+    exit 1
+  fi
+  git lfs pre-push "$@" <<<"$PUSH_REFS" || exit $?
 fi
 
 exit 0

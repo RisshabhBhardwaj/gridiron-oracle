@@ -316,3 +316,60 @@ def test_nothing_to_push_is_fine_locally(repo: Path) -> None:
     result = _run_hook(repo, f"refs/heads/main {base} refs/heads/main {base}\n")
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ── Git LFS chaining: core.hooksPath=.githooks replaces LFS's own hook ───────
+
+
+def _fake_git_lfs(tmp_path: Path) -> tuple[Path, Path]:
+    """A stand-in `git-lfs` that records its arguments and stdin."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "lfs.log"
+    fake = bindir / "git-lfs"
+    fake.write_text(f'#!/bin/sh\necho "args: $*" >> "{log}"\ncat >> "{log}"\n')
+    fake.chmod(0o755)
+    return bindir, log
+
+
+def test_lfs_pre_push_gets_the_same_refs_after_the_gate(repo: Path, tmp_path: Path) -> None:
+    (repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
+    tip = _commit(repo, "README.md", "# hello\n", "base")
+    bindir, log = _fake_git_lfs(tmp_path)
+    refs = f"refs/heads/main {tip} refs/heads/main {ZERO}\n"
+
+    result = _run_hook(repo, refs, env_overrides={"PATH": f"{bindir}:{os.environ['PATH']}"})
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    recorded = log.read_text()
+    assert "args: pre-push origin https://example.invalid/repo.git" in recorded
+    assert refs.strip() in recorded
+
+
+def test_lfs_is_not_called_when_the_gate_blocks(repo: Path, tmp_path: Path) -> None:
+    (repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
+    tip = _commit(repo, ".env", "X=1\n", "blocked path")
+    bindir, log = _fake_git_lfs(tmp_path)
+
+    result = _run_hook(
+        repo,
+        f"refs/heads/main {tip} refs/heads/main {ZERO}\n",
+        env_overrides={"PATH": f"{bindir}:{os.environ['PATH']}"},
+    )
+
+    assert result.returncode != 0
+    assert not log.exists()
+
+
+def test_lfs_is_skipped_in_a_repo_without_lfs_attributes(repo: Path, tmp_path: Path) -> None:
+    tip = _commit(repo, "README.md", "# hello\n", "base")
+    bindir, log = _fake_git_lfs(tmp_path)
+
+    result = _run_hook(
+        repo,
+        f"refs/heads/main {tip} refs/heads/main {ZERO}\n",
+        env_overrides={"PATH": f"{bindir}:{os.environ['PATH']}"},
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not log.exists()

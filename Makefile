@@ -17,7 +17,7 @@ setup:
 .PHONY: hooks
 hooks:
 	@git config core.hooksPath .githooks
-	@chmod +x .githooks/pre-push
+	@chmod +x .githooks/pre-push .githooks/post-checkout .githooks/post-commit .githooks/post-merge
 	@rm -f .git/hooks/pre-push
 	@echo "core.hooksPath set to .githooks (public-push gate active)"
 	@echo "Reminder: the local hook is convenience only. The required check is"
