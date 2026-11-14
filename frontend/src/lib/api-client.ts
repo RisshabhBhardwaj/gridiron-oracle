@@ -9,6 +9,8 @@ const BASE_URL = '/api'
  * e.g. /predict's 404 when no approved forecast exists for a player/week/season. */
 export interface StructuredErrorDetail {
   forecast_available?: boolean
+  /** /explain: false when no breakdown is published for the stat (a 404, not an outage). */
+  explanation_available?: boolean
   message?: string
   [key: string]: unknown
 }
