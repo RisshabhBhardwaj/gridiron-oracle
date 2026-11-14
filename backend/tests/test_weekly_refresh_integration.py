@@ -46,7 +46,9 @@ pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[2]
 APPROVED = "weekly_auto_2026"
-PENDING = "weekly_auto_2026_pending"
+PENDING_PREFIX = "weekly_auto_2026_pending"
+# A refresh writes under its own id (PENDING_PREFIX + "_" + uuid); tests that seed or promote by hand use this one.
+PENDING = PENDING_PREFIX + "_integration-test"
 # Approved in releases/current_baseline.json; present in the real keep set.
 STACK_APPROVED = "stack_materialize_20260822T144443Z"
 
@@ -191,10 +193,25 @@ def _clean_summary() -> OrchestratorSummary:
 
 @contextmanager
 def _ingest_mocked(summary: OrchestratorSummary):
-    """Replace the two network calls. Step 3's upsert still runs against the database."""
+    """Replace the network calls and the forward producer. Step 3's upsert still runs against the database.
+
+    The producer needs the pinned models and a network snapshot. The stand-in writes what promotion checks:
+    the ``forecast_runs`` row that names this run's pending id (``require_run_producer``).
+    """
+
+    def produce(dsn, season, week, *, replace_week=False, pending_id=None):
+        _execute(
+            dsn,
+            "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
+            "VALUES (%s, %s, %s, now(), 0, %s)",
+            (f"forward_projections_{season}_w{week:02d}_{uuid.uuid4().hex[:8]}", season, week,
+             json.dumps({"kind": "forward_projections", "pipeline_run_id": pending_id})),
+        )
+        return {}
+
     with patch.object(Orchestrator, "run", return_value=summary), patch(
         "scraper.adapters.ff_playerids.load_playerids_frame", return_value=_PLAYERIDS
-    ):
+    ), patch("scripts.weekly_refresh.produce_forward_week", side_effect=produce):
         yield
 
 
@@ -311,7 +328,7 @@ def test_failed_ingest_step_dead_letters_and_does_not_promote(db):
         )
     ]
     assert _scalar(db, "SELECT COUNT(*) FROM fantasy_player_ids") == 0  # step 3 never ran
-    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (PENDING,)) == 0
+    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE starts_with(pipeline_run_id, %s)", (PENDING_PREFIX,)) == 0
     assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (APPROVED,)) == 1
 
 
@@ -328,7 +345,7 @@ def test_missing_training_history_fails_loudly_at_season_simulation(db):
     assert "Refusing to materialize" in dead[0][1]
     # Steps 3 and 4 ran for real before the failure.
     assert _scalar(db, "SELECT COUNT(*) FROM fantasy_player_ids") == len(_PLAYERIDS)
-    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (PENDING,)) > 0
+    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE starts_with(pipeline_run_id, %s)", (PENDING_PREFIX,)) > 0
     # Nothing was promoted: the approved 2026 row is still the only APPROVED row.
     assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (APPROVED,)) == 1
 

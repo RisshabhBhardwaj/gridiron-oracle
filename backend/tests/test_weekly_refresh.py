@@ -18,6 +18,8 @@ from scripts.weekly_refresh import (
 # tests stop at step 2 or run through step 10 without touching a database.
 _PATCHED_STEPS = {
     "dead_letter": "scripts.weekly_refresh._write_dead_letter",
+    "clear_leftovers": "scripts.weekly_refresh.clear_leftovers",
+    "run_producer": "scripts.weekly_refresh.require_run_producer",
     "upsert_playerids": "scripts.weekly_refresh.upsert_playerids",
     "stack": "scripts.materialize_stack_projections.main",
     "availability": "pipeline.availability_store.capture_snapshot",
@@ -275,7 +277,8 @@ def test_step7_forward_week_runs_the_structural_gate_on_the_pending_run():
         rc = run_weekly_refresh("postgres://dummy", season=2026)
     assert rc == 0
     assert "--structural-only" in seen["argv"]
-    assert "weekly_auto_2026_pending" in seen["argv"]
+    gate_id = seen["argv"][seen["argv"].index("--pipeline-run-id") + 1]
+    assert gate_id.startswith("weekly_auto_2026_pending_") and gate_id != "weekly_auto_2026_pending_"
     assert "--start-week" in seen["argv"]
     assert seen["argv"][seen["argv"].index("--start-week") + 1] == "3"
 
@@ -492,3 +495,93 @@ def test_a_successful_replace_discards_the_archive_in_the_promotion_transaction(
     discard = next(i for i, c in enumerate(calls) if "DELETE FROM projections_replaced" in c.args[0])
     assert relabel < discard
     assert calls[discard].args[1] == (2026, 3)
+
+
+# ── per-run pending id and the start-of-refresh cleanup (review N1) ───────────────────────
+def _run_with_ids(m):
+    """Run a refresh; return the pending id each step received."""
+    import sys
+
+    seen: dict = {}
+
+    def stack():
+        seen["stack"] = sys.argv[sys.argv.index("--pipeline-run-id") + 1]
+        return 0
+
+    def gate():
+        seen["gate"] = sys.argv[sys.argv.index("--pipeline-run-id") + 1]
+        return 0
+
+    m["stack"].side_effect = stack
+    m["acceptance"].side_effect = gate
+    m["cursor"].fetchone.side_effect = [(2,), (False,)]
+    rc = run_weekly_refresh("postgres://dummy", season=2026)
+    seen["rc"] = rc
+    return seen
+
+
+def test_every_step_and_the_promotion_use_the_runs_own_pending_id():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        seen = _run_with_ids(m)
+    assert seen["rc"] == 0
+    pid = seen["stack"]
+    assert pid.startswith("weekly_auto_2026_pending_") and len(pid) > len("weekly_auto_2026_pending_")
+    assert seen["gate"] == pid
+    assert m["forward"].call_args.kwargs["pending_id"] == pid
+    assert m["simulation"].call_args.kwargs["pipeline_run_id"] == pid
+    assert m["team_game"].call_args.kwargs["pipeline_run_id"] == pid
+    promoted = [c.args[1] for c in m["cursor"].execute.call_args_list if "UPDATE" in c.args[0]]
+    assert promoted and all(params[-1] == pid and params[0] == "weekly_auto_2026" for params in promoted)
+    m["run_producer"].assert_called_once()
+    assert m["run_producer"].call_args.args[1:] == (2026, 3, pid)
+
+
+def test_two_refreshes_get_different_pending_ids():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    ids = []
+    for _ in range(2):
+        with _weekly_refresh_with_orchestrator(summary) as m:
+            ids.append(_run_with_ids(m)["stack"])
+    assert ids[0] != ids[1]
+
+
+def test_the_cleanup_runs_after_the_approval_check_and_before_any_ingest():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["clear_leftovers"].side_effect = lambda *a, **k: order.append("clear_leftovers")
+        m["orchestrator_run"].side_effect = lambda *a, **k: (order.append("ingest"), summary)[1]
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    assert order[:2] == ["clear_leftovers", "ingest"]
+    assert m["clear_leftovers"].call_args.args[1] == 2026
+
+
+def test_a_cleanup_that_cannot_finish_stops_the_refresh_before_any_write():
+    from pipeline.pending_runs import LeftoverRunsError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["clear_leftovers"].side_effect = LeftoverRunsError("week 3 could not be restored; run scripts/restore_replaced_week.py")
+        m["cursor"].fetchone.side_effect = [(2,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    m["orchestrator_run"].assert_not_called()
+    m["stack"].assert_not_called()
+    _, source, error, _ = m["dead_letter"].call_args.args
+    assert source == "weekly_refresh/clear_leftovers" and "restore_replaced_week.py" in error
+
+
+def test_a_run_whose_producer_left_no_row_is_not_promoted_and_the_week_is_restored():
+    from pipeline.pending_runs import RunNotProducedError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["run_producer"].side_effect = RunNotProducedError("no forward_projections row")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    assert not any("UPDATE" in c.args[0] for c in m["cursor"].execute.call_args_list)  # nothing relabelled
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/atomic_promote"
+    m["restore"].assert_called_once()

@@ -123,12 +123,15 @@ def _require_injury_reports(conn, snapshot_id: str) -> int:
     return n
 
 
-def default_run_ids(season: int) -> list[str]:
-    """The ids a forward row can carry: approved by the manifest, or the pending id."""
-    from ml.forward_serving import pending_run_id
+def default_run_ids(season: int, pending_id: Optional[str] = None) -> list[str]:
+    """The ids a forward row is served under (the manifest's approved ids), plus the caller's own pending id.
+
+    A pending id belongs to one in-flight weekly refresh (``weekly_auto_<season>_pending_<uuid>``), which
+    the Friday job cannot know, so it is never guessed. The weekly refresh passes its own.
+    """
     from pipeline.run_guard import approved_pipeline_run_ids
 
-    return sorted(approved_pipeline_run_ids()) + [pending_run_id(season)]
+    return sorted(approved_pipeline_run_ids()) + ([pending_id] if pending_id else [])
 
 
 def refresh_availability(

@@ -134,7 +134,7 @@ def main() -> int:
     parser.add_argument(
         "--pipeline-run-id",
         default=None,
-        help="Pending run id to check in structural mode (e.g. weekly_auto_2026_pending)",
+        help="Pending run id to check in structural mode (the run's own id, e.g. weekly_auto_2026_pending_<uuid>)",
     )
     parser.add_argument(
         "--approved-run-id",

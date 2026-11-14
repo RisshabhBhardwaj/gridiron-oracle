@@ -49,6 +49,15 @@ def archived_rows(cur, season: int, week: int) -> int:
     return int(row[0]) if row else 0
 
 
+def archived_weeks(cur, season: int) -> list[int]:
+    """Weeks of the season that still have an archive, ascending."""
+    cur.execute(
+        "-- wa:weeks\nSELECT DISTINCT week FROM projections_replaced WHERE season = %s ORDER BY week",
+        (season,),
+    )
+    return [int(r[0]) for r in cur.fetchall()]
+
+
 def archive_week(cur, season: int, week: int) -> int:
     """Copy the week's rows to the archive, then delete them. Caller owns the transaction."""
     cols = _columns(cur)
@@ -104,4 +113,4 @@ def restore_week(
     return n
 
 
-__all__ = ["ARCHIVE_TABLE", "archive_week", "archived_rows", "discard_week", "restore_week"]
+__all__ = ["ARCHIVE_TABLE", "archive_week", "archived_rows", "archived_weeks", "discard_week", "restore_week"]

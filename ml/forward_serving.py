@@ -1,7 +1,7 @@
 """Forward producer (decision 0012): next-week projections from the pinned base models.
 
 Reads one forward feature snapshot, runs the SHA-pinned LightGBM/CatBoost models through
-the pinned Ridge stack, and writes the rows under ``weekly_auto_<season>_pending`` in one
+the pinned Ridge stack, and writes the rows under the run's pending id (``weekly_auto_<season>_pending_<uuid>``) in one
 transaction. Every guard runs before the first write:
 
     G1  PRODUCT_MODE=artifact_backed; the manifest loads; every model resolves and verifies
@@ -93,6 +93,7 @@ class LibraryVersionMismatch(RuntimeError):
 
 
 def pending_run_id(season: int) -> str:
+    """The season's shared pending name: the default when no per-run id is given."""
     return f"weekly_auto_{season}_pending"
 
 
@@ -520,6 +521,7 @@ def run_forward(
     bounds: Optional[dict[str, tuple[int, int]]] = None,
     null_margin: float = NULL_RATE_MARGIN,
     replace_week: bool = False,
+    pending_id: Optional[str] = None,
 ) -> dict:
     """Run G1-G5, compute every row, then write once. Returns a report.
 
@@ -527,6 +529,10 @@ def run_forward(
     ``projections_replaced``, deletes them and inserts the new ones in one transaction, so a failure
     inside the producer rolls back and leaves the old week served. After the producer, the weekly
     refresh restores the copy on any failure and discards it on promotion (``pipeline.week_archive``).
+
+    ``pending_id`` is the run's own pending run id (``pipeline.pending_runs.new_pending_run_id``); the
+    rows and the ``forecast_runs`` summary carry it, and step 8 promotes exactly that id. Without it the
+    producer falls back to the season's shared name (manual runs and the guard tests).
     """
     started = now()
     mode = product_mode or resolve_product_mode()
@@ -567,7 +573,7 @@ def run_forward(
     if allow_no_availability:
         logger.warning("availability NOT applied (explicit override): every row is stored as 'Unknown'")
 
-    run_id = pending_run_id(season)
+    run_id = pending_id or pending_run_id(season)
     preds: dict[tuple[str, str], pd.DataFrame] = {}
     memory_cells = []
     for cell in cells:

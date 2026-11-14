@@ -447,7 +447,7 @@ docker compose --profile training exec -T training python3 scripts/weekly_refres
 echo "exit ${PIPESTATUS[0]}"
 ```
 
-Expected: exit 0 and no `FAILED` line. Step 4 materializes with attributions under `weekly_auto_2026_pending`; step 6 (`materialize_team_game_predictions`) now passes because 2019-2025 Elo is real; step 8 relabels to `weekly_auto_2026`, which the manifest approves. A failure writes a dead letter (`select * from dead_letter order by id desc limit 5`) and promotes nothing.
+Expected: exit 0 and no `FAILED` line. Step 4 materializes with attributions under this run's own pending id (`weekly_auto_2026_pending_<uuid>`; the first thing the run does is delete leftovers of earlier failed or killed runs, and restore a week an earlier `--replace-week` run archived, or stop with the command to restore it); step 6 (`materialize_team_game_predictions`) now passes because 2019-2025 Elo is real; step 8 relabels to `weekly_auto_2026`, which the manifest approves. A failure writes a dead letter (`select * from dead_letter order by id desc limit 5`) and promotes nothing.
 Then, within 24 h of this run's `computed_at`:
 
 ```bash
@@ -469,7 +469,7 @@ Step 4b runs after the stack step and before the simulation. In this order, and 
 
 1. Capture an availability snapshot (nflverse injuries plus weekly roster status), stored with its fetch time.
 2. Build the forward features with `as_of` = now. The snapshot was fetched before `as_of`, so it is usable. A snapshot fetched after `as_of` would not be.
-3. `ml.forward_serving.run_forward` runs guards G1-G5 and writes the week's projections and a `forecast_runs` row in one transaction under `weekly_auto_<season>_pending`.
+3. `ml.forward_serving.run_forward` runs guards G1-G5 and writes the week's projections and a `forecast_runs` row in one transaction under the run's own pending id `weekly_auto_<season>_pending_<uuid>`. Step 8 promotes only that id, and only if the run's `forecast_runs` row exists.
 
 Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
 

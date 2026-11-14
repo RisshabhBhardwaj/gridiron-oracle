@@ -377,3 +377,13 @@ def test_a_refresh_that_cannot_get_the_week_lock_refuses_and_changes_nothing():
         _run(conn, {"p1": None, "p2": None, "p3": None})
     assert _updates(conn) == []
     assert not any(e[0] == "execute" and "INSERT INTO forecast_runs" in e[1] for e in conn.log)
+
+
+def test_the_default_run_ids_are_the_approved_ids_and_never_a_pending_run_not_named_by_the_caller():
+    from pipeline.availability_refresh import default_run_ids
+
+    ids = default_run_ids(2026)
+    assert "weekly_auto_2026" in ids
+    assert not [i for i in ids if "pending" in i]  # a pending id belongs to one in-flight run
+    own = "weekly_auto_2026_pending_" + "a" * 32
+    assert default_run_ids(2026, pending_id=own) == ids + [own]

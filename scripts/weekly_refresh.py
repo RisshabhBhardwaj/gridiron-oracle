@@ -6,6 +6,8 @@ Runs weekly (e.g. Tuesday morning post-MNF) in Railway / Cloud to incrementally
 ingest the latest week of data, re-run feature engineering & ID bridge,
 materialize models into pending pipeline_run_ids, verify acceptance,
 and atomically promote to the approved pipeline_run_id ('weekly_auto_{season}').
+Each run writes under its own pending id ('weekly_auto_{season}_pending_<uuid>') and promotes only that id;
+the start of every run clears what earlier, failed or killed runs left (pipeline/pending_runs.py).
 
 Fail-loud contract: Every step aborts on error, logging details and writing a
 dead_letter row to Postgres so failures are never silent.
@@ -31,6 +33,7 @@ if str(ROOT) not in sys.path:
 from ml import season_constants
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
+from pipeline.pending_runs import clear_leftovers, new_pending_run_id, require_run_producer
 from pipeline.schema import normalize_dsn
 from pipeline.week_archive import discard_week, restore_week
 from pipeline.staging_retention import purge_processed_staging, purge_stale_staging
@@ -138,10 +141,12 @@ def promote_run_id(
     """
     Relabel pending_run_id rows as approved_run_id. Relabel only: this deletes nothing.
 
+    pending_run_id is the run's own id (``new_pending_run_id``), so a failed or killed earlier run's rows,
+    which carry another id, are never relabelled. The caller promotes only after that run's step 7 passed.
     Materializers never overwrite a row served by another approved run, so
-    approved rows keep their ids and stay served. Pending leftovers from a
-    failed run are not served and are removed by the step 9 prune, which keeps
-    only the manifest's approved ids. Scope of the relabel:
+    approved rows keep their ids and stay served. Leftovers of other runs are not served; the next
+    refresh's ``clear_leftovers`` and the step 9 prune (which keeps only the manifest's approved ids)
+    remove them. Scope of the relabel:
       - season tables: (season, start_week)
       - projections: season (this refresh's season only; the pinned stack rows
         for earlier seasons are not promoted)
@@ -218,7 +223,9 @@ def log_database_size(cur) -> None:
         logger.warning("Could not query pg_database_size: %s", exc)
 
 
-def produce_forward_week(dsn: str, season: int, week: int, *, replace_week: bool = False) -> dict:
+def produce_forward_week(
+    dsn: str, season: int, week: int, *, replace_week: bool = False, pending_id: str | None = None,
+) -> dict:
     """Capture availability, build the forward features at as_of=now, run the producer.
 
     The order is the causality rule: an availability snapshot fetched after ``as_of`` is
@@ -242,6 +249,7 @@ def produce_forward_week(dsn: str, season: int, week: int, *, replace_week: bool
     with closing(psycopg2.connect(dsn)) as conn:
         report = run_forward(
             conn, season, week, feature_run_id=built["pipeline_run_id"], replace_week=replace_week,
+            pending_id=pending_id,
         )
     logger.info("Forward producer wrote: %s", {k: report.get(k) for k in ("rows_served", "rows_not_served")})
     return report
@@ -283,7 +291,7 @@ def run_weekly_refresh(
         logger.info("Dry-run mode enabled: skipping live mutations.")
         return 0
 
-    pending_run_id = f"weekly_auto_{season}_pending"
+    pending_run_id = new_pending_run_id(season)  # this run's own id; step 8 promotes exactly this
     approved_run_id = f"weekly_auto_{season}"
 
     # Fail closed before any write. Step 8 promotes to approved_run_id and step 9
@@ -294,6 +302,17 @@ def run_weekly_refresh(
         _require_approved_run_id(approved_run_id, season)
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc)
+        _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        return 1
+
+    # Clear what earlier runs left (review N1): restore an archived week or stop, then delete leftover
+    # pending rows so a failed or killed run's unchecked rows can never be served.
+    step_name = "clear_leftovers"
+    try:
+        with closing(psycopg2.connect(dsn)) as conn:
+            clear_leftovers(conn, season)
+    except (Exception, SystemExit) as exc:
+        logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
 
@@ -355,7 +374,7 @@ def run_weekly_refresh(
     try:
         logger.info("Step 4b: Forward producer for season=%d week=%d (run id %s)...",
                     season, start_week, pending_run_id)
-        produce_forward_week(dsn, season, start_week, replace_week=replace_week)
+        produce_forward_week(dsn, season, start_week, replace_week=replace_week, pending_id=pending_run_id)
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
@@ -476,6 +495,8 @@ def run_weekly_refresh(
         logger.info("Step 8: Performing atomic promotion...")
         with psycopg2.connect(dsn) as conn:
             with conn.cursor() as cur:
+                # Only a run whose own producer wrote its forecast_runs row is promoted.
+                require_run_producer(cur, season, start_week, pending_run_id)
                 promote_run_id(
                     cur,
                     season=season,
