@@ -1,0 +1,968 @@
+{
+  "bootstrap_reference": true,
+  "created_at": "2026-11-14T11:33:35.040305+00:00",
+  "frozen_baseline": {
+    "carries:RB:2021": {
+      "mae": 4.385101457316002,
+      "oof_sha256": "0dd0fc35c24b684fee99c56d12c214abae2c7923f0c2775f1fb94456c3a901f4",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2022": {
+      "mae": 4.1122725434853855,
+      "oof_sha256": "0dd0fc35c24b684fee99c56d12c214abae2c7923f0c2775f1fb94456c3a901f4",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2023": {
+      "mae": 3.997514086031353,
+      "oof_sha256": "0dd0fc35c24b684fee99c56d12c214abae2c7923f0c2775f1fb94456c3a901f4",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2024": {
+      "mae": 3.9211310010733054,
+      "oof_sha256": "0dd0fc35c24b684fee99c56d12c214abae2c7923f0c2775f1fb94456c3a901f4",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "carries:RB:2025": {
+      "mae": 3.931988652451328,
+      "oof_sha256": "0dd0fc35c24b684fee99c56d12c214abae2c7923f0c2775f1fb94456c3a901f4",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "completions:QB:2021": {
+      "mae": 5.275391264757455,
+      "oof_sha256": "70aed8a59b53b85a73f2f0462ee20c66b1e2d2107479a595d90f827d0907cdac",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "completions:QB:2022": {
+      "mae": 5.220502383787717,
+      "oof_sha256": "70aed8a59b53b85a73f2f0462ee20c66b1e2d2107479a595d90f827d0907cdac",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "completions:QB:2023": {
+      "mae": 5.201469913592779,
+      "oof_sha256": "70aed8a59b53b85a73f2f0462ee20c66b1e2d2107479a595d90f827d0907cdac",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "completions:QB:2024": {
+      "mae": 5.267121389853047,
+      "oof_sha256": "70aed8a59b53b85a73f2f0462ee20c66b1e2d2107479a595d90f827d0907cdac",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "completions:QB:2025": {
+      "mae": 5.1947116802661615,
+      "oof_sha256": "70aed8a59b53b85a73f2f0462ee20c66b1e2d2107479a595d90f827d0907cdac",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2021": {
+      "mae": 6.428043645706112,
+      "oof_sha256": "e14438cb79ac57a4b07fe0185db4b603a9aad6e25bda1be26d304ca2ff5f6386",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2022": {
+      "mae": 5.803501908206971,
+      "oof_sha256": "e14438cb79ac57a4b07fe0185db4b603a9aad6e25bda1be26d304ca2ff5f6386",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2023": {
+      "mae": 5.997082526932348,
+      "oof_sha256": "e14438cb79ac57a4b07fe0185db4b603a9aad6e25bda1be26d304ca2ff5f6386",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2024": {
+      "mae": 6.2625269789307705,
+      "oof_sha256": "e14438cb79ac57a4b07fe0185db4b603a9aad6e25bda1be26d304ca2ff5f6386",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:QB:2025": {
+      "mae": 6.682446025269938,
+      "oof_sha256": "e14438cb79ac57a4b07fe0185db4b603a9aad6e25bda1be26d304ca2ff5f6386",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2021": {
+      "mae": 5.6952530984778695,
+      "oof_sha256": "0fae6eb1955eada2057a4a6cf7c7c00e19f035490d1e0e1dba9e949db198cfda",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2022": {
+      "mae": 5.213157814995498,
+      "oof_sha256": "0fae6eb1955eada2057a4a6cf7c7c00e19f035490d1e0e1dba9e949db198cfda",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2023": {
+      "mae": 4.996160381867807,
+      "oof_sha256": "0fae6eb1955eada2057a4a6cf7c7c00e19f035490d1e0e1dba9e949db198cfda",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2024": {
+      "mae": 4.8670155553045875,
+      "oof_sha256": "0fae6eb1955eada2057a4a6cf7c7c00e19f035490d1e0e1dba9e949db198cfda",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:RB:2025": {
+      "mae": 5.495046083929091,
+      "oof_sha256": "0fae6eb1955eada2057a4a6cf7c7c00e19f035490d1e0e1dba9e949db198cfda",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2021": {
+      "mae": 4.003049222703024,
+      "oof_sha256": "1c5e9cb065a5df79affa6eb82a346883d004fa7e89223656f149b020d7557586",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2022": {
+      "mae": 3.699297065038545,
+      "oof_sha256": "1c5e9cb065a5df79affa6eb82a346883d004fa7e89223656f149b020d7557586",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2023": {
+      "mae": 3.6088076459508374,
+      "oof_sha256": "1c5e9cb065a5df79affa6eb82a346883d004fa7e89223656f149b020d7557586",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2024": {
+      "mae": 3.7642430104928377,
+      "oof_sha256": "1c5e9cb065a5df79affa6eb82a346883d004fa7e89223656f149b020d7557586",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:TE:2025": {
+      "mae": 3.817468793456853,
+      "oof_sha256": "1c5e9cb065a5df79affa6eb82a346883d004fa7e89223656f149b020d7557586",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2021": {
+      "mae": 5.221449925180905,
+      "oof_sha256": "c2bff32611f703c1d5a1b754886074ea80e660fe4576cdb8af41ff1d8fcb7fe5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2022": {
+      "mae": 5.089785661178385,
+      "oof_sha256": "c2bff32611f703c1d5a1b754886074ea80e660fe4576cdb8af41ff1d8fcb7fe5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2023": {
+      "mae": 4.851245228829578,
+      "oof_sha256": "c2bff32611f703c1d5a1b754886074ea80e660fe4576cdb8af41ff1d8fcb7fe5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2024": {
+      "mae": 5.037773512428744,
+      "oof_sha256": "c2bff32611f703c1d5a1b754886074ea80e660fe4576cdb8af41ff1d8fcb7fe5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fantasy_ppr:WR:2025": {
+      "mae": 4.8288686540991845,
+      "oof_sha256": "c2bff32611f703c1d5a1b754886074ea80e660fe4576cdb8af41ff1d8fcb7fe5",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:QB:2021": {
+      "mae": 0.5666933734350406,
+      "oof_sha256": "cd44490f7ee4d394e2293bbf9cde49e0f28a37e049a28cf9e6ab67e93dae843b",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:QB:2022": {
+      "mae": 0.581291606033372,
+      "oof_sha256": "cd44490f7ee4d394e2293bbf9cde49e0f28a37e049a28cf9e6ab67e93dae843b",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:QB:2023": {
+      "mae": 0.5740263001541243,
+      "oof_sha256": "cd44490f7ee4d394e2293bbf9cde49e0f28a37e049a28cf9e6ab67e93dae843b",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:QB:2024": {
+      "mae": 0.5659264478060229,
+      "oof_sha256": "cd44490f7ee4d394e2293bbf9cde49e0f28a37e049a28cf9e6ab67e93dae843b",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:QB:2025": {
+      "mae": 0.5634162924726717,
+      "oof_sha256": "cd44490f7ee4d394e2293bbf9cde49e0f28a37e049a28cf9e6ab67e93dae843b",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:RB:2021": {
+      "mae": 0.17162149097118656,
+      "oof_sha256": "badebf439a57d947fb1f4a0d4c048e8bb0ddfe2b3f9eb021cb82c9b54220fc50",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:RB:2022": {
+      "mae": 0.163771272134216,
+      "oof_sha256": "badebf439a57d947fb1f4a0d4c048e8bb0ddfe2b3f9eb021cb82c9b54220fc50",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:RB:2023": {
+      "mae": 0.1697049865018366,
+      "oof_sha256": "badebf439a57d947fb1f4a0d4c048e8bb0ddfe2b3f9eb021cb82c9b54220fc50",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:RB:2024": {
+      "mae": 0.17487172273079493,
+      "oof_sha256": "badebf439a57d947fb1f4a0d4c048e8bb0ddfe2b3f9eb021cb82c9b54220fc50",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:RB:2025": {
+      "mae": 0.1660085385165831,
+      "oof_sha256": "badebf439a57d947fb1f4a0d4c048e8bb0ddfe2b3f9eb021cb82c9b54220fc50",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:TE:2021": {
+      "mae": 0.0649249403956697,
+      "oof_sha256": "bda94707b9b146408ea829d03698f60b0aca7cf4c668b83eb1777d3208bd9134",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:TE:2022": {
+      "mae": 0.05260730717126108,
+      "oof_sha256": "bda94707b9b146408ea829d03698f60b0aca7cf4c668b83eb1777d3208bd9134",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:TE:2023": {
+      "mae": 0.06071379625527163,
+      "oof_sha256": "bda94707b9b146408ea829d03698f60b0aca7cf4c668b83eb1777d3208bd9134",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:TE:2024": {
+      "mae": 0.06277042478856082,
+      "oof_sha256": "bda94707b9b146408ea829d03698f60b0aca7cf4c668b83eb1777d3208bd9134",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:TE:2025": {
+      "mae": 0.06564719836395293,
+      "oof_sha256": "bda94707b9b146408ea829d03698f60b0aca7cf4c668b83eb1777d3208bd9134",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:WR:2021": {
+      "mae": 0.06415151697534778,
+      "oof_sha256": "748256d8950d137b7b15ff9cb270d6ad0867cd969aec8f7ea09c67d39aa3fc16",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:WR:2022": {
+      "mae": 0.06609928970469503,
+      "oof_sha256": "748256d8950d137b7b15ff9cb270d6ad0867cd969aec8f7ea09c67d39aa3fc16",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:WR:2023": {
+      "mae": 0.07337190027082129,
+      "oof_sha256": "748256d8950d137b7b15ff9cb270d6ad0867cd969aec8f7ea09c67d39aa3fc16",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:WR:2024": {
+      "mae": 0.06223916906523973,
+      "oof_sha256": "748256d8950d137b7b15ff9cb270d6ad0867cd969aec8f7ea09c67d39aa3fc16",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "fumbles:WR:2025": {
+      "mae": 0.0568778795143658,
+      "oof_sha256": "748256d8950d137b7b15ff9cb270d6ad0867cd969aec8f7ea09c67d39aa3fc16",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "interceptions:QB:2021": {
+      "mae": 0.7387588622942415,
+      "oof_sha256": "723c8d6ff98a4ed130326cb6a2d8725ced424ec1550c72a06531cf8f60c8395d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "interceptions:QB:2022": {
+      "mae": 0.7161126856912877,
+      "oof_sha256": "723c8d6ff98a4ed130326cb6a2d8725ced424ec1550c72a06531cf8f60c8395d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "interceptions:QB:2023": {
+      "mae": 0.7058845642833307,
+      "oof_sha256": "723c8d6ff98a4ed130326cb6a2d8725ced424ec1550c72a06531cf8f60c8395d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "interceptions:QB:2024": {
+      "mae": 0.713012946199024,
+      "oof_sha256": "723c8d6ff98a4ed130326cb6a2d8725ced424ec1550c72a06531cf8f60c8395d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "interceptions:QB:2025": {
+      "mae": 0.6735462519600134,
+      "oof_sha256": "723c8d6ff98a4ed130326cb6a2d8725ced424ec1550c72a06531cf8f60c8395d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2021": {
+      "mae": 7.455021553648005,
+      "oof_sha256": "19698630e1485959fd89215c9de8f12c37907df0b3347e0bf8c3bcf84da5a2bd",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2022": {
+      "mae": 7.601070235736539,
+      "oof_sha256": "19698630e1485959fd89215c9de8f12c37907df0b3347e0bf8c3bcf84da5a2bd",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2023": {
+      "mae": 7.357740817571929,
+      "oof_sha256": "19698630e1485959fd89215c9de8f12c37907df0b3347e0bf8c3bcf84da5a2bd",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2024": {
+      "mae": 7.6265693914957415,
+      "oof_sha256": "19698630e1485959fd89215c9de8f12c37907df0b3347e0bf8c3bcf84da5a2bd",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "pass_attempts:QB:2025": {
+      "mae": 7.510116660802018,
+      "oof_sha256": "19698630e1485959fd89215c9de8f12c37907df0b3347e0bf8c3bcf84da5a2bd",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_tds:QB:2021": {
+      "mae": 0.9100750856146855,
+      "oof_sha256": "29f4f551804d51f8a9b7a13ac4e3903e04b2b31b4b106a4c5f4df33eb22af3bb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_tds:QB:2022": {
+      "mae": 0.8319117059770196,
+      "oof_sha256": "29f4f551804d51f8a9b7a13ac4e3903e04b2b31b4b106a4c5f4df33eb22af3bb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_tds:QB:2023": {
+      "mae": 0.8260052933462959,
+      "oof_sha256": "29f4f551804d51f8a9b7a13ac4e3903e04b2b31b4b106a4c5f4df33eb22af3bb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_tds:QB:2024": {
+      "mae": 0.9010648234068197,
+      "oof_sha256": "29f4f551804d51f8a9b7a13ac4e3903e04b2b31b4b106a4c5f4df33eb22af3bb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_tds:QB:2025": {
+      "mae": 0.9393748561540822,
+      "oof_sha256": "29f4f551804d51f8a9b7a13ac4e3903e04b2b31b4b106a4c5f4df33eb22af3bb",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2021": {
+      "mae": 62.35616928895373,
+      "oof_sha256": "00f9d0fd6f9771446b324d2456df1b87d67128d394409e2f3136376f956c6d47",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2022": {
+      "mae": 60.762710729145965,
+      "oof_sha256": "00f9d0fd6f9771446b324d2456df1b87d67128d394409e2f3136376f956c6d47",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2023": {
+      "mae": 63.96641170732543,
+      "oof_sha256": "00f9d0fd6f9771446b324d2456df1b87d67128d394409e2f3136376f956c6d47",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2024": {
+      "mae": 63.6596971876189,
+      "oof_sha256": "00f9d0fd6f9771446b324d2456df1b87d67128d394409e2f3136376f956c6d47",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "passing_yards:QB:2025": {
+      "mae": 63.702871595311834,
+      "oof_sha256": "00f9d0fd6f9771446b324d2456df1b87d67128d394409e2f3136376f956c6d47",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:RB:2021": {
+      "mae": 0.15283569666641023,
+      "oof_sha256": "07bb3cd00a5516a2618de193e8cce409fa58629eb844a339631097bdb4081dcf",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:RB:2022": {
+      "mae": 0.14208199507552252,
+      "oof_sha256": "07bb3cd00a5516a2618de193e8cce409fa58629eb844a339631097bdb4081dcf",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:RB:2023": {
+      "mae": 0.14505683349704904,
+      "oof_sha256": "07bb3cd00a5516a2618de193e8cce409fa58629eb844a339631097bdb4081dcf",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:RB:2024": {
+      "mae": 0.13616196994104138,
+      "oof_sha256": "07bb3cd00a5516a2618de193e8cce409fa58629eb844a339631097bdb4081dcf",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:RB:2025": {
+      "mae": 0.1566622773581969,
+      "oof_sha256": "07bb3cd00a5516a2618de193e8cce409fa58629eb844a339631097bdb4081dcf",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:TE:2021": {
+      "mae": 0.33382449711596185,
+      "oof_sha256": "65a48918f4b0dc76069ac39359121c5cbb8308403fb51a110958c7b4592ed9c1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:TE:2022": {
+      "mae": 0.29153702010107285,
+      "oof_sha256": "65a48918f4b0dc76069ac39359121c5cbb8308403fb51a110958c7b4592ed9c1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:TE:2023": {
+      "mae": 0.29578075610315824,
+      "oof_sha256": "65a48918f4b0dc76069ac39359121c5cbb8308403fb51a110958c7b4592ed9c1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:TE:2024": {
+      "mae": 0.2831121945623172,
+      "oof_sha256": "65a48918f4b0dc76069ac39359121c5cbb8308403fb51a110958c7b4592ed9c1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:TE:2025": {
+      "mae": 0.3071068488525434,
+      "oof_sha256": "65a48918f4b0dc76069ac39359121c5cbb8308403fb51a110958c7b4592ed9c1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:WR:2021": {
+      "mae": 0.3669787274711953,
+      "oof_sha256": "7e7b1e97475740aded78ef3ae76fdea385f8a1404123c0ad18fb30854f3ce36d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:WR:2022": {
+      "mae": 0.3545732296592796,
+      "oof_sha256": "7e7b1e97475740aded78ef3ae76fdea385f8a1404123c0ad18fb30854f3ce36d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:WR:2023": {
+      "mae": 0.343767362659964,
+      "oof_sha256": "7e7b1e97475740aded78ef3ae76fdea385f8a1404123c0ad18fb30854f3ce36d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:WR:2024": {
+      "mae": 0.3732561322980755,
+      "oof_sha256": "7e7b1e97475740aded78ef3ae76fdea385f8a1404123c0ad18fb30854f3ce36d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_tds:WR:2025": {
+      "mae": 0.3527577544188599,
+      "oof_sha256": "7e7b1e97475740aded78ef3ae76fdea385f8a1404123c0ad18fb30854f3ce36d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2021": {
+      "mae": 12.602306542463168,
+      "oof_sha256": "291259ae00db5fb91c1d6bd5bb1004709b7584f005d5945c938d64f7a27ca418",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2022": {
+      "mae": 10.81427503282973,
+      "oof_sha256": "291259ae00db5fb91c1d6bd5bb1004709b7584f005d5945c938d64f7a27ca418",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2023": {
+      "mae": 11.638862296112862,
+      "oof_sha256": "291259ae00db5fb91c1d6bd5bb1004709b7584f005d5945c938d64f7a27ca418",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2024": {
+      "mae": 10.354451242889018,
+      "oof_sha256": "291259ae00db5fb91c1d6bd5bb1004709b7584f005d5945c938d64f7a27ca418",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:RB:2025": {
+      "mae": 11.11805874913215,
+      "oof_sha256": "291259ae00db5fb91c1d6bd5bb1004709b7584f005d5945c938d64f7a27ca418",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2021": {
+      "mae": 17.37288700565707,
+      "oof_sha256": "a776fa81d41c1fb280c1148cec629d31c59f44f5a09651e062d968abcfa4a59c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2022": {
+      "mae": 15.922713383929072,
+      "oof_sha256": "a776fa81d41c1fb280c1148cec629d31c59f44f5a09651e062d968abcfa4a59c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2023": {
+      "mae": 15.895885900127732,
+      "oof_sha256": "a776fa81d41c1fb280c1148cec629d31c59f44f5a09651e062d968abcfa4a59c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2024": {
+      "mae": 16.097018037327214,
+      "oof_sha256": "a776fa81d41c1fb280c1148cec629d31c59f44f5a09651e062d968abcfa4a59c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:TE:2025": {
+      "mae": 15.803537690766754,
+      "oof_sha256": "a776fa81d41c1fb280c1148cec629d31c59f44f5a09651e062d968abcfa4a59c",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2021": {
+      "mae": 23.85350832241007,
+      "oof_sha256": "c2f32d327955a7be53f95fa2d43bc9d94fffbcdfb45c05c5c7170131cd506027",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2022": {
+      "mae": 23.746282024479424,
+      "oof_sha256": "c2f32d327955a7be53f95fa2d43bc9d94fffbcdfb45c05c5c7170131cd506027",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2023": {
+      "mae": 23.51543680311741,
+      "oof_sha256": "c2f32d327955a7be53f95fa2d43bc9d94fffbcdfb45c05c5c7170131cd506027",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2024": {
+      "mae": 23.120689119419303,
+      "oof_sha256": "c2f32d327955a7be53f95fa2d43bc9d94fffbcdfb45c05c5c7170131cd506027",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receiving_yards:WR:2025": {
+      "mae": 22.704287075082718,
+      "oof_sha256": "c2f32d327955a7be53f95fa2d43bc9d94fffbcdfb45c05c5c7170131cd506027",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:RB:2021": {
+      "mae": 1.2252219496592063,
+      "oof_sha256": "e820bfb20dbcc5f07a3d126409c5ed1fd3afbb2298168ee6fb1c400752527815",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:RB:2022": {
+      "mae": 1.0990281500695265,
+      "oof_sha256": "e820bfb20dbcc5f07a3d126409c5ed1fd3afbb2298168ee6fb1c400752527815",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:RB:2023": {
+      "mae": 1.1393097969305441,
+      "oof_sha256": "e820bfb20dbcc5f07a3d126409c5ed1fd3afbb2298168ee6fb1c400752527815",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:RB:2024": {
+      "mae": 0.9402573410602686,
+      "oof_sha256": "e820bfb20dbcc5f07a3d126409c5ed1fd3afbb2298168ee6fb1c400752527815",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:RB:2025": {
+      "mae": 1.0567589110145887,
+      "oof_sha256": "e820bfb20dbcc5f07a3d126409c5ed1fd3afbb2298168ee6fb1c400752527815",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:TE:2021": {
+      "mae": 1.2785533794093595,
+      "oof_sha256": "45ba45dbc0f9a98bd777d4c224a3537946901ee24108f647a48ac331ec541d82",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:TE:2022": {
+      "mae": 1.255199976527545,
+      "oof_sha256": "45ba45dbc0f9a98bd777d4c224a3537946901ee24108f647a48ac331ec541d82",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:TE:2023": {
+      "mae": 1.2544127521140196,
+      "oof_sha256": "45ba45dbc0f9a98bd777d4c224a3537946901ee24108f647a48ac331ec541d82",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:TE:2024": {
+      "mae": 1.3485693934927916,
+      "oof_sha256": "45ba45dbc0f9a98bd777d4c224a3537946901ee24108f647a48ac331ec541d82",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:TE:2025": {
+      "mae": 1.2586703543251654,
+      "oof_sha256": "45ba45dbc0f9a98bd777d4c224a3537946901ee24108f647a48ac331ec541d82",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:WR:2021": {
+      "mae": 1.6009098522097887,
+      "oof_sha256": "68603d7a8d8f1245a1195062063a7e1ae1207c36d933d6d14127cb57a3f84d5d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:WR:2022": {
+      "mae": 1.5952670042025812,
+      "oof_sha256": "68603d7a8d8f1245a1195062063a7e1ae1207c36d933d6d14127cb57a3f84d5d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:WR:2023": {
+      "mae": 1.4794284680415617,
+      "oof_sha256": "68603d7a8d8f1245a1195062063a7e1ae1207c36d933d6d14127cb57a3f84d5d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:WR:2024": {
+      "mae": 1.5154013871149192,
+      "oof_sha256": "68603d7a8d8f1245a1195062063a7e1ae1207c36d933d6d14127cb57a3f84d5d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "receptions:WR:2025": {
+      "mae": 1.471602922438485,
+      "oof_sha256": "68603d7a8d8f1245a1195062063a7e1ae1207c36d933d6d14127cb57a3f84d5d",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:QB:2021": {
+      "mae": 0.29331562253743393,
+      "oof_sha256": "6b428cc1a5f72a2d0895e7957f026d3fead4d9c5bdbe000268d6a0c891540ec9",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:QB:2022": {
+      "mae": 0.29163151897002515,
+      "oof_sha256": "6b428cc1a5f72a2d0895e7957f026d3fead4d9c5bdbe000268d6a0c891540ec9",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:QB:2023": {
+      "mae": 0.2936640935219025,
+      "oof_sha256": "6b428cc1a5f72a2d0895e7957f026d3fead4d9c5bdbe000268d6a0c891540ec9",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:QB:2024": {
+      "mae": 0.2910223273956572,
+      "oof_sha256": "6b428cc1a5f72a2d0895e7957f026d3fead4d9c5bdbe000268d6a0c891540ec9",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:QB:2025": {
+      "mae": 0.2822091096997636,
+      "oof_sha256": "6b428cc1a5f72a2d0895e7957f026d3fead4d9c5bdbe000268d6a0c891540ec9",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:RB:2021": {
+      "mae": 0.45761461447676444,
+      "oof_sha256": "35c368480ae3f6191bab24ce505ad5de989a4578195752f22aac1983a1bf7ef8",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:RB:2022": {
+      "mae": 0.42420045741825996,
+      "oof_sha256": "35c368480ae3f6191bab24ce505ad5de989a4578195752f22aac1983a1bf7ef8",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:RB:2023": {
+      "mae": 0.42566108147494774,
+      "oof_sha256": "35c368480ae3f6191bab24ce505ad5de989a4578195752f22aac1983a1bf7ef8",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:RB:2024": {
+      "mae": 0.4162096598956787,
+      "oof_sha256": "35c368480ae3f6191bab24ce505ad5de989a4578195752f22aac1983a1bf7ef8",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:RB:2025": {
+      "mae": 0.4847676883271751,
+      "oof_sha256": "35c368480ae3f6191bab24ce505ad5de989a4578195752f22aac1983a1bf7ef8",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:TE:2021": {
+      "mae": 0.02423625265937099,
+      "oof_sha256": "413644812c738666bab98f3305d5c02be1eac7a98a94f06a4423ae4cd776da31",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:TE:2022": {
+      "mae": 0.012045842011972686,
+      "oof_sha256": "413644812c738666bab98f3305d5c02be1eac7a98a94f06a4423ae4cd776da31",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:TE:2023": {
+      "mae": 0.011395313333866982,
+      "oof_sha256": "413644812c738666bab98f3305d5c02be1eac7a98a94f06a4423ae4cd776da31",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:TE:2024": {
+      "mae": 0.021614575572268004,
+      "oof_sha256": "413644812c738666bab98f3305d5c02be1eac7a98a94f06a4423ae4cd776da31",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:TE:2025": {
+      "mae": 0.011851083239982933,
+      "oof_sha256": "413644812c738666bab98f3305d5c02be1eac7a98a94f06a4423ae4cd776da31",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:WR:2021": {
+      "mae": 0.020955803837128476,
+      "oof_sha256": "9f121ea443935e48b5df11daf567207bd46ecda4b55ae3ab6ca86371658c4468",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:WR:2022": {
+      "mae": 0.02083005946212694,
+      "oof_sha256": "9f121ea443935e48b5df11daf567207bd46ecda4b55ae3ab6ca86371658c4468",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:WR:2023": {
+      "mae": 0.02162829047486646,
+      "oof_sha256": "9f121ea443935e48b5df11daf567207bd46ecda4b55ae3ab6ca86371658c4468",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:WR:2024": {
+      "mae": 0.01566147341000824,
+      "oof_sha256": "9f121ea443935e48b5df11daf567207bd46ecda4b55ae3ab6ca86371658c4468",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_tds:WR:2025": {
+      "mae": 0.013308113496265777,
+      "oof_sha256": "9f121ea443935e48b5df11daf567207bd46ecda4b55ae3ab6ca86371658c4468",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2021": {
+      "mae": 11.74989995772551,
+      "oof_sha256": "aeb68dc30af8b14c600b0f038a6188b5ca42f90586261b3e39603e9aaccce399",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2022": {
+      "mae": 12.777042770832455,
+      "oof_sha256": "aeb68dc30af8b14c600b0f038a6188b5ca42f90586261b3e39603e9aaccce399",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2023": {
+      "mae": 12.3965065385485,
+      "oof_sha256": "aeb68dc30af8b14c600b0f038a6188b5ca42f90586261b3e39603e9aaccce399",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2024": {
+      "mae": 13.281320084944218,
+      "oof_sha256": "aeb68dc30af8b14c600b0f038a6188b5ca42f90586261b3e39603e9aaccce399",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:QB:2025": {
+      "mae": 12.029521348623259,
+      "oof_sha256": "aeb68dc30af8b14c600b0f038a6188b5ca42f90586261b3e39603e9aaccce399",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2021": {
+      "mae": 24.13354868215966,
+      "oof_sha256": "7c38a110eda852804c2a05a570b8188bb2342f75f61ce1314092f2c8f6c77ef1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2022": {
+      "mae": 24.01470673292409,
+      "oof_sha256": "7c38a110eda852804c2a05a570b8188bb2342f75f61ce1314092f2c8f6c77ef1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2023": {
+      "mae": 23.00012428324015,
+      "oof_sha256": "7c38a110eda852804c2a05a570b8188bb2342f75f61ce1314092f2c8f6c77ef1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2024": {
+      "mae": 23.394247803681214,
+      "oof_sha256": "7c38a110eda852804c2a05a570b8188bb2342f75f61ce1314092f2c8f6c77ef1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "rushing_yards:RB:2025": {
+      "mae": 24.51227409939407,
+      "oof_sha256": "7c38a110eda852804c2a05a570b8188bb2342f75f61ce1314092f2c8f6c77ef1",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2021": {
+      "mae": 1.3803406700773326,
+      "oof_sha256": "af5a66915f1096942f7c87f01feb51fb03ea0ba8173ca157411a1105708eacfe",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2022": {
+      "mae": 1.2846586528731925,
+      "oof_sha256": "af5a66915f1096942f7c87f01feb51fb03ea0ba8173ca157411a1105708eacfe",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2023": {
+      "mae": 1.3111581183171586,
+      "oof_sha256": "af5a66915f1096942f7c87f01feb51fb03ea0ba8173ca157411a1105708eacfe",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2024": {
+      "mae": 1.0682327824984263,
+      "oof_sha256": "af5a66915f1096942f7c87f01feb51fb03ea0ba8173ca157411a1105708eacfe",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:RB:2025": {
+      "mae": 1.2218037999562852,
+      "oof_sha256": "af5a66915f1096942f7c87f01feb51fb03ea0ba8173ca157411a1105708eacfe",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2021": {
+      "mae": 1.6389423142317956,
+      "oof_sha256": "ab6deb3f3d344fba76af7a44a5c529925dfffa114cddbfaf676f4df7434845b7",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2022": {
+      "mae": 1.524147704364933,
+      "oof_sha256": "ab6deb3f3d344fba76af7a44a5c529925dfffa114cddbfaf676f4df7434845b7",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2023": {
+      "mae": 1.5798309479877168,
+      "oof_sha256": "ab6deb3f3d344fba76af7a44a5c529925dfffa114cddbfaf676f4df7434845b7",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2024": {
+      "mae": 1.6673202697180234,
+      "oof_sha256": "ab6deb3f3d344fba76af7a44a5c529925dfffa114cddbfaf676f4df7434845b7",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:TE:2025": {
+      "mae": 1.5120142629773112,
+      "oof_sha256": "ab6deb3f3d344fba76af7a44a5c529925dfffa114cddbfaf676f4df7434845b7",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2021": {
+      "mae": 2.1287199915477197,
+      "oof_sha256": "2fc6abb8b19aa2d8a7cc08704c7dc6468ab9f67fb14c3802a81ad1da96bc67c3",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2022": {
+      "mae": 2.060829768672355,
+      "oof_sha256": "2fc6abb8b19aa2d8a7cc08704c7dc6468ab9f67fb14c3802a81ad1da96bc67c3",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2023": {
+      "mae": 1.9315498756202831,
+      "oof_sha256": "2fc6abb8b19aa2d8a7cc08704c7dc6468ab9f67fb14c3802a81ad1da96bc67c3",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2024": {
+      "mae": 1.9952173831554352,
+      "oof_sha256": "2fc6abb8b19aa2d8a7cc08704c7dc6468ab9f67fb14c3802a81ad1da96bc67c3",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    },
+    "targets:WR:2025": {
+      "mae": 1.9134195710196837,
+      "oof_sha256": "2fc6abb8b19aa2d8a7cc08704c7dc6468ab9f67fb14c3802a81ad1da96bc67c3",
+      "reference_kind": "user_authorized_first_causal_reference",
+      "release_id": "bootstrap_causal_lgbm_reference_20260819"
+    }
+  },
+  "governance": "User-authorized first causal reference after C-01 invalidated historical releases.",
+  "release_id": "bootstrap_causal_lgbm_reference_20260819"
+}

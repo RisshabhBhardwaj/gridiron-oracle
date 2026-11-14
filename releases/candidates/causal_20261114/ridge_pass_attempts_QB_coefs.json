@@ -1,0 +1,10 @@
+{
+  "learner_order": [
+    "lgbm"
+  ],
+  "weights": {
+    "lgbm": 1.0
+  },
+  "intercept": 0.0,
+  "selection_mode": "validated_best_base"
+}
