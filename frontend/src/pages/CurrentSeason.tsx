@@ -113,16 +113,16 @@ export function CurrentSeason() {
   const currentWeek = seasonMeta?.week ?? 1
 
   const [activeTab, setActiveTab] = useState<Tab>('weekly')
-  const [selectedWeek, setSelectedWeek] = useState<number>(currentWeek)
+  // The week the user picked, or null to follow the current week. Deriving the
+  // week (instead of copying seasonMeta.week into state from an effect) means the
+  // first request after /season/current resolves already asks for the right week.
+  // The copy left one render on the offline fallback week, so the page requested
+  // that wrong week, discarded it, and flashed a skeleton over the real cards.
+  const [pickedWeek, setPickedWeek] = useState<number | null>(null)
+  const selectedWeek = pickedWeek ?? currentWeek
   const [startWeek, setStartWeek] = useState<number>(1)
   const [statKey, setStatKey] = useState<SeasonSimStat>('fantasy_ppr')
   const [selectedPositions, setSelectedPositions] = useState<string[]>(['WR', 'RB', 'TE', 'QB'])
-
-  useEffect(() => {
-    if (seasonMeta?.week) {
-      setSelectedWeek(seasonMeta.week)
-    }
-  }, [seasonMeta?.week])
 
   // Projections queries
   const weeklyQuery = useSeasonWeekProjections({
@@ -221,7 +221,7 @@ export function CurrentSeason() {
               <Select
                 items={WEEK_ITEMS}
                 value={String(selectedWeek)}
-                onValueChange={(v) => { if (v) setSelectedWeek(Number(v)) }}
+                onValueChange={(v) => { if (v) setPickedWeek(Number(v)) }}
               >
                 <SelectTrigger aria-labelledby="week-label" className="h-8 text-xs">
                   <SelectValue />

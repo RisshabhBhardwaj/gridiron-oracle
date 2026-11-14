@@ -14,9 +14,13 @@ set -uo pipefail
 
 remote_name="${1:-origin}"
 
-# Explicitly public templates (must not be blocked by .env.* rules).
-ALLOW_EXACT=(
-  '.env.example'
+# Explicitly public templates (must not be blocked by .env.* rules): a file
+# named `.env.example`, or `.env.<name>.example`, at any depth. Templates hold
+# variable names only. Real env files (`.env`, `.env.local`, `.env.production`,
+# `.env.example.bak`, ...) do not match, and the content scan still runs on
+# templates, so a value pasted into one is still caught.
+ALLOW_PATTERNS=(
+  '(^|/)\.env(\.[A-Za-z0-9_-]+)?\.example$'
 )
 
 # Path patterns. Anchored with (^|/) so nested copies are caught too.
@@ -61,8 +65,8 @@ blocked=0
 is_allowed() {
   local path="$1"
   local allowed
-  for allowed in "${ALLOW_EXACT[@]}"; do
-    if [[ "$path" == "$allowed" ]]; then
+  for allowed in "${ALLOW_PATTERNS[@]}"; do
+    if [[ "$path" =~ $allowed ]]; then
       return 0
     fi
   done

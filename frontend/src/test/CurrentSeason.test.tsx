@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SearchProvider } from '../context/SearchContext'
 import { CurrentSeason } from '../pages/CurrentSeason'
+import { server } from './handlers'
 
 function Here() {
   const loc = useLocation()
@@ -63,6 +64,26 @@ describe('CurrentSeason', () => {
     await waitFor(() => {
       expect(screen.getByText('Start Week:')).toBeInTheDocument()
     })
+  })
+
+  it('requests only the current week once /season/current resolves', async () => {
+    // Regression: the page copied the current week into state from an effect, so
+    // for one render it asked for the offline fallback week (1) before the real
+    // one (5). That wasted request also made the cards vanish and reappear, which
+    // raced the click in the next test on slow machines (CI).
+    const weeklyPaths: string[] = []
+    const onStart = ({ request }: { request: Request }) => {
+      const path = new URL(request.url).pathname
+      if (/\/projections\/season\/\d+\/weeks\/\d+$/.test(path)) weeklyPaths.push(path)
+    }
+    server.events.on('request:start', onStart)
+    try {
+      renderWithProviders(<CurrentSeason />)
+      await screen.findByText('Justin Jefferson')
+      expect(weeklyPaths).toEqual(['/api/projections/season/2025/weeks/5'])
+    } finally {
+      server.events.removeListener('request:start', onStart)
+    }
   })
 
   it('opens the player page with the name, week, season and stat in the address', async () => {

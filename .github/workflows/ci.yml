@@ -112,12 +112,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      # CPU-only torch first, as backend/Dockerfile does. The default PyPI wheel
-      # pulls several GB of nvidia-* CUDA packages; with them, this job ran out of
-      # disk (run 32920850950: "No space left on device"). --no-cache-dir keeps pip
-      # from keeping a second copy of every wheel.
-      - name: Install CPU-only torch
-        run: pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
+      # CPU-only torch first. The default PyPI wheel pulls several GB of nvidia-*
+      # CUDA packages; with them, this job ran out of disk (run 32920850950:
+      # "No space left on device"). --no-cache-dir keeps pip from keeping a second
+      # copy of every wheel.
+      #
+      # The version MUST be the one pinned in backend/requirements.txt. An
+      # unpinned install took the newest CPU wheel (2.15.0+cpu); the next step
+      # then saw `torch==2.11.0` unsatisfied, uninstalled it and installed the CUDA
+      # wheel from PyPI (2.11.0+cu130). With the same version installed here, pip
+      # treats the pin as already satisfied (2.11.0+cpu matches ==2.11.0).
+      - name: Install CPU-only torch (version pinned in requirements.txt)
+        run: |
+          set -euo pipefail
+          pin=$(grep -E '^torch==' backend/requirements.txt | sed -E 's/[[:space:]]*#.*$//')
+          test -n "$pin"
+          echo "Installing CPU build of $pin"
+          pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "$pin"
 
       - name: Install backend deps
         # -test file pulls in requirements.txt plus the pytest stack this job runs.
@@ -164,9 +175,19 @@ jobs:
           python-version: "3.11"
 
       # The revisions and alembic/env.py import only alembic, sqlalchemy and the
-      # standard library, so the ML stack is not installed here.
+      # standard library, so the ML stack is not installed here. The three
+      # packages are installed at the exact pins in backend/requirements.txt. An
+      # unpinned `sqlalchemy>=2.0` resolved to 2.1, where a bare `postgresql://`
+      # URL means psycopg 3 instead of psycopg2, and the job failed with
+      # "No module named 'psycopg'". The pins keep CI on the driver the app uses.
       - name: Install migration dependencies
-        run: pip install --no-cache-dir "alembic>=1.13" "sqlalchemy>=2.0" "psycopg2-binary>=2.9"
+        run: |
+          set -euo pipefail
+          grep -E '^(alembic|SQLAlchemy|psycopg2-binary)==' backend/requirements.txt \
+            | sed 's/[[:space:]]*#.*$//' > "$RUNNER_TEMP/migration-requirements.txt"
+          cat "$RUNNER_TEMP/migration-requirements.txt"
+          test "$(wc -l < "$RUNNER_TEMP/migration-requirements.txt")" -eq 3
+          pip install --no-cache-dir -r "$RUNNER_TEMP/migration-requirements.txt"
 
       - name: Prove migration reversibility on an empty database
         run: |
