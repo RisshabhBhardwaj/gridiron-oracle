@@ -6,7 +6,9 @@ writes in one transaction, records itself in ``forecast_runs`` under its own key
 (``availability_refresh_<season>_w<WW>_<UTC stamp>``) and refuses unless:
 
 * the week has games and at least one has not started (no score, kickoff after the new ``as_of``);
-* forward projection rows exist for those games.
+* forward projection rows exist for those games;
+* the fresh snapshot has injury-report rows (a report or practice status), since roster rows alone
+  would clear every designation.
 
 Work is per game (coordinator answer 6): rows of a game that has started are frozen, and only rows of
 games still to be played are updated, so a Thursday game never stops Friday's update of Sunday.
@@ -82,8 +84,8 @@ def _forward_rows(conn, season: int, week: int, run_ids: list[str], game_ids: li
 def resolve_target_week(conn, season: int, now: datetime) -> int:
     """The week of the next kickoff after ``now``: the forward week a Friday refresh is for.
 
-    In a week with a Thursday game that week is already past its first kickoff on Friday, so the
-    refresh refuses it (``refresh_availability`` says why) instead of silently picking another week.
+    In a week with a Thursday game that week is still returned on Friday: its Thursday game is frozen
+    and ``refresh_availability`` updates only the games that have not started.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -95,6 +97,28 @@ def resolve_target_week(conn, season: int, now: datetime) -> int:
     if not row:
         raise AvailabilityRefreshRefused(f"no upcoming kickoff in season {season}; nothing to refresh")
     return int(row[0])
+
+
+def _require_injury_reports(conn, snapshot_id: str) -> int:
+    """Refuse a snapshot with no injury-report rows. By Friday every team has filed reports.
+
+    ``capture_snapshot`` only refuses when injuries and rosters are both empty. Roster rows alone would
+    map every Out/Doubtful player to no status, and the refresh would serve all of them.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "-- av:injury_rows\nSELECT count(*) FROM availability_reports WHERE snapshot_id = %s "
+            "AND (report_status IS NOT NULL OR practice_status IS NOT NULL)",
+            (snapshot_id,),
+        )
+        row = cur.fetchone()
+    n = int(row[0]) if row else 0
+    if n == 0:
+        raise AvailabilityRefreshRefused(
+            f"snapshot {snapshot_id} has no injury-report rows (no report or practice status); "
+            "refusing to clear designations from roster rows alone. Nothing was updated"
+        )
+    return n
 
 
 def default_run_ids(season: int) -> list[str]:
@@ -119,6 +143,7 @@ def refresh_availability(
     run_ids = run_ids if run_ids is not None else default_run_ids(season)
     _open_games(conn, season, week, now())  # refuse before fetching when nothing can change
     snapshot = capture(conn, season, week)
+    _require_injury_reports(conn, snapshot["snapshot_id"])
     as_of = now()
     if as_of.tzinfo is None:
         raise ValueError("now() must be timezone-aware")

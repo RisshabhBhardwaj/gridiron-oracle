@@ -27,10 +27,11 @@ NORMAL = (("g_thu", THURSDAY, 24, 17), ("g_sun1", SUNDAY, None, None), ("g_sun2"
           ("g_mon", MONDAY, None, None))
 
 
-def _conn(*, games=NORMAL, rows=(("p1", "Questionable"), ("p2", None), ("p3", "Out"))):
+def _conn(*, games=NORMAL, rows=(("p1", "Questionable"), ("p2", None), ("p3", "Out")), injury_rows=40):
     return FakeConn(routes=[
         ("-- av:games", (["id", "kickoff_at", "home_score", "away_score"], list(games))),
         ("-- av:rows", (COLS, list(rows))),
+        ("-- av:injury_rows", (["n"], [(injury_rows,)])),
     ])
 
 
@@ -339,3 +340,20 @@ def test_nothing_in_the_availability_path_stops_a_training_unit():
         text = (UNITS / name).read_text()
         block = text[text.index("availability"):] if name == "compose.yml" else text
         assert "systemctl stop" not in block and "docker stop" not in block and "docker kill" not in block
+
+
+def test_a_snapshot_with_no_injury_report_rows_is_refused_and_changes_nothing():
+    """Roster rows alone must not clear every Out/Doubtful designation (manager review, item 2)."""
+    conn = _conn(injury_rows=0)
+    with pytest.raises(AvailabilityRefreshRefused, match="injury"):
+        _run(conn, {"p1": None, "p2": None, "p3": None})  # the loader would clear p3 (Out)
+    assert _updates(conn) == []
+    assert not any(e[0] == "execute" and "INSERT INTO forecast_runs" in e[1] for e in conn.log)
+
+
+def test_the_injury_row_check_counts_report_or_practice_status_of_this_snapshot():
+    conn = _conn()
+    _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    q = next(e for e in conn.log if e[0] == "execute" and "-- av:injury_rows" in e[1])
+    assert "report_status IS NOT NULL" in q[1] and "practice_status IS NOT NULL" in q[1]
+    assert "availability_reports" in q[1] and q[2] == ("avail_new",)
