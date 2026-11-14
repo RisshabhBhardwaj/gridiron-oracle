@@ -43,7 +43,7 @@ import hashlib
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
@@ -116,6 +116,10 @@ class ManifestEntryMissing(ManifestError):
 
 class ArtifactIntegrityError(ManifestError):
     """An artifact's SHA-256 does not match the digest the manifest pins."""
+
+
+class LfsPointerError(ArtifactIntegrityError):
+    """A pinned file is a Git LFS pointer, not the content: the checkout was never smudged."""
 
 
 class LearnerPolicyError(ManifestError):
@@ -259,6 +263,17 @@ def verify_file_digest(path: Path | str, expected: str) -> None:
         )
 
 
+#: First line of every Git LFS pointer file. A model checked out without
+#: ``git lfs pull`` is this text, not the model (decision 0012, D1).
+LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/v1"
+
+
+def is_lfs_pointer(path: Path | str) -> bool:
+    """True if *path* is a Git LFS pointer file (it starts with the LFS spec line)."""
+    with open(path, "rb") as handle:
+        return handle.read(len(LFS_POINTER_PREFIX)) == LFS_POINTER_PREFIX
+
+
 # ── Manifest ──────────────────────────────────────────────────────────────────
 
 
@@ -280,6 +295,11 @@ class ArtifactManifest:
     stack_index: Mapping[tuple[str, str], str]
     #: (stat, position) → repo-relative executable Ridge coefficient artifact.
     coefficient_index: Mapping[tuple[str, str], str]
+    #: (learner, stat, position) → repo-relative fitted base-model file (decision 0012).
+    #: Empty when the manifest has no ``artifacts.base_models`` (history serving only).
+    model_index: Mapping[tuple[str, str, str], str] = field(default_factory=dict)
+    #: (learner, stat, position) → that model's entry in the pinned MODELS.json.
+    model_meta: Mapping[tuple[str, str, str], Mapping[str, object]] = field(default_factory=dict)
 
     # ── lookup ────────────────────────────────────────────────────────────
 
@@ -397,6 +417,68 @@ class ArtifactManifest:
             self.require_digest(relpath, absolute)
         return absolute
 
+    # ── base models (decision 0012) ───────────────────────────────────────
+
+    @property
+    def has_base_models(self) -> bool:
+        return bool(self.model_index)
+
+    def require_base_models(self) -> None:
+        """The forward producer's entry check: refuse a manifest that pins no models."""
+        if not self.model_index:
+            raise ManifestEntryMissing(
+                f"{self.path} has no 'artifacts.base_models'. The forward producer serves only "
+                "fitted models pinned by this release; history serving is unaffected. "
+                "Add the models and re-freeze (decision 0012)."
+            )
+
+    def resolve_base_model(
+        self, stat: str, position: str, learner: str, *, verify: bool = True
+    ) -> Path:
+        """
+        Absolute path to the pinned fitted base model for one cell and learner.
+
+        Raises:
+            ManifestEntryMissing:    no model is pinned (including a learner whose
+                                     ridge weight is 0.0, which is never pinned).
+            FileNotFoundError:       pinned path is absent on disk.
+            LfsPointerError:         the file is a Git LFS pointer, not the model.
+            ArtifactIntegrityError:  content does not match the pinned digest.
+        """
+        self.require_base_models()
+        key = (learner, stat, position.upper())
+        try:
+            relpath = self.model_index[key]
+        except KeyError:
+            raise ManifestEntryMissing(
+                f"{self.path} pins no base model for learner={learner!r} stat={stat!r} "
+                f"position={position!r}. A learner with ridge weight 0.0 is never pinned."
+            ) from None
+        absolute = self.root / relpath
+        if not absolute.exists():
+            raise FileNotFoundError(
+                f"Manifest pins {relpath} for {learner}/{stat}/{position}, but the file is missing."
+            )
+        if verify:
+            if is_lfs_pointer(absolute):
+                raise LfsPointerError(
+                    f"{relpath} is a Git LFS pointer, not the model. Run `git lfs pull` on the "
+                    "Mac, check that `git lfs ls-files` shows `*` for every model, then sync the "
+                    "smudged files (docs/runbooks/vps4-causal-rerun.md)."
+                )
+            self.require_digest(relpath, absolute)
+        return absolute
+
+    def base_model_meta(self, stat: str, position: str, learner: str) -> Mapping[str, object]:
+        """The pinned MODELS.json entry for one model (features, seasons, params, ...)."""
+        self.require_base_models()
+        try:
+            return self.model_meta[(learner, stat, position.upper())]
+        except KeyError:
+            raise ManifestEntryMissing(
+                f"{self.path} pins no base model for {learner}/{stat}/{position}."
+            ) from None
+
     # ── protection ────────────────────────────────────────────────────────
 
     def protected_relpaths(self) -> frozenset[str]:
@@ -452,6 +534,165 @@ def _parse_coefficient_relpath(relpath: str) -> Optional[tuple[str, str]]:
     if not stat or position.upper() not in POSITIONS:
         return None
     return stat, position.upper()
+
+
+MODELS_META_NAME = "MODELS.json"
+MODELS_META_SCHEMA_VERSION = 1
+#: File extension each learner's native model format uses.
+BASE_MODEL_EXTENSIONS: Mapping[str, str] = {"lgbm": ".txt", "catboost": ".cbm"}
+
+
+def _parse_base_model_relpath(relpath: str) -> Optional[tuple[str, str, str]]:
+    """``.../lgbm_receiving_yards_WR.txt`` → ``("lgbm", "receiving_yards", "WR")``, else None."""
+    name = Path(relpath).name
+    for learner, ext in BASE_MODEL_EXTENSIONS.items():
+        if name.startswith(learner + "_") and name.endswith(ext):
+            body = name[len(learner) + 1 : -len(ext)]
+            stat, _, position = body.rpartition("_")
+            if stat and position in POSITIONS:
+                return learner, stat, position
+    return None
+
+
+def _check_base_models(
+    manifest_path_: Path,
+    base: Path,
+    digests: Mapping[str, str],
+    base_model_relpaths: list[str],
+    coefficient_index: Mapping[tuple[str, str], str],
+) -> tuple[dict[tuple[str, str, str], str], dict[tuple[str, str, str], dict]]:
+    """
+    Load-time cross-check of ``artifacts.base_models`` (decision 0012, section 4).
+
+    Everything checkable without reading the model files themselves is checked
+    here, so a bad release fails at load and not at the first prediction. The
+    model files are verified by digest when resolved. Returns the model index
+    and the per-model MODELS.json entries.
+    """
+    from ml.season_constants import LAST_COMPLETE_SEASON
+
+    where = f"Release manifest {manifest_path_}"
+    if not base_model_relpaths:
+        raise ManifestError(f"{where}: 'artifacts.base_models' is present but empty.")
+
+    model_index: dict[tuple[str, str, str], str] = {}
+    meta_relpaths: list[str] = []
+    for relpath in base_model_relpaths:
+        if Path(relpath).name == MODELS_META_NAME:
+            meta_relpaths.append(relpath)
+            continue
+        key = _parse_base_model_relpath(relpath)
+        if key is None:
+            raise ManifestError(
+                f"{where}: {relpath} is not a recognised base-model file "
+                f"(expected <learner>_<stat>_<POS>{{.txt for lgbm, .cbm for catboost}})."
+            )
+        if key in model_index and model_index[key] != relpath:
+            raise ManifestError(f"{where} pins two files for base model {'/'.join(key)}.")
+        model_index[key] = relpath
+    if len(meta_relpaths) != 1:
+        raise ManifestError(
+            f"{where}: 'artifacts.base_models' must list exactly one {MODELS_META_NAME}; "
+            f"found {len(meta_relpaths)}."
+        )
+    meta_relpath = meta_relpaths[0]
+    unpinned = sorted(r for r in [*model_index.values(), meta_relpath] if r not in digests)
+    if unpinned:
+        raise ManifestError(f"{where} records no SHA-256 for base-model file(s): {unpinned}.")
+
+    # MODELS.json: pinned, then read. A changed file must not be trusted for its own checks.
+    meta_path = base / meta_relpath
+    if not meta_path.exists():
+        raise ManifestError(f"{where} pins {meta_relpath}, but the file is missing.")
+    verify_file_digest(meta_path, digests[meta_relpath])
+    try:
+        meta = json.loads(meta_path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ManifestError(f"{meta_relpath} is not valid JSON: {exc}") from exc
+    if not isinstance(meta, dict) or meta.get("schema_version") != MODELS_META_SCHEMA_VERSION:
+        raise ManifestError(f"{meta_relpath}: expected an object with schema_version {MODELS_META_SCHEMA_VERSION}.")
+    release_id = meta.get("release_id")
+    entries = meta.get("models")
+    if not release_id or not isinstance(entries, list) or not entries:
+        raise ManifestError(f"{meta_relpath}: needs a release_id and a non-empty 'models' list.")
+
+    meta_dir = Path(meta_relpath).parent
+    model_meta: dict[tuple[str, str, str], dict] = {}
+    for entry in entries:
+        for field_name in ("learner", "stat", "position", "file", "sha256", "release_id",
+                           "train_seasons", "max_train_season", "features"):
+            if not isinstance(entry, dict) or field_name not in entry:
+                raise ManifestError(f"{meta_relpath}: a model entry lacks {field_name!r}.")
+        key = (entry["learner"], entry["stat"], entry["position"])
+        label = "/".join(key)
+        relpath = (meta_dir / entry["file"]).as_posix()
+        if _parse_base_model_relpath(relpath) != key:
+            raise ManifestError(
+                f"{meta_relpath}: entry {label} says file {entry['file']!r}, which names a different model."
+            )
+        if key in model_meta:
+            raise ManifestError(f"{meta_relpath}: two entries for {label}.")
+        if model_index.get(key) != relpath:
+            raise ManifestError(
+                f"{meta_relpath} lists {relpath} for {label}, but the manifest does not pin that file "
+                "under 'artifacts.base_models'."
+            )
+        if str(entry["sha256"]).lower() != digests[relpath].lower():
+            raise ManifestError(
+                f"{meta_relpath}: sha256 for {label} differs from 'artifact_digests' ({relpath})."
+            )
+        if entry["release_id"] != release_id:
+            raise ManifestError(
+                f"{meta_relpath}: {label} has release_id {entry['release_id']!r}, "
+                f"but the file's release_id is {release_id!r}. All models must come from one release."
+            )
+        seasons = entry["train_seasons"]
+        if (not isinstance(seasons, list) or not seasons
+                or not all(isinstance(x, int) for x in seasons)
+                or max(seasons) != entry["max_train_season"]):
+            raise ManifestError(f"{meta_relpath}: {label} train_seasons must be ints ending at max_train_season.")
+        if entry["max_train_season"] > LAST_COMPLETE_SEASON:
+            raise ManifestError(
+                f"{meta_relpath}: {label} was fitted through {entry['max_train_season']}, past "
+                f"LAST_COMPLETE_SEASON={LAST_COMPLETE_SEASON}."
+            )
+        features = entry["features"]
+        if not isinstance(features, list) or not features or not all(isinstance(f, str) for f in features):
+            raise ManifestError(f"{meta_relpath}: {label} needs a non-empty feature list.")
+        model_meta[key] = entry
+    unlisted = sorted("/".join(k) for k in set(model_index) - set(model_meta))
+    if unlisted:
+        raise ManifestError(f"{meta_relpath} (MODELS.json) has no entry for pinned model(s): {unlisted}.")
+
+    # Cross-check against the pinned ridge files: every learner that carries weight has a
+    # model, and no model is pinned that no ridge file uses.
+    needed: set[tuple[str, str, str]] = set()
+    for (stat, position), ridge_relpath in coefficient_index.items():
+        ridge_path = base / ridge_relpath
+        if not ridge_path.exists():
+            raise ManifestError(f"{where} pins {ridge_relpath}, but the file is missing.")
+        verify_file_digest(ridge_path, digests[ridge_relpath])
+        try:
+            coefs = json.loads(ridge_path.read_text())
+            weights = coefs["weights"]
+            order = coefs["learner_order"]
+            for learner in order:
+                if float(weights[learner]) != 0.0:
+                    needed.add((learner, stat, position))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ManifestError(f"{ridge_relpath}: unreadable ridge coefficients: {exc!r}") from exc
+    missing = sorted("/".join(k) for k in needed - set(model_index))
+    if missing:
+        raise ManifestError(
+            f"{where} pins no base model for learner(s) with non-zero ridge weight: {missing} "
+            "(learner/stat/position)."
+        )
+    extra = sorted("/".join(k) for k in set(model_index) - needed)
+    if extra:
+        raise ManifestError(
+            f"{where} pins base model(s) that no ridge file uses (weight 0.0 or no ridge file): {extra}."
+        )
+    return model_index, model_meta
 
 
 def _iter_artifact_relpaths(artifacts: object) -> Iterable[str]:
@@ -554,6 +795,18 @@ def load_manifest(
             f"SHA-256 in 'artifact_digests': {unpinned}."
         )
 
+    model_index: dict[tuple[str, str, str], str] = {}
+    model_meta: dict[tuple[str, str, str], dict] = {}
+    artifacts_block = raw.get("artifacts", {})
+    if isinstance(artifacts_block, Mapping) and "base_models" in artifacts_block:
+        model_index, model_meta = _check_base_models(
+            resolved,
+            base,
+            digests,
+            list(_iter_artifact_relpaths(artifacts_block["base_models"])),
+            coefficient_index,
+        )
+
     return ArtifactManifest(
         path=resolved,
         root=base,
@@ -561,6 +814,8 @@ def load_manifest(
         digests=digests,
         stack_index=stack_index,
         coefficient_index=coefficient_index,
+        model_index=model_index,
+        model_meta=model_meta,
     )
 
 

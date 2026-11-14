@@ -1,1 +1,5 @@
 ml/onnx/*.onnx filter=lfs diff=lfs merge=lfs -text
+
+# Fitted base models are Git LFS objects (decision 0012, D1). MODELS.json stays plain git.
+releases/candidates/*/models/*.txt filter=lfs diff=lfs merge=lfs -text
+releases/candidates/*/models/*.cbm filter=lfs diff=lfs merge=lfs -text
