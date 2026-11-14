@@ -10,6 +10,7 @@ Who runs it: the Gridiron manager, with the owner's go-ahead for the production-
 - **Box commands** run on the box from `/srv/gridiron/infra/hosts/vps1` (`cd` there first). "In training" means `docker compose --profile training exec -T training <cmd>` (container `/app`, image `gridiron-etl:full`, 10 GB, 5 CPUs). "In db" means `docker compose exec -T db <cmd>`.
 - **Mac commands** run in the merged repo checkout and are marked `[Mac]`. `$BOX` is `deploy@<box address>`, set in your shell. The address is never written in the repo.
 - Commit names used below: **C1** = merged `main` that carries this work. **C2** = C1 plus the promoted release candidate (step 12). **C3** = C2 plus evidence only (step 18).
+- **Code-sync rule (`CODE_GIT_SHA`).** Every sync starts by refusing a dirty Mac tree: `git diff --quiet && git diff --cached --quiet || { echo 'dirty tree: commit first'; exit 1; }`, before the rsync and before the build arg is set (the rsync copies working-tree content of tracked files, so a dirty tree would ship code no commit names). Then set `.env` `CODE_GIT_SHA` to `git rev-parse HEAD` of that tree (`vim .env` on the box; `grep -c '^CODE_GIT_SHA=' .env` must print 1) and build the image. The build arg is baked into `/app/CODE_GIT_SHA`; the producer reads only that file in an image, so a later `.env` edit cannot change what an image records. Never derive it from `GIT_COMMIT_SHA` (pinned to the freeze commit). The value must be 40 lowercase hex; anything else makes the forward producer refuse to write.
 - `/srv/gridiron` has no `.git`. The images copy code and `releases/` at build time (`backend/Dockerfile` and `Dockerfile.serving` both `COPY releases`). `reports/` is gitignored and is **not** in the image.
 
 ## Decisions this runbook makes
@@ -56,7 +57,7 @@ Before promotion, with the new code and no pinned attributions, default weights 
 | 16 api build + restart | 5-10 min | | |
 | 20 `weekly_refresh.py` | 10-30 min | under 1.5 GB expected (ETL RSS is unmeasured; the `etl` limit is 1.5 GB, so this runbook runs it in training) | |
 
-Whole rerun: about 1.5 days elapsed, of which about 22 h is unattended training. The Fri 22:00 to Mon 06:00 window is 56 h, so it fits, but the timers are stopped for this run, so start it by hand.
+Whole rerun: about 1.5 days elapsed, of which about 22 h is unattended training. The Fri 23:30 to Mon 06:00 window is 54.5 h, so it fits, but the timers are stopped for this run, so start it by hand.
 
 ## Run log 2026-11-14 (measured)
 
@@ -115,11 +116,18 @@ Rollback for the whole runbook's data steps: `docker compose exec -T db pg_resto
 
 ### 3. Sync the box to C1
 
-`[Mac]`, from a clean checkout of C1 (`git status --porcelain` is empty and `git rev-parse HEAD` is C1):
+`[Mac]`, from a clean checkout of C1 (`git status --porcelain` is empty and `git rev-parse HEAD` is C1). Model files are Git LFS objects: pull them first, or rsync copies 130-byte pointer files and the box fails its digest check only when it serves.
 
 ```bash
+git diff --quiet && git diff --cached --quiet || { echo 'dirty tree: commit first'; exit 1; }   # CODE_GIT_SHA must name exactly what is copied
+git lfs pull
+git lfs ls-files        # every releases/candidates/*/models/* line must show "*" (content present), not "-" (pointer)
+python3 scripts/check_no_lfs_pointers.py
 git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/
+ssh $BOX 'cd /srv/gridiron && python3 scripts/check_no_lfs_pointers.py'    # same check on the box, plain python3
 ```
+
+The second check must print `ok: <n> model files, none is an LFS pointer`. It exits 1 and names the files otherwise, or when no model files exist at all. Repeat this block before every later sync (steps 13 and 18).
 
 This sends exactly the tracked files. It does not use `--delete`, never touches `infra/hosts/vps1/.env` (untracked), and does not send ignored paths (`reports/`, `ml/oof/`). On the box, set the provisional commit and confirm no secret is printed:
 
@@ -302,15 +310,17 @@ Rollback: `git reset --hard HEAD~1` on the Mac (never pushed).
 
 ### 13. Sync C2, set `GIT_COMMIT_SHA`, rebuild, recreate training
 
-`[Mac]`: `git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/`. Then on the box:
+`[Mac]`: run the step 3 block (`git lfs pull`, the pointer check, then `git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/`). Then on the box:
 
 ```bash
 cd /srv/gridiron/infra/hosts/vps1
-vim .env                         # GIT_COMMIT_SHA=<C2>
+vim .env                         # GIT_COMMIT_SHA=<C2> and CODE_GIT_SHA=<C2> (here they are the same commit)
 docker compose build etl
 docker compose --profile training up -d --force-recreate training
 docker compose --profile training exec -T training bash -c 'echo $GIT_COMMIT_SHA; ls releases/candidates/causal_20261114 | wc -l'
 ```
+
+The block above also sets `CODE_GIT_SHA`, baked into the image at build (the forward producer's provenance, separate from `GIT_COMMIT_SHA`): see the code-sync rule. Set it before `docker compose build`, never after.
 
 The OOF rebuild stays on the `train_out` volume. This sync carries exactly the step 12 files, so it cannot overwrite the promoted release with an older one. Verify anyway: `[Mac] git show HEAD:releases/current_baseline.json | shasum -a 256` must equal `sha256sum /srv/gridiron/releases/current_baseline.json` on the box.
 Rollback: `.env` back to the old SHA, `docker tag gridiron-etl:pre-rerun-<STAMP> gridiron-etl:full`, recreate training.
@@ -408,6 +418,7 @@ Then sync C3 and prove the release was not overwritten:
 
 ```bash
 # [Mac]
+git lfs pull && python3 scripts/check_no_lfs_pointers.py
 git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/
 git show HEAD:releases/current_baseline.json | shasum -a 256
 # box
@@ -436,7 +447,7 @@ docker compose --profile training exec -T training python3 scripts/weekly_refres
 echo "exit ${PIPESTATUS[0]}"
 ```
 
-Expected: exit 0 and no `FAILED` line. Step 4 materializes with attributions under `weekly_auto_2026_pending`; step 6 (`materialize_team_game_predictions`) now passes because 2019-2025 Elo is real; step 8 relabels to `weekly_auto_2026`, which the manifest approves. A failure writes a dead letter (`select * from dead_letter order by id desc limit 5`) and promotes nothing.
+Expected: exit 0 and no `FAILED` line. Step 4 materializes with attributions under this run's own pending id (`weekly_auto_2026_pending_<uuid>`; the first thing the run does is delete leftovers of earlier failed or killed runs, and restore a week an earlier `--replace-week` run archived, or stop with the command to restore it); step 6 (`materialize_team_game_predictions`) now passes because 2019-2025 Elo is real; step 8 relabels to `weekly_auto_2026`, which the manifest approves. A failure writes a dead letter (`select * from dead_letter order by id desc limit 5`) and promotes nothing.
 Then, within 24 h of this run's `computed_at`:
 
 ```bash
@@ -452,6 +463,47 @@ vim .env     # confirm TRAIN_SMALL_CMD / TRAIN_FULL_CMD are the pinned recipes (
 
 Rollback: the refresh only writes pending rows until step 8; to undo a promoted refresh restore the step 2 dump.
 
+#### Forward producer in the weekly refresh (decision 0012)
+
+Step 4b runs after the stack step and before the simulation. In this order, and the order matters:
+
+1. Capture an availability snapshot (nflverse injuries plus weekly roster status), stored with its fetch time.
+2. Build the forward features with `as_of` = now. The snapshot was fetched before `as_of`, so it is usable. A snapshot fetched after `as_of` would not be.
+3. `ml.forward_serving.run_forward` runs guards G1-G5 and writes the week's projections and a `forecast_runs` row in one transaction under the run's own pending id `weekly_auto_<season>_pending_<uuid>`. Step 8 promotes only that id, and only if the run's `forecast_runs` row exists and the week still holds exactly the number of rows the producer recorded (`projection_rows`) and this run still has rows in the season tables and `team_game_predictions`; otherwise it writes nothing and keeps the archive. Step 8 first checks the season-lock connection still answers (`SELECT 1`), takes the week lock (bounded retry), and compares each relabel's row count to what the producer recorded (the week's projection rows exactly; every season table and `team_game_predictions` more than zero); a mismatch rolls the transaction back, so the archive is kept and restored. Right after the promotion commits the refresh applies the newest accepted availability snapshot to the served rows (statuses stored between the producer and the promotion could not reach the pending rows); a failure there is logged and dead-lettered as `weekly_refresh/reapply_after_promotion` and the promotion stands. Statuses always come from the newest *accepted* snapshot, one with injury-report rows (`availability_snapshots.n_injury_rows > 0`, recorded at capture); a roster-only snapshot is stored but never used, because it would clear Out designations. One weekly refresh runs per season at a time: a session-level Postgres advisory lock (`pipeline/refresh_lock.py`) is taken right after the approval check and held until the run ends, so a manual run or a retry that overlaps a running refresh stops at once with a dead letter `weekly_refresh/refresh_lock` and changes nothing. A killed run frees the lock when its connection drops.
+
+Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
+
+Code SHA: `.env` `CODE_GIT_SHA` is the build arg of the same name for the `etl` and `training` images; the Dockerfile writes it to `/app/CODE_GIT_SHA` and the producer reads that file, never the runtime environment (compose `env_file: .env` would override an image `ENV`). It is separate from `GIT_COMMIT_SHA`, which stays pinned to the freeze commit until the next re-freeze. **Every code sync sets it to the synced, clean Mac HEAD before any image build** (code-sync rule above). A real forward run whose recorded sha is not 40-hex is refused (guard D8); only `--dry-run` may run unstamped. Outside an image the producer falls back to a valid env value or a clean git tree.
+
+`--allow-no-availability` (manual only, never in a unit) stores every row with status `Unknown` instead of refusing when no snapshot exists. The run is logged, and the report and summary carry `availability_override`. This needs migration 0029. The API returns the value in `availability_status`; showing it in the UI is a frontend change not made here.
+
+Pinning the fitted base models: the producer needs `artifacts.base_models` in `releases/current_baseline.json`. Add them with `scripts/pin_artifact_group.py --group base_models ...` and the re-freeze steps in "Adding a pinned group to the served release (re-freeze)" below; do not edit the manifest by hand.
+
+Inactives: the NFL publishes game-day inactives about 90 minutes before kickoff. The Tuesday refresh sees only injury reports, so a Questionable player is served with his status shown. Neither the weekly refresh nor the Friday job sees inactives; do not expect either to.
+
+#### Friday availability refresh (`gridiron-availability.timer`, not enabled)
+
+`scripts/refresh_availability.py` fetches a new availability snapshot and changes only `availability_status` on the next forward week's rows, in one transaction, recorded in `forecast_runs` as `availability_refresh_<season>_w<WW>_<stamp>`. It never changes a prediction. It works per game: rows of games that have kicked off (or have a score) are frozen, and only games that have not started are updated, so a Thursday game never blocks Friday's update of Sunday and Monday games. It refuses (exit 1, nothing written) only when no game of the week is still open or the week has no forward rows. The report and the `forecast_runs` summary carry `games_updated` and `games_frozen`. Run it by hand once, in the same container as step 20, before enabling the timer:
+
+```bash
+docker compose --profile jobs run --rm availability
+echo "exit $?"
+```
+
+Then `sudo cp systemd/gridiron-availability.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now gridiron-availability.timer`. The job runs Fri 22:00 UTC with a hard 20 minute limit (`TimeoutStartSec=20min`); train-full starts at 23:30 UTC, so on a normal Friday the job is done long before. The unit declares no `Conflicts=` and never stops training: the compose service takes the same `flock` as `scripts/train_window.sh` (`/train_out/.train.lock`), waits up to `AVAILABILITY_LOCK_WAIT_SECONDS` (default 900) and runs at most `AVAILABILITY_RUN_SECONDS` (default 240). On a lock timeout it exits 75, the unit fails and no `HEALTHCHECKS_AVAILABILITY_URL` ping is sent, so the missing ping is the alert. Train-full waits up to `TRAIN_FULL_LOCK_WAIT_SECONDS` (default 1800) for the lock; if it still cannot get it, it exits 76, `train_full.sh` pings `HEALTHCHECKS_TRAIN_FULL_URL/fail` and the unit fails (an alert, not a silent skip). Train-small keeps its 120 s wait and quiet exit 75. The `availability` service has no `env_file`: it gets only `DATABASE_URL`, `PRODUCT_MODE`, `PYTHONPATH`, the two time limits and the healthchecks URL, so the R2 keys and the other secrets in `.env` never reach it. Record the job's peak RSS on the first run and set `mem_limit` from it (`512m` is a guess).
+
+#### `--replace-week` (manual only)
+
+The producer never overwrites rows an approved run already serves. To rewrite a served week (for example after a data fix), take a dump first, then:
+
+```bash
+docker compose exec -T db pg_dump -U oracle -Fc oracle > ~/rerun_backup/pre_replace_$(date -u +%Y%m%dT%H%M%SZ).dump
+docker compose --profile training exec -T training python3 scripts/weekly_refresh.py \
+  --replace-week --dump-path /home/<user>/rerun_backup/pre_replace_<STAMP>.dump
+```
+
+`--dump-path` must be an existing, non-empty file, or the command refuses with exit 2 before touching anything. `projections` is unique on (player_id, game_id, stat) without the run id, so the new rows cannot sit beside the served ones until promotion. The producer therefore copies the old week to `projections_replaced`, deletes it and inserts the new rows in one transaction; a failure inside the producer rolls back and the old week stays served. The new rows are not served until step 8 promotes them (the API serves approved run ids only). If step 5, 6, 7 or 8 then fails, the refresh restores the archived rows itself (a failed restore is a CRITICAL log and a `weekly_refresh/restore_replaced_week` dead letter). Step 8 discards the archive in the promotion transaction. **If the process is killed between the producer and the promotion** (OOM, reboot, timeout) the week is unserved until you run `python3 scripts/restore_replaced_week.py --season <S> --week <W>` in the same container (it restores the old rows, or does nothing when no archive exists), or until the next refresh of any kind starts, which restores the archive first (or stops and names this command if it cannot). After the producer writes and after any restore, the refresh re-applies the newest stored availability snapshot to the games that have not started, so a Friday status is not overwritten by older data; the model's `as_of` is unchanged. A second `--replace-week` on a week that still has an archive is refused. Migration 0030 creates the archive table; run `alembic upgrade head` first. The dump is kept as a second safety net. It refuses a week that has scores or has kicked off. It is never in a systemd unit or compose file, and a test fails if one ever carries it.
+
 ## Adding a pinned group to the served release (re-freeze)
 
 Used 2026-11-14 to pin `causal_evals` (C2 `a056891`, C3 `173cfe7`); decision 0012 will use it for `base_models`. A required runtime check that reads a group fails until the group has digests, and `freeze_baseline.py` refuses a blocked runtime, so pin first, then freeze.
@@ -461,7 +513,7 @@ Used 2026-11-14 to pin `causal_evals` (C2 `a056891`, C3 `173cfe7`); decision 001
    It refuses an existing group, paths outside `releases/candidates/`, uncommitted files and Git LFS pointers. Add `--dry-run` to check first.
 2. Run the gate, secret-scan and push. Sync to the box (rule above: only descendants of the served C3).
 3. On the box: check `training` is idle; back up `.env`, `current_baseline.json` and tag the `etl` and `api` images `pre-refreeze-<STAMP>`.
-4. Set `.env` `GIT_COMMIT_SHA` to C2's full sha. `docker compose build etl`, then recreate `training`.
+4. Set `.env` `GIT_COMMIT_SHA` and `CODE_GIT_SHA` to C2's full sha. `docker compose build etl`, then recreate `training`.
 5. Freeze inside `training` with the current approved ids (read them from `projection_policy.approved_pipeline_run_ids`):
    `docker compose --profile training exec -T -e APPROVED_PIPELINE_RUN_IDS="<ids>" training python3 scripts/freeze_baseline.py`
    Check `git_commit` = C2, `git_dirty` false, the new group listed, `DATABASE_URL` masked.

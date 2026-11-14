@@ -136,6 +136,8 @@ class WeekPlayerProjection(BaseModel):
     weighting:          str = "default"
     weights_reason:     Optional[str] = None
     fantasy_scoring:    str = "ppr"
+    # Forward weeks only: "Questionable" or "Doubtful" (players ruled out are not served).
+    availability_status: Optional[str] = None
 
 
 class WeekProjectionsResponse(BaseModel):
@@ -345,6 +347,7 @@ def projections_for_week(
             weighting=r.weighting,
             weights_reason=r.weights_reason,
             fantasy_scoring=r.fantasy_scoring,
+            availability_status=r.availability_status,
         )
         for r in results
     ]

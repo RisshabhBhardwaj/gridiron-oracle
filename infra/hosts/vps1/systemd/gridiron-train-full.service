@@ -1,12 +1,12 @@
-# Full retrain window job: Friday 22:00 UTC → Monday 06:00 UTC.
+# Full retrain window job: Friday 23:30 UTC → Monday 06:00 UTC.
 #
-# RuntimeMaxSec=56h enforces the window end (Mon 06:00 UTC) even mid-run;
+# RuntimeMaxSec=54h 30min (Fri 23:30 to Mon 06:00) enforces the window end even mid-run;
 # the missing dead-man ping surfaces the overrun. A full retrain that cannot
 # fit Fri-night-through-weekend on 5 capped vCores is an envelope question
 # for the owner (see README "Training slice"), not a reason to overrun into
 # the Tuesday ETL — the ETL's Conflicts= stops this unit first anyway.
 [Unit]
-Description=Gridiron full retrain (Fri 22:00–Mon 06:00 UTC)
+Description=Gridiron full retrain (Fri 23:30–Mon 06:00 UTC)
 After=docker.service
 Requires=docker.service
 
@@ -14,5 +14,5 @@ Requires=docker.service
 Type=oneshot
 Slice=gridiron-training.slice
 Nice=10
-RuntimeMaxSec=56h
+RuntimeMaxSec=54h 30min
 ExecStart=/srv/gridiron/infra/hosts/vps1/scripts/train_full.sh

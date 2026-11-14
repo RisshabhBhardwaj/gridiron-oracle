@@ -2,7 +2,7 @@
 #
 # 23:00 UTC daily = 18:00 EST daily ("nightly" in owner-local terms). The hour
 # avoids the small training window (01:00–07:00 UTC) and the ETL (Tue 13:00
-# UTC). It DOES overlap the full-retrain weekend window (Fri 22:00–Mon 06:00
+# UTC). It DOES overlap the full-retrain weekend window (Fri 23:30–Mon 06:00
 # UTC) — accepted by design: pg_dump is minutes-long and the training slice
 # is deprioritized, so site + backup keep precedence. See README.
 [Unit]

@@ -42,7 +42,8 @@ under EDT — the UTC column is authoritative.
 | Job | Timer (UTC) | UTC | EST |
 |---|---|---|---|
 | Small retrains / SHAP / backfills | daily 01:00, `RuntimeMaxSec=6h` kills at 07:00 | 01:00–07:00 | prev day 20:00 – 02:00 |
-| Full retrain (TFT/GNN torch CPU, SHAP) | Fri 22:00, `RuntimeMaxSec=56h` kills Mon 06:00 | Fri 22:00 → Mon 06:00 | Fri 17:00 → Mon 01:00 |
+| Full retrain (TFT/GNN torch CPU, SHAP) | Fri 23:30, `RuntimeMaxSec=54h 30min` kills Mon 06:00 | Fri 23:30 → Mon 06:00 | Fri 18:30 → Mon 01:00 |
+| Friday availability refresh (not enabled by default) | Fri 22:00, `TimeoutStartSec=20min` hard limit | Fri 22:00 → at most 22:20 | Fri 17:00 |
 | Weekly ETL | Tue 13:00 | 13:00 | Tue 08:00 |
 | Nightly R2 backup | daily 23:00 | 23:00 | 18:00 |
 
@@ -71,7 +72,7 @@ under EDT — the UTC column is authoritative.
 | Command | What starts |
 |---|---|
 | `docker compose up -d` (no profile) | `api` + `db` + `cloudflared`. The steady state. |
-| Timers (systemd, never `up -d`) | `etl` (Tue 13:00 UTC), `backup` (daily 23:00 UTC), `training` via `scripts/train_small.sh` / `train_full.sh`. One-shots carry `profiles:` + `restart: "no"`, so plain `up -d` never starts them. |
+| Timers (systemd, never `up -d`) | `etl` (Tue 13:00 UTC), `availability` (Fri 22:00 UTC, not enabled by default; see below), `backup` (daily 23:00 UTC), `training` via `scripts/train_small.sh` / `train_full.sh`. One-shots carry `profiles:` + `restart: "no"`, so plain `up -d` never starts them. |
 | `--profile training run --rm training ...` | Interactive refits in the exact full image. |
 | `--profile observability up -d prometheus alertmanager otel-collector` | The always-fittable trio (see "Observability fit"). |
 | `--profile observability up -d mlflow` (or `jaeger`) | One-at-a-time only, trio down (see "Observability fit"). |
@@ -85,6 +86,7 @@ under EDT — the UTC column is authoritative.
 | `cloudflared` | 128 MB | Single tunnel, one hostname. |
 | **Steady site total** | **~1.83 GB** | **≤ 2.5 GB envelope. ✓** |
 | `etl` one-shot | 1.5 GB | Training-idle window (Tue 13:00 UTC), draws from host slack. KNOWN TIGHT SPOT: combined site + ETL ≈ 3.3 GB exceeds the site line — fits only because the training slice is idle then. First thing to tighten against the ETL peak-RSS measurement. |
+| `availability` one-shot | 512 MB (a guess, not measured) | Fri 22:00 UTC. Fetches one small source and updates status rows per unstarted game; loads no models. Shares `/train_out/.train.lock` with the trainers and waits for them. Record its peak RSS on the first run and set `mem_limit` from it. |
 | `backup` one-shot | 512 MB | Daily 23:00 UTC. Site + backup ≈ 2.33 GB ≤ 2.5 GB ✓ (fits even inside the site line). |
 | `training` | 10 GB / 5 CPUs / shares 128 | Slice + container caps (see "Training slice"). |
 | Observability trio | 448 MB | prometheus 256m + alertmanager 64m + otel 128m. Site + trio ≈ 2.28 GB ≤ 2.5 GB ✓. |
@@ -121,15 +123,28 @@ TFT/GNN retrains wait for their own fold profile.
   - Output lives on the `train_out` volume (`/train_out`, owned by
     `appuser`): `oof/rebuild_<STAMP>/`, `logs/`, `last_full_stamp`. Without
     the volume `run --rm` would discard a weekend of training.
-  - One trainer at a time (`flock`): the small timer fires nightly, including
-    Sat-Mon while the full job runs, and skips (exit 75, no ping).
+  - One trainer at a time (`flock` on `/train_out/.train.lock`, shared with the Friday
+    availability job): the small timer fires nightly, including Sat-Mon while the
+    full job runs, and waits 2 minutes then skips (exit 75, no ping). The full job
+    waits up to 30 minutes (`TRAIN_FULL_LOCK_WAIT_SECONDS`); if it still has no lock it
+    logs why, exits 76 and `train_full.sh` pings `HEALTHCHECKS_TRAIN_FULL_URL/fail`.
+    Availability holds the lock for seconds at Fri 22:00 and is killed at 20 minutes
+    (lock wait 900 s + run 240 s inside `TimeoutStartSec=20min`), so a retrain that
+    still holds the lock makes availability fail with no success ping, never the reverse.
   - Promotion is manual: `docs/runbooks/vps4-causal-rerun.md`.
   A full rebuild that cannot fit Fri-night-through-weekend on 5 capped vCores
   is an envelope question for the owner, not a reason to overrun into the ETL.
   The runbook has a wall-time estimate, labeled as one.
 - **Release provenance:** `/srv/gridiron` has no `.git`, so set
   `GIT_COMMIT_SHA` in `.env` (`api` and `training` read it through
-  `env_file`) to the commit the deployed code was built from.
+  `env_file`) to the commit the release was frozen from; it stays pinned
+  there until the next re-freeze. The forward producer's code provenance is a
+  separate `.env` variable, `CODE_GIT_SHA`: set it to the synced Mac HEAD
+  (`git rev-parse HEAD`, from a clean tree) after every code sync and before
+  any image build. It is a build arg for `etl` and `training`, baked into
+  `/app/CODE_GIT_SHA`; the producer reads that file, not the runtime env, so a
+  later `.env` edit cannot change it. A value that is not 40-hex makes the
+  producer refuse to write a forward run.
 - Every training run pings its dead-man URL on success only
   (`HEALTHCHECKS_TRAIN_SMALL_URL` / `HEALTHCHECKS_TRAIN_FULL_URL`).
 
@@ -192,6 +207,11 @@ sudo cp systemd/* /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now gridiron-etl.timer gridiron-backup.timer \
   gridiron-train-small.timer gridiron-train-full.timer
+#    The Friday availability refresh is NOT in this list. Enable it by hand
+#    (`sudo systemctl enable --now gridiron-availability.timer`) only after the
+#    forward producer has run once and served a week. It has no Conflicts= and
+#    never stops training: it shares the training lock and has a hard 20 minute
+#    limit; train-full starts at 23:30 UTC and waits up to 30 minutes for the lock.
 #    Set TRAIN_SMALL_CMD / TRAIN_FULL_CMD (see "Training slice") and the
 #    four healthchecks.io URLs in .env; a missing ping after a scheduled
 #    run is the alert. Logs: journalctl -u gridiron-<name>.

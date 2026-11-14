@@ -2,7 +2,7 @@
 #
 # ETL EXCLUSION (owner rule: no training alongside the ETL): the schedules
 # are provably disjoint (ETL Tue 13:00 UTC; small training 01:00–07:00 UTC
-# daily; full training Fri 22:00–Mon 06:00 UTC), and this unit additionally
+# daily; full training Fri 23:30–Mon 06:00 UTC), and this unit additionally
 # declares Conflicts= on both training units — if a training job is ever
 # running when the ETL starts (manual invocation, clock trouble), the ETL
 # wins and training is stopped. Training progress is expendable; the weekly

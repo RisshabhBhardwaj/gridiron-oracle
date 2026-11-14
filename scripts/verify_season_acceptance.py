@@ -20,54 +20,99 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+def _pinned_cells() -> list[tuple[str, str]]:
+    """Every (stat, position) cell the pinned release serves, from the manifest."""
+    from ml.artifact_manifest import get_manifest
+
+    return sorted(get_manifest().stack_index)
+
+
 def verify_forward_week_structural(
-    dsn: str, *, season: int, start_week: int, pipeline_run_id: str
+    dsn: str,
+    *,
+    season: int,
+    start_week: int,
+    pipeline_run_id: str,
+    approved_run_id: str | None = None,
+    cells: list[tuple[str, str]] | None = None,
 ) -> dict:
-    """Structural gate for a forward (unplayed) week (audit C-1).
+    """Structural gate for a forward (unplayed) week (audit C-1, decision 0012).
 
     The statistical gate below scores pending projections against realized
-    points, which do not exist before kickoff — for a forward week that join is
-    always empty and the gate can never pass, blocking promotion. This check
-    asks the defined question for that case instead: did the pending candidate
-    run actually produce rows for the target week, in every surface steps 4-6
-    write? It reads the pending run id, never the approved surface.
+    points, which do not exist before kickoff, so for a forward week that join is
+    always empty. This check asks the defined question instead: did the run
+    produce served rows for the target week, for every pinned (stat, position)
+    cell and every position, and rows on the other two surfaces?
+
+    Rows count when they carry the pending id or, if given, the approved id: a
+    re-run after promotion writes nothing new (the producer skips rows an approved
+    run already serves), and that week is ``already_current``, not missing.
+    Everything is scoped to ``start_week``; rows for other weeks never count.
     """
     import psycopg2
 
-    checks = [
-        ("projections", "pipeline_run_id",
-         "SELECT COUNT(*) FROM projections WHERE season = %s AND pipeline_run_id = %s",
-         (season, pipeline_run_id)),
-        ("season_simulations", "pipeline_run_id",
-         "SELECT COUNT(*) FROM season_simulations WHERE season = %s AND start_week = %s AND pipeline_run_id = %s",
-         (season, start_week, pipeline_run_id)),
-        ("team_game_predictions", "model_run_id",
-         "SELECT COUNT(*) FROM team_game_predictions WHERE season = %s AND week = %s AND model_run_id = %s",
-         (season, start_week, pipeline_run_id)),
-    ]
+    from pipeline.availability import served_predicate
+
+    run_ids = [pipeline_run_id] + ([approved_run_id] if approved_run_id else [])
+    required = list(cells) if cells is not None else _pinned_cells()
+
+    projection_sql = (
+        "SELECT stat, position, pipeline_run_id, COUNT(*) FROM projections "
+        "WHERE season = %s AND week = %s AND pipeline_run_id = ANY(%s) "
+        f"AND {served_predicate()} GROUP BY stat, position, pipeline_run_id"
+    )
+    surface_sql = {
+        "season_simulations":
+            "SELECT COUNT(*) FROM season_simulations "
+            "WHERE season = %s AND start_week = %s AND pipeline_run_id = ANY(%s)",
+        "team_game_predictions":
+            "SELECT COUNT(*) FROM team_game_predictions "
+            "WHERE season = %s AND week = %s AND model_run_id = ANY(%s)",
+    }
+    params = (season, start_week, run_ids)
+    by_cell: dict[tuple[str, str], dict[str, int]] = {}
     counts: dict[str, int] = {}
     with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            for table, _id_col, sql, params in checks:
+            cur.execute(projection_sql, params)
+            for stat, position, run_id, n in cur.fetchall():
+                by_cell.setdefault((stat, position), {})[run_id] = int(n)
+            for table, sql in surface_sql.items():
                 cur.execute(sql, params)
                 row = cur.fetchone()
                 counts[table] = int(row[0]) if row and row[0] is not None else 0
-    met = all(n > 0 for n in counts.values())
-    missing = sorted(table for table, n in counts.items() if n == 0)
+    counts = {"projections": sum(sum(v.values()) for v in by_cell.values()), **counts}
+
+    missing_cells = [list(c) for c in required if not by_cell.get(c)]
+    required_positions = sorted({pos for _, pos in required})
+    served_positions = {pos for (_, pos), v in by_cell.items() if v}
+    missing_positions = [pos for pos in required_positions if pos not in served_positions]
+    missing_surfaces = sorted(table for table, n in counts.items() if n == 0)
+    already_current = bool(
+        approved_run_id and required
+        and all(by_cell.get(c, {}).get(approved_run_id) for c in required)
+    )
+    met = not missing_surfaces and not missing_cells and not missing_positions
     return {
         "mode": "structural",
         "season": season,
         "start_week": start_week,
         "pipeline_run_id": pipeline_run_id,
+        "approved_run_id": approved_run_id,
         "row_counts": counts,
         "acceptance": {"every_surface_has_target_week_rows": met},
-        "missing_surfaces": missing,
+        "missing_surfaces": missing_surfaces,
+        "missing_cells": missing_cells,
+        "missing_positions": missing_positions,
+        "already_current": already_current,
         "diagnosis": (
-            "All three materialized surfaces carry rows for the target week under "
-            "the pending run id." if met else
-            f"No pending rows for these surfaces under {pipeline_run_id}: {missing}. "
-            "Steps 4-6 either did not run or wrote nothing for the target week; "
-            "do not promote."
+            f"Week {start_week} has served rows for every pinned cell and position, and rows "
+            f"on the other surfaces, under {' or '.join(run_ids)}."
+            if met else
+            f"Week {start_week} under {' or '.join(run_ids)}: surfaces without rows "
+            f"{missing_surfaces}; positions without rows {missing_positions}; "
+            f"{len(missing_cells)} pinned cells without rows. Step 4b or steps 5-6 did not "
+            "write what they should; do not promote."
         ),
     }
 
@@ -89,7 +134,12 @@ def main() -> int:
     parser.add_argument(
         "--pipeline-run-id",
         default=None,
-        help="Pending run id to check in structural mode (e.g. weekly_auto_2026_pending)",
+        help="Pending run id to check in structural mode (the run's own id, e.g. weekly_auto_2026_pending_<uuid>)",
+    )
+    parser.add_argument(
+        "--approved-run-id",
+        default=None,
+        help="Approved run id whose rows also count in structural mode (a re-run of a promoted week)",
     )
     from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 
@@ -110,6 +160,8 @@ def main() -> int:
             season=args.season,
             start_week=args.start_week,
             pipeline_run_id=args.pipeline_run_id,
+            approved_run_id=args.approved_run_id,
+            cells=_pinned_cells(),
         )
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(payload, indent=2) + "\n")

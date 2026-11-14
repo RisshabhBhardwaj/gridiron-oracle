@@ -1,0 +1,24 @@
+# Friday availability refresh one-shot (Fri 22:00 UTC): updates only the status column of the
+# next forward week's rows (decision 0012 addendum). No models are loaded and no prediction changes.
+#
+# NO Conflicts= on purpose: this job must never stop a training unit. It takes the same flock as
+# scripts/train_window.sh (/train_out/.train.lock) and waits for it. Train-full starts at 23:30 UTC
+# (90 minutes later), so on a normal Friday this job is long done. If a retrain still holds the lock,
+# the lock wait times out (exit 75), the unit fails and no HEALTHCHECKS_AVAILABILITY_URL ping is
+# sent: that missing ping is the alert.
+#
+# HARD LIMIT: TimeoutStartSec=20min covers the whole job (lock wait plus the run). The container
+# waits at most AVAILABILITY_LOCK_WAIT_SECONDS (900) and runs at most AVAILABILITY_RUN_SECONDS (240),
+# 19 minutes in all, so the container ends on its own before systemd gives up on the unit and the
+# lock is never held past the limit. Train-full waits up to 30 minutes for this job's lock.
+#
+# Not installed or enabled by the repo: the owner enables it after the forward producer has run once.
+[Unit]
+Description=Gridiron Friday availability refresh one-shot (Fri 22:00 UTC)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=20min
+ExecStart=/usr/bin/docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile jobs run --rm availability

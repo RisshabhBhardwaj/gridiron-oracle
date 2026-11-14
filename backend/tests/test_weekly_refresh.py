@@ -18,8 +18,17 @@ from scripts.weekly_refresh import (
 # tests stop at step 2 or run through step 10 without touching a database.
 _PATCHED_STEPS = {
     "dead_letter": "scripts.weekly_refresh._write_dead_letter",
+    "clear_leftovers": "scripts.weekly_refresh.clear_leftovers",
+    "refresh_lock": "scripts.weekly_refresh.season_refresh_lock",
+    "run_intact": "scripts.weekly_refresh.require_run_intact",
+    "week_lock": "scripts.weekly_refresh.lock_week_with_retry",
     "upsert_playerids": "scripts.weekly_refresh.upsert_playerids",
     "stack": "scripts.materialize_stack_projections.main",
+    "availability": "pipeline.availability_store.capture_snapshot",
+    "features": "scripts.build_forward_features.build_forward_snapshot",
+    "forward": "ml.forward_serving.run_forward",
+    "reapply": "scripts.weekly_refresh.reapply_latest_availability",
+    "restore": "scripts.weekly_refresh.restore_week",
     "simulation": "scripts.materialize_season_simulation.materialize",
     "team_game": "scripts.materialize_team_game_predictions.materialize",
     "acceptance": "scripts.verify_season_acceptance.main",
@@ -54,8 +63,15 @@ def _weekly_refresh_with_orchestrator(summary: OrchestratorSummary):
         mocks = {name: stack.enter_context(patch(target)) for name, target in _PATCHED_STEPS.items()}
         mocks["orchestrator_run"] = orchestrator_run
         mocks["cursor"] = cur
+        mocks["week_lock"].return_value = True
+        mocks["run_intact"].return_value = 1  # the producer's recorded projection_rows
+        cur.rowcount = 1  # every relabel UPDATE touches one row
         mocks["upsert_playerids"].return_value = 5
         mocks["stack"].return_value = 0
+        mocks["availability"].return_value = {"snapshot_id": "avail_x"}
+        mocks["features"].return_value = {"pipeline_run_id": "forward_features_2026_w03_x", "feature_rows": 900}
+        mocks["forward"].return_value = {"rows_served": 700}
+        mocks["restore"].return_value = 120
         mocks["acceptance"].return_value = 0
         mocks["purge_processed"].return_value = 0
         mocks["purge_stale"].return_value = 0
@@ -86,10 +102,16 @@ def test_resolve_season_and_week_none():
 def test_promote_run_id_only_relabels_pending_rows():
     """Promotion is a relabel: no DELETE, one UPDATE per season table, projections and team games."""
     cur = MagicMock()
-    promote_run_id(cur, 2026, 5, "pending_id", "approved_id")
+    cur.rowcount = 4
+    counts = promote_run_id(cur, 2026, 5, "pending_id", "approved_id")
     statements = [call.args[0] for call in cur.execute.call_args_list]
     assert not any("DELETE" in sql for sql in statements)
-    assert len(statements) == 5  # 3 season tables + projections + team_game_predictions
+    # 3 season tables + the target week's projections + the season's other projections + team_game_predictions
+    assert len(statements) == 6
+    assert counts == {
+        "season_simulation_weeks": 4, "season_simulations": 4, "season_team_wins": 4,
+        "projections": 4, "projections_other_weeks": 4, "team_game_predictions": 4,
+    }
     assert all("UPDATE" in sql for sql in statements)
     assert all(call.args[1][0] == "approved_id" for call in cur.execute.call_args_list)
 
@@ -267,7 +289,8 @@ def test_step7_forward_week_runs_the_structural_gate_on_the_pending_run():
         rc = run_weekly_refresh("postgres://dummy", season=2026)
     assert rc == 0
     assert "--structural-only" in seen["argv"]
-    assert "weekly_auto_2026_pending" in seen["argv"]
+    gate_id = seen["argv"][seen["argv"].index("--pipeline-run-id") + 1]
+    assert gate_id.startswith("weekly_auto_2026_pending_") and gate_id != "weekly_auto_2026_pending_"
     assert "--start-week" in seen["argv"]
     assert seen["argv"][seen["argv"].index("--start-week") + 1] == "3"
 
@@ -293,3 +316,419 @@ def test_step7_failed_structural_gate_aborts_before_promotion():
     assert source == "weekly_refresh/verify_acceptance"
     assert "non-zero exit code: 1" in error
     assert season == 2026
+
+
+def test_step7_dead_letter_carries_the_reason_the_gate_printed(capsys):
+    """The gate explains itself on stdout; the dead letter must not drop that and keep only the exit code."""
+    import json
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        def failing_gate():
+            print(json.dumps({"diagnosis": "Week 3 under X: surfaces without rows ['season_simulations']"}))
+            return 1
+
+        m["acceptance"].side_effect = failing_gate
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        assert run_weekly_refresh("postgres://dummy", season=2026) == 1
+    error = m["dead_letter"].call_args.args[2]
+    assert "non-zero exit code: 1" in error
+    assert "surfaces without rows ['season_simulations']" in error
+    assert "surfaces without rows" in capsys.readouterr().out  # still printed for the operator
+
+
+def test_step7_dead_letter_still_names_the_exit_code_when_the_gate_printed_nothing_readable():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        def failing_gate():
+            print("not json")
+            return 1
+
+        m["acceptance"].side_effect = failing_gate
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        assert run_weekly_refresh("postgres://dummy", season=2026) == 1
+    assert "non-zero exit code: 1" in m["dead_letter"].call_args.args[2]
+
+
+# ── Step 4b: the forward producer (decision 0012, commit 7) ───────────────────
+
+def _record_order(m):
+    """Make each step append its name to a list when called; return values stay as set."""
+    order: list[str] = []
+    for name in ("stack", "availability", "features", "forward", "simulation", "team_game", "acceptance"):
+        value = m[name].return_value
+
+        def spy(*a, _n=name, _v=value, **k):
+            order.append(_n)
+            return _v
+        m[name].side_effect = spy
+    return order
+
+
+def test_step4b_runs_after_the_stack_and_before_the_simulation_in_causal_order():
+    """Availability is captured first: a snapshot fetched after as_of would be unusable."""
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 0
+    assert order == ["stack", "availability", "features", "forward", "simulation", "team_game", "acceptance"]
+
+
+def test_step4b_hands_the_new_snapshot_to_the_producer_for_the_target_week():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    assert m["availability"].call_args.args[1:3] == (2026, 3)
+    build = m["features"].call_args
+    assert build.args[1:3] == (2026, 3) or (build.kwargs["season"], build.kwargs["week"]) == (2026, 3)
+    forward = m["forward"].call_args
+    assert forward.args[1:3] == (2026, 3)
+    assert forward.kwargs["feature_run_id"] == "forward_features_2026_w03_x"
+
+
+def test_a_failed_forward_producer_dead_letters_and_stops_before_the_simulation():
+    from ml.forward_serving import ForwardGuardError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["forward"].side_effect = ForwardGuardError("G5", "pinned prediction bounds exceeded")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    m["dead_letter"].assert_called_once()
+    _, source, error, season = m["dead_letter"].call_args.args
+    assert source == "weekly_refresh/forward_producer"
+    assert "G5" in error and season == 2026
+    m["simulation"].assert_not_called()
+    m["team_game"].assert_not_called()
+    m["acceptance"].assert_not_called()
+
+
+def test_a_failed_availability_capture_stops_before_features_and_the_producer():
+    from pipeline.availability_store import AvailabilityFetchError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["availability"].side_effect = AvailabilityFetchError("source unavailable")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
+    m["features"].assert_not_called()
+    m["forward"].assert_not_called()
+
+
+def test_step7_passes_the_approved_run_id_so_a_promoted_week_counts_as_current():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        seen = _gate_argv(m)
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    argv = seen["argv"]
+    assert argv[argv.index("--approved-run-id") + 1] == "weekly_auto_2026"
+
+
+def test_replace_week_is_handed_to_the_producer_not_done_as_a_separate_delete():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0
+    assert m["forward"].call_args.kwargs["replace_week"] is True
+    executed = [c.args[0] for c in m["cursor"].execute.call_args_list]
+    assert not any("DELETE FROM projections WHERE" in sql for sql in executed)
+
+
+def test_a_refused_replace_week_dead_letters_under_the_producer_step():
+    from ml.forward_serving import ForwardGuardError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["forward"].side_effect = ForwardGuardError("G2", "week 3 already has scores")
+        m["cursor"].fetchone.side_effect = [(2,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
+    m["simulation"].assert_not_called()
+
+
+def test_the_weekly_run_never_passes_the_availability_override_or_replace_by_default():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    kwargs = m["forward"].call_args.kwargs
+    assert kwargs.get("replace_week") is False
+    assert "allow_no_availability" not in kwargs
+
+
+# ── M1: a failure after the producer must leave the old week served ───────────────────────
+def _run_replace_failing_at(step: str):
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        if step == "simulation":
+            m["simulation"].side_effect = RuntimeError("simulation exploded")
+        elif step == "team_game":
+            m["team_game"].side_effect = RuntimeError("team game exploded")
+        elif step == "acceptance":
+            m["acceptance"].return_value = 1
+        if step == "promote":
+            with patch("scripts.weekly_refresh.promote_run_id", side_effect=RuntimeError("promote exploded")):
+                rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+        else:
+            rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+        return rc, m
+
+
+@pytest.mark.parametrize("step", ["simulation", "team_game", "acceptance", "promote"])
+def test_a_failure_after_the_producer_restores_the_archived_week(step):
+    rc, m = _run_replace_failing_at(step)
+    assert rc == 1
+    m["restore"].assert_called_once()
+    assert m["restore"].call_args.args[1:] == (2026, 3)  # (conn, season, week)
+    sources = [c.args[1] for c in m["dead_letter"].call_args_list]
+    assert any(src.startswith("weekly_refresh/") for src in sources)
+
+
+@pytest.mark.parametrize("step", ["simulation", "acceptance", "promote"])
+def test_without_replace_week_a_failure_never_restores(step):
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        if step == "simulation":
+            m["simulation"].side_effect = RuntimeError("boom")
+        if step == "acceptance":
+            m["acceptance"].return_value = 1
+        if step == "promote":
+            with patch("scripts.weekly_refresh.promote_run_id", side_effect=RuntimeError("boom")):
+                rc = run_weekly_refresh("postgres://dummy", season=2026)
+        else:
+            rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    m["restore"].assert_not_called()
+
+
+def test_a_failed_restore_is_reported_loudly_and_the_run_still_fails():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        m["simulation"].side_effect = RuntimeError("simulation exploded")
+        m["restore"].side_effect = RuntimeError("another writer holds the lock")
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    sources = [c.args[1] for c in m["dead_letter"].call_args_list]
+    assert "weekly_refresh/restore_replaced_week" in sources  # the week is unserved: someone must be told
+
+
+def test_a_successful_replace_discards_the_archive_in_the_promotion_transaction():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0
+    m["restore"].assert_not_called()
+    calls = m["cursor"].execute.call_args_list
+    relabel = next(i for i, c in enumerate(calls) if "UPDATE projections" in c.args[0])
+    discard = next(i for i, c in enumerate(calls) if "DELETE FROM projections_replaced" in c.args[0])
+    assert relabel < discard
+    assert calls[discard].args[1] == (2026, 3)
+
+
+# ── per-run pending id and the start-of-refresh cleanup (review N1) ───────────────────────
+def _run_with_ids(m):
+    """Run a refresh; return the pending id each step received."""
+    import sys
+
+    seen: dict = {}
+
+    def stack():
+        seen["stack"] = sys.argv[sys.argv.index("--pipeline-run-id") + 1]
+        return 0
+
+    def gate():
+        seen["gate"] = sys.argv[sys.argv.index("--pipeline-run-id") + 1]
+        return 0
+
+    m["stack"].side_effect = stack
+    m["acceptance"].side_effect = gate
+    m["cursor"].fetchone.side_effect = [(2,), (False,)]
+    rc = run_weekly_refresh("postgres://dummy", season=2026)
+    seen["rc"] = rc
+    return seen
+
+
+def test_every_step_and_the_promotion_use_the_runs_own_pending_id():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        seen = _run_with_ids(m)
+    assert seen["rc"] == 0
+    pid = seen["stack"]
+    assert pid.startswith("weekly_auto_2026_pending_") and len(pid) > len("weekly_auto_2026_pending_")
+    assert seen["gate"] == pid
+    assert m["forward"].call_args.kwargs["pending_id"] == pid
+    assert m["simulation"].call_args.kwargs["pipeline_run_id"] == pid
+    assert m["team_game"].call_args.kwargs["pipeline_run_id"] == pid
+    promoted = [c.args[1] for c in m["cursor"].execute.call_args_list if "UPDATE" in c.args[0]]
+    assert promoted and all(params[-1] == pid and params[0] == "weekly_auto_2026" for params in promoted)
+    m["run_intact"].assert_called_once()
+    assert m["run_intact"].call_args.args[1:] == (2026, 3, pid)
+
+
+def test_two_refreshes_get_different_pending_ids():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    ids = []
+    for _ in range(2):
+        with _weekly_refresh_with_orchestrator(summary) as m:
+            ids.append(_run_with_ids(m)["stack"])
+    assert ids[0] != ids[1]
+
+
+def test_the_cleanup_runs_after_the_approval_check_and_before_any_ingest():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["clear_leftovers"].side_effect = lambda *a, **k: order.append("clear_leftovers")
+        m["orchestrator_run"].side_effect = lambda *a, **k: (order.append("ingest"), summary)[1]
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    assert order[:2] == ["clear_leftovers", "ingest"]
+    assert m["clear_leftovers"].call_args.args[1] == 2026
+
+
+def test_a_cleanup_that_cannot_finish_stops_the_refresh_before_any_write():
+    from pipeline.pending_runs import LeftoverRunsError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["clear_leftovers"].side_effect = LeftoverRunsError("week 3 could not be restored; run scripts/restore_replaced_week.py")
+        m["cursor"].fetchone.side_effect = [(2,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    m["orchestrator_run"].assert_not_called()
+    m["stack"].assert_not_called()
+    _, source, error, _ = m["dead_letter"].call_args.args
+    assert source == "weekly_refresh/clear_leftovers" and "restore_replaced_week.py" in error
+
+
+def test_a_run_whose_producer_left_no_row_is_not_promoted_and_the_week_is_restored():
+    from pipeline.pending_runs import RunNotProducedError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["run_intact"].side_effect = RunNotProducedError("no forward_projections row")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    assert not any("UPDATE" in c.args[0] for c in m["cursor"].execute.call_args_list)  # nothing relabelled
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/atomic_promote"
+    m["restore"].assert_called_once()
+
+
+# ── a newer availability snapshot is never overwritten by the producer or a restore (review N2) ──
+def test_the_newest_availability_is_reapplied_right_after_the_producer_wrote():
+    """A replace after a Friday refresh must keep the Friday status: the producer used its own as_of."""
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["reapply"].side_effect = lambda *a, **k: order.append("reapply")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0
+    # the last "reapply" is the one after the promotion (review N9)
+    assert order == ["stack", "availability", "features", "forward", "reapply", "simulation", "team_game", "acceptance",
+                     "reapply"]
+    call = m["reapply"].call_args_list[0]
+    assert call.args[1:3] == (2026, 3)
+    pending = m["forward"].call_args.kwargs["pending_id"]
+    assert pending in call.kwargs["run_ids"] and "weekly_auto_2026" in call.kwargs["run_ids"]
+    assert call.kwargs["reason"] == "after_producer"
+
+
+def test_a_failed_reapply_fails_the_producer_step_and_restores_the_week():
+    from pipeline.availability_refresh import AvailabilityRefreshRefused
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["reapply"].side_effect = AvailabilityRefreshRefused("another writer holds the lock")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
+    m["simulation"].assert_not_called()
+    m["restore"].assert_called_once()
+
+
+# ── one refresh per season at a time, and step 8 checks the rows are still there (review N8) ──
+def test_the_season_refresh_lock_is_taken_after_the_approval_check_and_before_the_cleanup():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["refresh_lock"].return_value.__enter__.side_effect = lambda *a: order.append("lock")
+        m["clear_leftovers"].side_effect = lambda *a, **k: order.append("clear_leftovers")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    assert order[:3] == ["lock", "clear_leftovers", "stack"] or order[:2] == ["lock", "clear_leftovers"]
+    assert m["refresh_lock"].call_args.args[1] == 2026
+
+
+def test_a_refresh_that_cannot_take_the_season_lock_stops_before_any_write():
+    from pipeline.refresh_lock import RefreshAlreadyRunning
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["refresh_lock"].return_value.__enter__.side_effect = RefreshAlreadyRunning("a refresh of season 2026 is running")
+        m["cursor"].fetchone.side_effect = [(2,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    m["clear_leftovers"].assert_not_called()
+    m["orchestrator_run"].assert_not_called()
+    m["restore"].assert_not_called()  # it changed nothing, so it has nothing to put back
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/refresh_lock"
+
+
+# ── a reapply after the promotion (review N9) ─────────────────────────────────────────────
+def test_the_newest_availability_is_reapplied_to_the_approved_rows_right_after_the_promotion():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["reapply"].side_effect = lambda *a, **k: order.append(("reapply", k["reason"]))
+        m["purge_processed"].side_effect = lambda *a, **k: (order.append("prune"), 0)[1]
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        assert run_weekly_refresh("postgres://dummy", season=2026) == 0
+    reasons = [o for o in order if isinstance(o, tuple)]
+    assert reasons == [("reapply", "after_producer"), ("reapply", "after_promotion")]
+    assert order.index(("reapply", "after_promotion")) < order.index("prune")
+    last = m["reapply"].call_args
+    assert last.args[1:3] == (2026, 3)
+    assert "weekly_auto_2026" in last.kwargs["run_ids"]
+    assert not any("_pending" in r for r in last.kwargs["run_ids"])  # the pending rows are gone by now
+
+
+def test_a_failed_reapply_after_the_promotion_is_logged_and_dead_lettered_but_not_undone(caplog):
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    calls = {"n": 0}
+
+    def reapply(*a, **k):
+        calls["n"] += 1
+        if k["reason"] == "after_promotion":
+            raise RuntimeError("week lock held")
+        return {}
+
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["reapply"].side_effect = reapply
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        with caplog.at_level("ERROR"):
+            rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0  # the promotion stands
+    m["restore"].assert_not_called()
+    m["purge_processed"].assert_called()  # and the run goes on to step 9
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/reapply_after_promotion"
+    assert any("week lock held" in r.getMessage() for r in caplog.records)

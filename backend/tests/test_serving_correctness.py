@@ -84,10 +84,10 @@ def test_materializer_refuses_pre_02_stack_names(tmp_path, monkeypatch):
 
 
 def test_materializer_conflict_update_clears_stale_uncertainty_fields():
-    from scripts.materialize_stack_projections import _upsert
+    from pipeline.serving_rows import upsert_projections
     import inspect
 
-    sql_source = inspect.getsource(_upsert)
+    sql_source = inspect.getsource(upsert_projections)
     assert "boom_probability = EXCLUDED.boom_probability" in sql_source
     assert "bust_probability = EXCLUDED.bust_probability" in sql_source
     assert "interval_method = EXCLUDED.interval_method" in sql_source

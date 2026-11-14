@@ -86,7 +86,7 @@ def test_stacking_without_mlflow_fails_closed_by_default(monkeypatch):
     monkeypatch.delenv("PRODUCT_MODE", raising=False)
     runner = PipelineRunner()  # mlflow_tracking_uri defaults to ""
     df = pd.DataFrame({"player_id": ["p1"], "kalman_est_rushing_yards": [15.0]})
-    with pytest.raises(RuntimeError, match="requires MLFLOW_TRACKING_URI"):
+    with pytest.raises(RuntimeError, match="ml.forward_serving"):
         runner._run_stacking_step(df, "rushing_yards", "RB")
 
 

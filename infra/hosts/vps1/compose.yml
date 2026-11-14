@@ -179,6 +179,8 @@ services:
     build:
       context: ../../..
       dockerfile: backend/Dockerfile
+      args:
+        CODE_GIT_SHA: ${CODE_GIT_SHA:-}
     image: gridiron-etl:full
     profiles: ["jobs"]
     # weekly_refresh.py has no ping of its own: curl the dead-man URL on
@@ -204,6 +206,42 @@ services:
     # No `read_only`: refresh stages scratch/parquet artefacts under /app and
     # /tmp; remounting read-only risks failing a weekly run to save nothing
     # (the container is removed after each run).
+    logging: *logging
+
+  # ── Friday availability refresh — one-shot, never `up -d` ─────────────────
+  # Updates availability_status on the next forward week (scripts/refresh_availability.py), per game:
+  # games that have kicked off are frozen. No models are loaded.
+  # It takes the SAME lock as the training windows (scripts/train_window.sh), on the shared train_out
+  # volume, and waits up to AVAILABILITY_LOCK_WAIT_SECONDS (900) for a running retrain; it never stops
+  # one. The run itself is capped at AVAILABILITY_RUN_SECONDS (240), so lock wait plus run is 19 minutes,
+  # inside the unit's TimeoutStartSec=20min. On a lock timeout flock exits 75, on a hung run timeout
+  # kills it; either way the unit fails and no ping is sent: that is the alert.
+  # `$$` is a literal `$` for the container shell (compose would otherwise interpolate it).
+  # mem_limit is a guess, not a measurement: set it from the first dry-run's peak RSS.
+  availability:
+    image: gridiron-etl:full
+    profiles: ["jobs"]
+    command: ["/bin/sh", "-c", "flock -w ${AVAILABILITY_LOCK_WAIT_SECONDS:-900} -E 75 /train_out/.train.lock timeout -k 10 ${AVAILABILITY_RUN_SECONDS:-240} python3 /app/scripts/refresh_availability.py && if [ -n \"$$HEALTHCHECKS_AVAILABILITY_URL\" ]; then curl -fsS -m 10 --retry 3 \"$$HEALTHCHECKS_AVAILABILITY_URL\" -o /dev/null; fi"]
+    # No env_file on purpose: .env holds the R2 keys and every other secret on the box. This job
+    # reads only the variables below (compose still interpolates them from .env on the host).
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
+      PRODUCT_MODE: artifact_backed
+      AVAILABILITY_LOCK_WAIT_SECONDS: ${AVAILABILITY_LOCK_WAIT_SECONDS:-900}
+      AVAILABILITY_RUN_SECONDS: ${AVAILABILITY_RUN_SECONDS:-240}
+      HEALTHCHECKS_AVAILABILITY_URL: ${HEALTHCHECKS_AVAILABILITY_URL:-}
+    volumes:
+      - train_out:/train_out
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    mem_limit: 512m
+    restart: "no"
+    user: appuser
+    security_opt: ["no-new-privileges:true"]
     logging: *logging
 
   # ── Nightly R2 backup — cron one-shot, never `up -d` ──────────────────────
@@ -249,7 +287,7 @@ services:
   # ── Training shell — profile `training`, never always-on ───────────────────
   # Same full image as `etl` (torch CPU, SHAP, MLflow client). Timers only:
   #   gridiron-train-small.timer → scripts/train_small.sh (01:00–07:00 UTC)
-  #   gridiron-train-full.timer  → scripts/train_full.sh  (Fri 22:00–Mon 06:00 UTC)
+  #   gridiron-train-full.timer  → scripts/train_full.sh  (Fri 23:30–Mon 06:00 UTC)
   # Interactive refits: docker compose --profile training run --rm training ...
   # Enforcement is TWO layers (see README "Training slice"): the host slice
   # caps the launcher, and THESE container caps are the real enforcement
@@ -260,6 +298,8 @@ services:
     build:
       context: ../../..
       dockerfile: backend/Dockerfile
+      args:
+        CODE_GIT_SHA: ${CODE_GIT_SHA:-}
     image: gridiron-etl:full
     profiles: ["training"]
     command: sleep infinity

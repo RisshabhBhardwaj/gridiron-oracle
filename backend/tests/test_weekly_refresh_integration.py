@@ -46,9 +46,28 @@ pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[2]
 APPROVED = "weekly_auto_2026"
-PENDING = "weekly_auto_2026_pending"
-# Approved in releases/current_baseline.json; present in the real keep set.
-STACK_APPROVED = "stack_materialize_20260822T144443Z"
+PENDING_PREFIX = "weekly_auto_2026_pending"
+# A refresh writes under its own id (PENDING_PREFIX + "_" + uuid); tests that seed or promote by hand use this one.
+PENDING = PENDING_PREFIX + "_integration-test"
+
+
+def _approved_stack_id() -> str:
+    """The stack run id the manifest approves, read from the one place the app defines it.
+
+    A re-freeze changes this id, so it is never written into a test. Fails loudly (at collection) if the
+    manifest no longer approves exactly one stack id, instead of letting a test seed an id the guard does
+    not protect and then fail for an unrelated-looking reason.
+    """
+    from pipeline.run_guard import approved_pipeline_run_ids
+
+    approved = approved_pipeline_run_ids()
+    stack_ids = sorted(i for i in approved if i.startswith("stack_materialize_"))
+    assert len(stack_ids) == 1, f"expected exactly one approved stack run id in the manifest, got {stack_ids}"
+    assert stack_ids[0] in approved
+    return stack_ids[0]
+
+
+STACK_APPROVED = _approved_stack_id()
 
 # Reports written by steps 4 and 7 that are pinned as evidence in
 # releases/artifacts/MANIFEST.json. Snapshot and restore them around each test.
@@ -191,10 +210,35 @@ def _clean_summary() -> OrchestratorSummary:
 
 @contextmanager
 def _ingest_mocked(summary: OrchestratorSummary):
-    """Replace the two network calls. Step 3's upsert still runs against the database."""
+    """Replace the network calls and the forward producer. Step 3's upsert still runs against the database.
+
+    The producer needs the pinned models and a network snapshot. The stand-in writes what promotion checks:
+    the ``forecast_runs`` row that names this run's pending id (``require_run_intact``).
+    """
+
+    def produce(dsn, season, week, *, replace_week=False, pending_id=None):
+        # One forward row under the run's own id, and the row count the promotion guard compares it to.
+        _execute(
+            dsn,
+            """
+            INSERT INTO projections (player_id, game_id, season, week, stat, position,
+                                     projection, pipeline_run_id, max_train_season)
+            VALUES ('STANDIN-FWD', %s, %s, %s, 'fantasy_ppr', 'QB', 12.0, %s, 2025)
+            """,
+            (f"{season}_{week:02d}_BBB_AAA", season, week, pending_id),
+        )
+        _execute(
+            dsn,
+            "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
+            "VALUES (%s, %s, %s, now(), 1, %s)",
+            (f"forward_projections_{season}_w{week:02d}_{uuid.uuid4().hex[:8]}", season, week,
+             json.dumps({"kind": "forward_projections", "pipeline_run_id": pending_id, "projection_rows": 1})),
+        )
+        return {}
+
     with patch.object(Orchestrator, "run", return_value=summary), patch(
         "scraper.adapters.ff_playerids.load_playerids_frame", return_value=_PLAYERIDS
-    ):
+    ), patch("scripts.weekly_refresh.produce_forward_week", side_effect=produce):
         yield
 
 
@@ -207,10 +251,35 @@ def _first_stack_row(season: int) -> dict:
     return {"player_id": str(row["player_id"]), "game_id": str(row["game_id"]), "week": int(row["week"])}
 
 
+def _write_sim_rows(*, season, start_week, pipeline_run_id, database_url, **_kw):
+    """What step 5 leaves for the run: one row in each season table, tagged with the run's pending id.
+
+    Step 8 refuses a run whose season tables are empty, so the stand-in must write them.
+    """
+    _execute(
+        database_url,
+        "INSERT INTO season_simulations (season, start_week, player_id, stat, mean, interval_method, "
+        "pipeline_run_id) VALUES (%s, %s, 'STANDIN-SIM', 'fantasy_ppr', 10, 'season_simulator_mc', %s)",
+        (season, start_week, pipeline_run_id),
+    )
+    _execute(
+        database_url,
+        "INSERT INTO season_simulation_weeks (season, start_week, week, player_id, stat, mean, pipeline_run_id) "
+        "VALUES (%s, %s, %s, 'STANDIN-SIM', 'fantasy_ppr', 10, %s)",
+        (season, start_week, start_week, pipeline_run_id),
+    )
+    _execute(
+        database_url,
+        "INSERT INTO season_team_wins (season, start_week, team, wins_mean, pipeline_run_id) "
+        "VALUES (%s, %s, 'AAA', 9.5, %s)",
+        (season, start_week, pipeline_run_id),
+    )
+
+
 @contextmanager
 def _season_sim_pass():
     """Step 5 succeeds without fitting models, so the run can reach step 8."""
-    with patch("scripts.materialize_season_simulation.materialize") as sim:
+    with patch("scripts.materialize_season_simulation.materialize", side_effect=_write_sim_rows) as sim:
         yield sim
 
 
@@ -311,7 +380,7 @@ def test_failed_ingest_step_dead_letters_and_does_not_promote(db):
         )
     ]
     assert _scalar(db, "SELECT COUNT(*) FROM fantasy_player_ids") == 0  # step 3 never ran
-    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (PENDING,)) == 0
+    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE starts_with(pipeline_run_id, %s)", (PENDING_PREFIX,)) == 0
     assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (APPROVED,)) == 1
 
 
@@ -328,7 +397,7 @@ def test_missing_training_history_fails_loudly_at_season_simulation(db):
     assert "Refusing to materialize" in dead[0][1]
     # Steps 3 and 4 ran for real before the failure.
     assert _scalar(db, "SELECT COUNT(*) FROM fantasy_player_ids") == len(_PLAYERIDS)
-    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (PENDING,)) > 0
+    assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE starts_with(pipeline_run_id, %s)", (PENDING_PREFIX,)) > 0
     # Nothing was promoted: the approved 2026 row is still the only APPROVED row.
     assert _scalar(db, "SELECT COUNT(*) FROM projections WHERE pipeline_run_id = %s", (APPROVED,)) == 1
 
@@ -573,7 +642,7 @@ def test_failed_run_leaves_api_visible_team_game_rows_unchanged(db, monkeypatch)
     before = _served_team_games(db, monkeypatch)
     assert before == [("AAA", APPROVED, 24.0), ("BBB", APPROVED, 21.0)]
 
-    # Step 7 runs for real and fails on the unplayed week's depth-chart gate.
+    # Step 7 runs for real and fails on the unplayed week's structural gate (the stand-in writes one row).
     with _ingest_mocked(_clean_summary()), _season_sim_pass(), _team_game_step_runs():
         rc = run_weekly_refresh(db, season=2026)
 
@@ -608,7 +677,12 @@ def test_step7_reads_the_refresh_database_url_not_the_host_default(db, monkeypat
     assert rc == 1
     dead = _dead_letters(db)
     assert [source for source, _ in dead] == ["weekly_refresh/verify_acceptance"]
-    assert "Depth chart freshness gate failed for season=2026" in dead[0][1]
+    # A forward week runs the structural gate. Its diagnosis (counts of rows missing from the refresh
+    # database) can only be produced by a connection to the DSN the refresh was given; the unreachable
+    # host default would fail with a connection error instead.
+    assert "Week 3 under weekly_auto_2026_pending_" in dead[0][1]
+    assert "positions without rows" in dead[0][1]
+    assert "could not connect" not in dead[0][1] and "Connection refused" not in dead[0][1]
 
 
 def test_upgrade_head_explicit_url_wins_over_database_url_env(monkeypatch):
