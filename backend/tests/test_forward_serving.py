@@ -59,6 +59,7 @@ def make_conn(
     snapshot: bool = True,
     reports: list[tuple] | None = None,
     avail_fetched: datetime | None = None,
+    lock: bool = True,
 ) -> FakeConn:
     frame = forward_frame() if frame is None else frame
     kickoff = kickoff or AS_OF + timedelta(days=5)
@@ -86,6 +87,7 @@ def make_conn(
         ("FROM availability_snapshots", (["snapshot_id", "fetched_at"], [("avail_1", fetched)])),
         ("FROM availability_reports", (
             ["player_id", "report_status", "practice_status", "roster_status", "date_modified"], reports)),
+        ("-- wk:lock", (["locked"], [(lock,)])),  # last: tests address routes above by index
     ])
 
 
@@ -667,3 +669,30 @@ def test_the_skip_count_is_scoped_to_the_week_and_checks_only_approved_other_run
     q = next(e for e in conn.log if e[0] == "execute" and "-- sr:skipped" in e[1])
     assert "season = %s AND p.week = %s" in q[1] or "p.season = %s AND p.week = %s" in q[1]
     assert "IS DISTINCT FROM" in q[1] and "= ANY(" in q[1]
+
+
+# ── L2: one writer per (season, week) ─────────────────────────────────────────────────────
+def test_the_producer_takes_the_week_lock_before_any_write(manifest) -> None:
+    conn = make_conn()
+    go(conn, manifest, replace_week=True)
+    statements = [e[1] for e in conn.log if e[0] == "execute"]
+    lock_at = next(i for i, q in enumerate(statements) if "-- wk:lock" in q)
+    first_write = next(i for i, q in enumerate(statements) if q.lstrip().upper().startswith(("DELETE", "INSERT")))
+    assert lock_at < first_write
+    assert "pg_try_advisory_xact_lock" in statements[lock_at]
+    params = next(e[2] for e in conn.log if e[0] == "execute" and "-- wk:lock" in e[1])
+    assert params[1] == SEASON * 100 + WEEK
+
+
+def test_a_producer_that_cannot_get_the_week_lock_refuses_and_writes_nothing(manifest) -> None:
+    conn = make_conn(lock=False)
+    with pytest.raises(ForwardGuardError, match="another writer") as e:
+        go(conn, manifest, replace_week=True)
+    assert e.value.guard == "L2"
+    assert conn.writes == []
+
+
+def test_a_dry_run_does_not_take_the_week_lock(manifest) -> None:
+    conn = make_conn()
+    go(conn, manifest, dry_run=True)
+    assert not any("-- wk:lock" in e[1] for e in conn.log if e[0] == "execute")

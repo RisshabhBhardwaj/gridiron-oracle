@@ -53,6 +53,7 @@ from ml.product_mode import ARTIFACT_BACKED, resolve_product_mode
 from ml.utils import FEATURE_COLS, MISSING_VALUE_SENTINEL
 from pipeline.availability import UNKNOWN, AvailabilityResult, is_served
 from pipeline.availability_store import NoAvailabilitySnapshot, load_availability
+from pipeline.week_lock import try_lock_week
 from pipeline.serving_rows import (
     attach_causal_conformal_intervals,
     attach_derived_fantasy_projection,
@@ -605,6 +606,12 @@ def run_forward(
         "rows_not_served": not_served, "memory": memory,
     }
     try:
+        # One writer per week: the Friday refresh updates these same rows. Held until the commit below.
+        if not try_lock_week(conn, season, week):
+            raise ForwardGuardError(
+                "L2", f"another writer holds the lock for season={season} week={week} (the Friday availability "
+                      "refresh or a second producer); nothing was written. Retry when it has finished."
+            )
         with conn.cursor() as cur:
             if replace_week:
                 cur.execute("DELETE FROM projections WHERE season = %s AND week = %s", (season, week))

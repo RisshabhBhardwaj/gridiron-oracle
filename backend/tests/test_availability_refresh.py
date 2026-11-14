@@ -27,8 +27,9 @@ NORMAL = (("g_thu", THURSDAY, 24, 17), ("g_sun1", SUNDAY, None, None), ("g_sun2"
           ("g_mon", MONDAY, None, None))
 
 
-def _conn(*, games=NORMAL, rows=(("p1", "Questionable"), ("p2", None), ("p3", "Out")), injury_rows=40):
+def _conn(*, games=NORMAL, rows=(("p1", "Questionable"), ("p2", None), ("p3", "Out")), injury_rows=40, lock=True):
     return FakeConn(routes=[
+        ("-- wk:lock", (["locked"], [(lock,)])),
         ("-- av:games", (["id", "kickoff_at", "home_score", "away_score"], list(games))),
         ("-- av:rows", (COLS, list(rows))),
         ("-- av:injury_rows", (["n"], [(injury_rows,)])),
@@ -357,3 +358,22 @@ def test_the_injury_row_check_counts_report_or_practice_status_of_this_snapshot(
     q = next(e for e in conn.log if e[0] == "execute" and "-- av:injury_rows" in e[1])
     assert "report_status IS NOT NULL" in q[1] and "practice_status IS NOT NULL" in q[1]
     assert "availability_reports" in q[1] and q[2] == ("avail_new",)
+
+
+def test_the_refresh_takes_the_week_lock_before_reading_the_rows_it_will_update():
+    conn = _conn()
+    _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    statements = [e[1] for e in conn.log if e[0] == "execute"]
+    lock_at = next(i for i, q in enumerate(statements) if "-- wk:lock" in q)
+    rows_at = max(i for i, q in enumerate(statements) if "-- av:rows" in q)
+    assert lock_at < rows_at
+    params = next(e[2] for e in conn.log if e[0] == "execute" and "-- wk:lock" in e[1])
+    assert params[1] == SEASON * 100 + WEEK  # the same key the producer takes
+
+
+def test_a_refresh_that_cannot_get_the_week_lock_refuses_and_changes_nothing():
+    conn = _conn(lock=False)
+    with pytest.raises(AvailabilityRefreshRefused, match="another writer"):
+        _run(conn, {"p1": None, "p2": None, "p3": None})
+    assert _updates(conn) == []
+    assert not any(e[0] == "execute" and "INSERT INTO forecast_runs" in e[1] for e in conn.log)

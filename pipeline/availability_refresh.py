@@ -7,6 +7,7 @@ writes in one transaction, records itself in ``forecast_runs`` under its own key
 
 * the week has games and at least one has not started (no score, kickoff after the new ``as_of``);
 * forward projection rows exist for those games;
+* no other writer holds the (season, week) lock (``pipeline.week_lock``);
 * the fresh snapshot has injury-report rows (a report or practice status), since roster rows alone
   would clear every designation.
 
@@ -27,6 +28,7 @@ import pandas as pd
 import psycopg2.extras
 
 from pipeline.availability_store import capture_snapshot, load_availability
+from pipeline.week_lock import try_lock_week
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,12 @@ def refresh_availability(
     if as_of.tzinfo is None:
         raise ValueError("now() must be timezone-aware")
     try:
+        # One writer per week: the forward producer writes these same rows. Held until the commit below.
+        if not try_lock_week(conn, season, week):
+            raise AvailabilityRefreshRefused(
+                f"another writer holds the lock for season={season} week={week} (the forward producer or a "
+                "second refresh); nothing was updated. Retry when it has finished"
+            )
         # The clock may have crossed a kickoff during the fetch: decide the open games at the new as_of.
         game_ids, frozen = _open_games(conn, season, week, as_of)
         current = _forward_rows(conn, season, week, run_ids, game_ids)
