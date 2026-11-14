@@ -1,6 +1,6 @@
 # 0012 Forward producer: pin fitted base models, serve them without MLflow
 
-Date: 2026-11-14. Status: **proposed** (architect review; nothing built). Follows decision 0011, section "Scope of the forward producer". Extends decision 0002 (pinned, fail-closed serving). Author: Claude worker acting as architect, for the Claude Gridiron manager.
+Date: 2026-11-14. Status: **accepted** 2026-11-14 by the coordinator (the owner delegated approvals); nothing built yet. The answers to the open questions are in "Decisions on the open questions" at the end and override any text above them. Follows decision 0011, section "Scope of the forward producer". Extends decision 0002 (pinned, fail-closed serving). Author: Claude worker acting as architect, for the Claude Gridiron manager.
 
 Every claim below was checked against the code on `main` at `9e15530`. Line numbers will drift; the function names will not.
 
@@ -56,7 +56,7 @@ Derived from the 32 `ridge_*_coefs.json` files in `releases/candidates/causal_20
 - New `ml/final_fit.py`, run through a new `scripts/train_window.sh finalfit` mode in the box's `training` profile (10 GiB, 5 CPU). The estimate is minutes, not hours: 47 single fits, no Optuna, no folds. Verify on first run.
 - **Data:** `train_seasons()` (2019..`LAST_COMPLETE_SEASON`), guarded by `assert_seasons_within_cap` (`ml/season_constants.py`). Never 2026. This is one season more than the last OOF fold, which is exactly what the walk-forward rule gives for a 2026 target.
 - **Same recipe:** reuse each trainer's own data prep and `_train_fold`-style fit so rows, sentinel fill (`MISSING_VALUE_SENTINEL`) and features match. Feature list is `[f for f in FEATURE_COLS if f in df.columns]` (`ml/lgbm_model.py:428`); the final fit stores the list it used.
-- **Hyperparameters need a prerequisite commit:** trainers write `params_<learner>_<stat>_<pos>.json` next to the OOF. For the current release, recover from the box logs (open question 2). Without that, "same hyperparameters" cannot be shown.
+- **Hyperparameters need a prerequisite commit:** trainers write `params_<learner>_<stat>_<pos>.json` next to the OOF. For the current release, recover them from the box logs (decision D2: the lines exist). Without that, "same hyperparameters" cannot be shown.
 - **Replay gate (proves parity, replaces trust).** Before a final model is pinned, `final_fit` refits the *last OOF fold* (seasons through 2024) with the same code and params, predicts 2025, and compares with the base-learner OOF kept in `train_out/oof/rebuild_<STAMP>/`. Report max and mean absolute difference per model. Fail above a tolerance set on the first run (start at 1e-4 relative to the target's std; threads can cause tiny float differences). This catches wrong params, wrong feature list, wrong data window and wrong library versions.
 - **Reproducible means:** same code sha + params + data hash + library versions reproduce the same predictions within tolerance. It does not mean identical file bytes; the SHA-256 pins the artifact, the replay gate pins the behavior.
 
@@ -64,7 +64,7 @@ Derived from the 32 `ridge_*_coefs.json` files in `releases/candidates/causal_20
 
 - Native: LightGBM text (`Booster.save_model`) and CatBoost `.cbm`. Same library that produced the OOF, versions pinned in `backend/requirements.txt` (`lightgbm==4.6.0`, `catboost==1.2.10`) and recorded per model.
 - Size is unknown until fitted. For scale, the 39 existing ONNX files total 237 MB (75 KB to 17 MB each). Plan for 100-250 MB.
-- The push gate refuses git objects over 5 MiB (`.githooks/pre-push:56-59`). `ml/onnx` passes only because its files are LFS pointers. Recommend the same: Git LFS under `releases/candidates/<id>/models/`. The loader detects an LFS pointer file and fails with a clear message (its digest would also fail). Whether the box checkout smudges LFS is unverified (open question 1).
+- The push gate refuses git objects over 5 MiB (`.githooks/pre-push:56-59`). `ml/onnx` passes only because its files are LFS pointers. Decided (D1): Git LFS under `releases/candidates/<id>/models/`. The loader detects an LFS pointer file and fails with a clear message (its digest would also fail). The box is not a git checkout: the sync copies the Mac's smudged working-tree files, and a sync check refuses pointer files (D1).
 - `releases/candidates/<id>/models/MODELS.json` (also pinned) records per model: learner, stat, position, file, sha256, `train_seasons`, `max_train_season`, feature list and its hash, params, row count, training-data hash, code git sha, library versions, null rates per feature (`build_training_manifest`, `ml/reliability.py:60-95`), and the replay-gate result.
 
 ### 4. Manifest schema and pinning (Q3)
@@ -79,7 +79,7 @@ Derived from the 32 `ridge_*_coefs.json` files in `releases/candidates/causal_20
 - `ml/forward_serving.py` per cell: read pinned ridge (existing `load_ridge_coefs`, already manifest-first) → for each non-zero-weight learner call `resolve_base_model` and load natively → build features with `build_inference_features` → **assert the frame's columns equal the model's stored feature list exactly** → predict → apply weights → finite and shape checks (reuse the checks at `ml/inference_client.py:~150-175`).
 - Do **not** use `align_features_to_model` (`ml/inference_client.py:311-363`, zero fill at `:343`): it fills missing columns with zeros and silently cuts to the first N columns. On the pinned path a mismatch is an error.
 - Intervals: move `_attach_causal_conformal_intervals`, `_attach_derived_fantasy_projection` and `_upsert` into one shared module (`pipeline/serving_rows.py`) used by both writers. Forward calibration residuals are the pinned stack's seasons 2021-2025, all strictly before 2026. Result: `interval_method = causal_oof_conformal_90`, `p25/p75/boom/bust` NULL, exactly as history rows. No Bayesian or Monte Carlo layer, so no PyMC.
-- `PipelineRunner`: in `artifact_backed`, replace the MLflow-latest and ONNX paths with a clear error that names `ml.forward_serving`. Keep MLflow for `graceful_fallback` and local work (it labels degraded output). Retiring `ml/onnx` is a separate cleanup (open question 5).
+- `PipelineRunner`: in `artifact_backed`, replace the MLflow-latest and ONNX paths with a clear error that names `ml.forward_serving`. Keep MLflow for `graceful_fallback` and local work (it labels degraded output). Retiring `ml/onnx` is a separate cleanup PR (decision D5).
 
 ### 6. Feature parity (Q5)
 
@@ -89,7 +89,7 @@ The builder is causal by construction, but parity with the training columns is *
 - Five groups depend on a runtime "as of" fact and need tests, not trust: market lines (`causal_line_for`), Elo features (state must hold only games completed before `as_of`), `days_rest`/`is_bye_prior`, lagged `depth_chart_rank`, and roster membership from depth charts with `published_at <= as_of`.
 - The runner reads `feature_matrix` by `(season, week)` only (`ml/train.py:1532`) and ignores the `forecast_runs` snapshot except for an existence check (`materialize_forward_projections.py:34-42`). The new path filters on the snapshot's `as_of` and checks the row count against `feature_rows`.
 - Null-rate gate: for each model feature, the forward null rate may not exceed the training null rate (stored in `MODELS.json`) by more than a set margin (calibrate on the first dry run). A column that is 100% null forward but 5% null in training is a builder bug, and with the -9999 sentinel it would not crash, it would just be wrong.
-- Cohort caveat (not a blocker): training and the history rows only contain players who played (`df[target_col].notna()`, `ml/lgbm_model.py:419`). Forward rows are every depth-chart player, so players who end up inactive still get a projection. See open question 3.
+- Cohort: training and the history rows only contain players who played (`df[target_col].notna()`, `ml/lgbm_model.py:419`). Forward rows would be every depth-chart player. Decided (D3): forward rows cover only players expected to play.
 
 ### 7. Refresh wiring, run id, idempotency, rollback (Q6)
 
@@ -120,7 +120,7 @@ Measured baseline: 1.16 GiB peak (`memory.peak`, page cache included) of 1.5 GiB
 - Feature frame: about 1,000-1,500 rows × 113 floats, under 1 MB.
 - Models: loaded one cell at a time and freed. Largest existing file is 17 MB, so tens of MB in memory.
 
-Expected addition 0.15-0.35 GiB on top of whatever the parent process still holds, so **1.3-1.5 GiB: it may not fit**. Measure, do not assume: (1) log `memory.current` before and after the step and per cell; (2) read `memory.peak` and `memory.events` (oom) for a full refresh in the real container, as for the 1.16 figure; (3) run the producer as a child process so the memory returns on exit. Decision rule: peak above about 1.35 GiB means raise `etl` to 2 GiB or run the producer as its own `jobs` one-shot ordered before steps 5-7. That is the owner's call.
+Expected addition 0.15-0.35 GiB on top of whatever the parent process still holds, so **1.3-1.5 GiB: it may not fit**. Measure, do not assume: (1) log `memory.current` before and after the step and per cell; (2) read `memory.peak` and `memory.events` (oom) for a full refresh in the real container, as for the 1.16 figure; (3) run the producer as a child process so the memory returns on exit. Decision rule (D6): peak above about 1.35 GiB means raise `etl` to 2 GiB; run the producer as its own `jobs` one-shot only if the peak passes 2 GiB.
 
 ### 9. Tests the implementer adds (Q8)
 
@@ -149,20 +149,26 @@ Order (each commit passes the gate: pytest `-m "not integration and not slow and
 7. `weekly_refresh.py` step 4b + week-scoped step 7 + tests. **Not enabled in the timer yet.**
 8. *Box, manager:* slice dry-run on 3 cells, then final fit of all 47, replay gate, memory measurement.
 9. *Manager:* add models (LFS), `MODELS.json`, `artifacts.base_models` to a new candidate directory.
-10. *Manager:* **re-freeze** (`make freeze-baseline`), sync the box checkout, run one refresh, read `memory.peak`.
+10. *Manager:* **re-freeze** (`make freeze-baseline`), sync the box (tracked files, smudged; pointer check per D1), run one refresh, read `memory.peak`.
 11. Slice 2 (before announcing forward numbers): per-row bucket attributions for forward rows. `PipelineRunner._write_db` writes none, so bucket weights would not move forward numbers (0011 made them live for history). TreeSHAP needs the `shap` library and the models at inference; it is the memory-heavy part and needs its own measurement.
 
 The re-freeze (10) must come after the model files and `MODELS.json` exist and after the code that reads them is on the box; it changes `git_commit` and digests but not `approved_pipeline_run_ids`.
 
 **Hard to undo:** the manifest key name and `MODELS.json` format (frozen releases and loaders depend on them); model blobs in public git history through LFS (cannot be removed without a history rewrite; storage and quota); the run-id and `forecast_runs` key conventions once forward rows are served and recorded. **Easy to undo:** the models (refit), the step wiring (switch the timer back or skip step 4b), forward rows (delete the week).
 
-## Open questions for the owner
+## Open questions (asked 2026-11-14)
 
-1. **Where do model files live?** Git LFS (precedent: `ml/onnx`) or outside git on a box volume with only digests in git? Estimated 100-250 MB. Does the box checkout run `git lfs pull`? (Unverified; I did not touch the box.)
-2. **Hyperparameters.** If the box logs of rebuild `20261114` still have the `Optuna best ... params=` lines, recover them from there. If not: accept re-tuning (then the OOF no longer describes the final models exactly), or repeat the 51-minute rebuild with params saved.
-3. **Players who do not play.** Show a forward projection for every depth-chart player (current builder), or only for players expected to play? Affects what the UI shows for inactive players.
-4. **Replacing a served week.** Manual only (recommended), or automatic on a newer depth chart with a staged swap (more code)?
-5. **Retire `ml/onnx` and MLflow-in-`artifact_backed`?** 39 stale LFS files (237 MB) that can be loaded without any pin today.
-6. **`etl` memory.** If the measured peak is over about 1.35 GiB: raise the limit to 2 GiB, or split the producer into its own job.
-7. **Forward attributions** are slice 2. Is it acceptable to serve forward numbers where Settings bucket weights do not apply until then?
-8. **Security (resolved 2026-11-14 by the manager).** `releases/current_baseline.json` held the Box B database password inside `environment.DATABASE_URL`. That password was rotated the same day and no longer works; `scripts/freeze_baseline.py` now writes the URL with the password masked, and a gitleaks rule now catches passwords in connection URLs. The next re-freeze removes the dead value from the file; git history keeps it.
+1. Where do model files live: Git LFS, or a box volume with digests in git? 2. Hyperparameters: recover from logs, re-tune, or rerun? 3. Project every depth-chart player, or only those expected to play? 4. Replace a served week manually or automatically? 5. Retire `ml/onnx` and MLflow in `artifact_backed`? 6. `etl` memory over 1.35 GiB: raise or split? 7. Serve forward numbers before forward attributions? 8. Security: the dead DB password in `current_baseline.json`.
+
+## Decisions on the open questions (coordinator, 2026-11-14)
+
+The owner delegated approvals to the coordinator. Source: the coordinator's decision note of 2026-11-14 (internal handoffs folder, not in this repo).
+
+- **D1. Model files: Git LFS** under `releases/candidates/<id>/models/` (the `ml/onnx` precedent). The box is not a git checkout: it gets files by `git ls-files -z | rsync ... --files-from=-` from the Mac (`docs/runbooks/vps4-causal-rerun.md`), which copies the working-tree file, so the models must be smudged on the Mac first (`git lfs pull`). The loader verifies every SHA-256 and fails closed on an LFS pointer. Add a sync check that refuses to finish if any file under `releases/candidates/*/models/` on the box starts with `version https://git-lfs.github.com/spec/v1`, and a Mac-side check before the rsync (`git lfs ls-files` shows `*`, not `-`, for every model).
+- **D2. Hyperparameters: recover from the logs.** Checked 2026-11-14: `gridiron_train_out:/logs/rebuild_20261114T103140/` has 64 `Optuna best ... params=` lines (32 cells × 2 learners). A recovery script parses them into `params_<learner>_<stat>_<pos>.json`. No re-tuning: the OOF must describe the final models exactly. If a needed line is missing, repeat the 51-minute rebuild with params saved (commit 1), never re-tune alone.
+- **D3. Only players expected to play.** Exclude players who are Out, on IR, suspended or inactive as of the feature snapshot's `as_of`. Keep Questionable and Doubtful, and store their status with the row so the UI shows it next to the projection. This matches the training cohort. Status must itself be causal: only reports published at or before `as_of`. Notes for the implementer (verify): `pipeline/injury_pipeline.py` loads `nflreadpy.load_injuries` into `injury_history` keyed by `(player_id, season, week)` without a report timestamp and is not in `weekly_refresh.py`; `players.status` comes from `load_rosters`, a current snapshot, not an as-of record. Game-day inactives are published about 90 minutes before kickoff, so a refresh well before kickoff can only exclude players already ruled out or on a reserve list; say so in the runbook.
+- **D4. Replacing a served week: manual only.** `--replace-week`, after a DB dump, documented in the runbook (section 7).
+- **D5. Retire `ml/onnx` and the MLflow path in `artifact_backed`:** yes, as a separate cleanup PR after the forward producer lands and serves one week cleanly. Until then commit 6 makes both unreachable in `artifact_backed`.
+- **D6. `etl` memory: measure first.** Peak over about 1.35 GiB: raise the limit to 2 GiB (the box has about 20 GB free) and record why in `infra/hosts/vps1/`. Split the producer into its own job only if the peak passes 2 GiB.
+- **D7. Forward attributions in slice 2: acceptable.** Until then the UI says plainly that Settings bucket weights apply to history and will apply to forward projections later. It must never imply that they apply now.
+- **D8. Security: resolved.** The password was rotated 2026-11-14 and `scripts/freeze_baseline.py` masks it. The gitleaks rule `connection-url-password` (`.gitleaks.toml`) runs in CI (the `Public-push gate` job failed on it for `27d7012`) and in the local pre-push hook (`.githooks/pre-push`, enabled by `make hooks`). At the next re-freeze, confirm the dead value is gone from `releases/current_baseline.json` in the working tree; git history keeps it.

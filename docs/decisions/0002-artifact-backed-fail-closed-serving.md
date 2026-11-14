@@ -17,3 +17,5 @@ Option 2 is the default (`PRODUCT_MODE=artifact_backed`, `backend/app/core/confi
 
 ## Why
 A wrong-but-plausible projection is the worst failure for a product whose value is trust. Caveat: evidence entries in `releases/artifacts/MANIFEST.json` are all still "provisional".
+
+Extended 2026-11-14 by decision 0012: fitted base models join the pinned artifacts (`artifacts.base_models`), so forward projections are served from pinned files too.
