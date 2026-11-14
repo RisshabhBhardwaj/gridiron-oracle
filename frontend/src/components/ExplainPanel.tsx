@@ -41,9 +41,7 @@ export function ExplainPanel({ playerId, week, season, stat }: ExplainPanelProps
       )}
 
       {!isLoading && error && explainFailure(error) === 'failed' && (
-        <div role="alert">
-          <ErrorBanner error={error} onRetry={() => void refetch()} />
-        </div>
+        <ErrorBanner error={error} onRetry={() => void refetch()} />
       )}
 
       {!isLoading && data && data.top_factors.length > 0 && (
