@@ -9,11 +9,22 @@
 #   scripts/train_window.sh small   canary: 3 cells, few trials, nightly. Proves
 #                                   the trainers, DB and attribution path run on
 #                                   the box. Output is never promoted.
+#   RELEASE_ID=causal_20261114 scripts/train_window.sh finalfit
+#                                   final fit of the pinned base models (decision
+#                                   0012): replay gate, then one model per learner
+#                                   with non-zero ridge weight, then MODELS.json.
+#                                   Reads params_*.json and the OOF of the last
+#                                   complete rebuild (or OOF_STAMP=...); never runs
+#                                   Optuna. ONLY_CELLS="passing_yards:QB ..." fits
+#                                   only those cells and does not write MODELS.json
+#                                   (the 3-cell slice). CODE_GIT_SHA=<sha> is needed
+#                                   because the box is not a git checkout.
 #
 # Output lands in $TRAIN_OUT_ROOT (the `train_out` volume, default /train_out):
 #   oof/rebuild_<STAMP>/   full rebuild (stacks, ridge coefs, attr_*.parquet,
 #                          TIMINGS.tsv, SHA256SUMS)    logs/rebuild_<STAMP>/
 #   oof/small_<date>/      canary output (last 3 kept)
+#   final/<RELEASE_ID>/    finalfit output: models, MODELS.json, .entries/
 #   full_stamp             STAMP of the rebuild in progress; a killed window
 #                          resumes it next time (per-cell resume).
 #   last_full_stamp        STAMP of the last COMPLETE rebuild.
@@ -26,7 +37,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 MODE="${1:-}"
-case "$MODE" in full | small) ;; *) echo "usage: $0 full|small" >&2; exit 2 ;; esac
+case "$MODE" in full | small | finalfit) ;; *) echo "usage: $0 full|small|finalfit" >&2; exit 2 ;; esac
 
 export TRAIN_OUT_ROOT="${TRAIN_OUT_ROOT:-/train_out}"
 export PY="${PY:-python3}"
@@ -38,7 +49,35 @@ if ! flock -n 9; then
   exit 75
 fi
 
-if [[ "$MODE" == "full" ]]; then
+if [[ "$MODE" == "finalfit" ]]; then
+  if [[ -z "${RELEASE_ID:-}" ]]; then
+    echo "finalfit needs RELEASE_ID, e.g. RELEASE_ID=causal_20261114" >&2
+    exit 2
+  fi
+  RELEASE_DIR="releases/candidates/$RELEASE_ID"
+  [[ -d "$RELEASE_DIR" ]] || { echo "no release directory $RELEASE_DIR (is the repo synced?)" >&2; exit 1; }
+  OOF_STAMP="${OOF_STAMP:-$(cat "$TRAIN_OUT_ROOT/last_full_stamp" 2>/dev/null || true)}"
+  if [[ -z "$OOF_STAMP" ]]; then
+    echo "no complete rebuild: $TRAIN_OUT_ROOT/last_full_stamp is missing; pass OOF_STAMP=<stamp>" >&2
+    exit 1
+  fi
+  SRC="$TRAIN_OUT_ROOT/oof/rebuild_$OOF_STAMP"
+  OUT="${FINAL_OUT_DIR:-$TRAIN_OUT_ROOT/final/$RELEASE_ID}"
+  mkdir -p "$OUT"
+  CELL_ARGS=()
+  if [[ -n "${ONLY_CELLS:-}" ]]; then
+    # shellcheck disable=SC2206
+    CELL_ARGS=(--cells $ONLY_CELLS)
+  fi
+  "$PY" -m ml.final_fit fit --release-dir "$RELEASE_DIR" --params-dir "$SRC" --oof-dir "$SRC" \
+    --out-dir "$OUT" --release-id "$RELEASE_ID" ${CELL_ARGS[@]+"${CELL_ARGS[@]}"}
+  if [[ -z "${ONLY_CELLS:-}" ]]; then
+    "$PY" -m ml.final_fit assemble --release-dir "$RELEASE_DIR" --out-dir "$OUT" --release-id "$RELEASE_ID"
+    echo "final fit complete: $OUT (MODELS.json written)"
+  else
+    echo "partial final fit (ONLY_CELLS): $OUT; MODELS.json not written"
+  fi
+elif [[ "$MODE" == "full" ]]; then
   POINTER="$TRAIN_OUT_ROOT/full_stamp"
   if [[ -s "$POINTER" ]]; then
     STAMP="$(cat "$POINTER")"
