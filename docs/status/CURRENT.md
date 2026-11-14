@@ -64,9 +64,20 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 ## Next steps (priority order)
 
-1. Forward-week weekly projections: decision 0012 accepted 2026-11-14 (D1-D8 decided by the coordinator). One worker is building commits 1-7 plus the Friday availability-only refresh (D3) on `agent/fwd-producer`; the manager then runs the box fit, pins `base_models` with `scripts/pin_artifact_group.py`, and re-freezes. The ETL timer stays off until then.
+1. Forward-week weekly projections, decision 0012:
+   - Status: on `agent/fwd-producer` (not on `main` yet). It holds commits 1-7, the Friday availability-only refresh (D3), and fixes 1-21 from the manager review and three security-review rounds. No highs; fix 22 (step 8 rowcount check) is the last before merge.
+   - Gate on 8164aa6: 2864 passed. `test_weekly_refresh_integration.py` passes 14 of 14 on native Postgres (no Docker).
+   - Box steps after merge, in order:
+     1. back up the DB;
+     2. confirm the box is at 0027 (0028 was amended in place);
+     3. run `alembic upgrade head` (0028-0030);
+     4. a 3-cell dry run;
+     5. the 47 fits;
+     6. pin `base_models` and re-freeze.
+   - Then the timers: availability Fri 22:00 UTC, train-full moves to Fri 23:30 UTC. Before enabling the Tuesday run, check that nflverse injuries have rows by Tue 13:00 UTC. The ETL timer stays off until then.
+   - Next: a CI job that runs the `-m integration` tests on a Postgres service (coordinator decision 2026-11-14). It must be required on PRs, with actions pinned by SHA.
 2. Freshness vs cadence: readiness needs `feature_matrix` under 24 h, but the ETL is weekly, so readiness lapses about a day after each run. Decide between a daily ETL and a coverage-based freshness check (decision 0011).
-3. UI phase 2 (decision 0010 item 3): items 1-3 merged to `main` (evidence pages on the served release, weekly provenance allow-list, search parity, Games not-ready state). Items 4-7 (player page, draft board, one error pattern and loading states, projections table and accessibility) go to a new Claude lead. Mock draft stays on hold (owner). Phase 1 critique: `.agent-work/gridiron/ui-review-2026-11-14/` (local).
+3. UI phase 2 (decision 0010 item 3): items 1-3 merged to `main` (evidence pages on the served release, weekly provenance allow-list, search parity, Games not-ready state). Items 4-7 (player page, draft board, one error pattern and loading states, projections table and accessibility) merged 2026-11-14 (`d82f9f5`, reviewed against the owner's bar at 1440 and 390). They need a Pages deploy and a box api deploy (`/explain` answers 404 instead of 503 when no breakdown is published), both waiting for the owner's yes. Left: Backtest redo, Season Review verdict, Settings, Home onboarding, mobile nav sheet, polish (`.agent-work/ui-phase2b/HANDOFF.md`). Mock draft stays on hold (owner). Phase 1 critique: `.agent-work/gridiron/ui-review-2026-11-14/` (local).
 4. Owner-only migration steps (VPS order, DNS, secrets, data move, old-host teardown): checklist in `docs/MIGRATION.md`.
 5. Follow-ups: normalize `summary.errors` failure decision; odds quota guard needs a shared cache before multi-replica serving.
 
