@@ -76,9 +76,32 @@ async function request<T>(
   return response.json() as Promise<T>
 }
 
+/**
+ * True for the server's 404 "nothing here yet" answer (for example no approved
+ * team-game predictions for a week). That is an expected empty state, not a
+ * failure: show a designed no-data state with a next step, never the error
+ * banner. 5xx, network errors and the proxy's backend_unavailable are not this.
+ */
+export function isNotReady(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
+}
+
 export const apiClient = {
   get<T>(path: string): Promise<T> {
     return request<T>('GET', path)
+  },
+  /**
+   * GET where a 404 means "not ready yet": resolves to null instead of throwing,
+   * so the query neither retries nor lands in the error state. Any other failure
+   * still throws.
+   */
+  async getOrNull<T>(path: string): Promise<T | null> {
+    try {
+      return await request<T>('GET', path)
+    } catch (err) {
+      if (isNotReady(err)) return null
+      throw err
+    }
   },
   post<T>(path: string, body: unknown): Promise<T> {
     return request<T>('POST', path, body)
