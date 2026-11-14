@@ -10,6 +10,7 @@ Who runs it: the Gridiron manager, with the owner's go-ahead for the production-
 - **Box commands** run on the box from `/srv/gridiron/infra/hosts/vps1` (`cd` there first). "In training" means `docker compose --profile training exec -T training <cmd>` (container `/app`, image `gridiron-etl:full`, 10 GB, 5 CPUs). "In db" means `docker compose exec -T db <cmd>`.
 - **Mac commands** run in the merged repo checkout and are marked `[Mac]`. `$BOX` is `deploy@<box address>`, set in your shell. The address is never written in the repo.
 - Commit names used below: **C1** = merged `main` that carries this work. **C2** = C1 plus the promoted release candidate (step 12). **C3** = C2 plus evidence only (step 18).
+- **Code-sync rule (`CODE_GIT_SHA`).** After every sync of the Mac checkout to the box, and before any image build, set `.env` `CODE_GIT_SHA` to the synced commit: `[Mac] git rev-parse HEAD`, then `vim .env` on the box (`grep -c '^CODE_GIT_SHA=' .env` must print 1). Never derive it from `GIT_COMMIT_SHA`: that one stays pinned to the freeze commit, so reusing it would stamp every later forward run with the wrong code commit. An empty or `unknown` value makes the forward producer refuse to write.
 - `/srv/gridiron` has no `.git`. The images copy code and `releases/` at build time (`backend/Dockerfile` and `Dockerfile.serving` both `COPY releases`). `reports/` is gitignored and is **not** in the image.
 
 ## Decisions this runbook makes
@@ -312,11 +313,13 @@ Rollback: `git reset --hard HEAD~1` on the Mac (never pushed).
 
 ```bash
 cd /srv/gridiron/infra/hosts/vps1
-vim .env                         # GIT_COMMIT_SHA=<C2>
+vim .env                         # GIT_COMMIT_SHA=<C2> and CODE_GIT_SHA=<C2> (here they are the same commit)
 docker compose build etl
 docker compose --profile training up -d --force-recreate training
 docker compose --profile training exec -T training bash -c 'echo $GIT_COMMIT_SHA; ls releases/candidates/causal_20261114 | wc -l'
 ```
+
+The block above also sets `CODE_GIT_SHA` (the forward producer's provenance, separate from `GIT_COMMIT_SHA`): see the code-sync rule.
 
 The OOF rebuild stays on the `train_out` volume. This sync carries exactly the step 12 files, so it cannot overwrite the promoted release with an older one. Verify anyway: `[Mac] git show HEAD:releases/current_baseline.json | shasum -a 256` must equal `sha256sum /srv/gridiron/releases/current_baseline.json` on the box.
 Rollback: `.env` back to the old SHA, `docker tag gridiron-etl:pre-rerun-<STAMP> gridiron-etl:full`, recreate training.
@@ -469,7 +472,7 @@ Step 4b runs after the stack step and before the simulation. In this order, and 
 
 Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
 
-Code SHA: `GIT_COMMIT_SHA` from `.env` is passed as the `CODE_GIT_SHA` build arg for the `etl` and `training` images, so the producer records the commit the image was built from. A real forward run with `code_git_sha` `unknown` is refused (guard D8); only `--dry-run` may run unstamped. Rebuild the image after changing `GIT_COMMIT_SHA`.
+Code SHA: `.env` `CODE_GIT_SHA` is passed as the build arg of the same name for the `etl` and `training` images, so the producer records the commit the image was built from. It is separate from `GIT_COMMIT_SHA`, which stays pinned to the freeze commit until the next re-freeze. **Every code sync sets it to the synced Mac HEAD before any image build** (sync rule below). A real forward run with `code_git_sha` empty or `unknown` is refused (guard D8); only `--dry-run` may run unstamped.
 
 `--allow-no-availability` (manual only, never in a unit) stores every row with status `Unknown` instead of refusing when no snapshot exists. The run is logged, and the report and summary carry `availability_override`. This needs migration 0029. The API returns the value in `availability_status`; showing it in the UI is a frontend change not made here.
 
@@ -509,7 +512,7 @@ Used 2026-11-14 to pin `causal_evals` (C2 `a056891`, C3 `173cfe7`); decision 001
    It refuses an existing group, paths outside `releases/candidates/`, uncommitted files and Git LFS pointers. Add `--dry-run` to check first.
 2. Run the gate, secret-scan and push. Sync to the box (rule above: only descendants of the served C3).
 3. On the box: check `training` is idle; back up `.env`, `current_baseline.json` and tag the `etl` and `api` images `pre-refreeze-<STAMP>`.
-4. Set `.env` `GIT_COMMIT_SHA` to C2's full sha. `docker compose build etl`, then recreate `training`.
+4. Set `.env` `GIT_COMMIT_SHA` and `CODE_GIT_SHA` to C2's full sha. `docker compose build etl`, then recreate `training`.
 5. Freeze inside `training` with the current approved ids (read them from `projection_policy.approved_pipeline_run_ids`):
    `docker compose --profile training exec -T -e APPROVED_PIPELINE_RUN_IDS="<ids>" training python3 scripts/freeze_baseline.py`
    Check `git_commit` = C2, `git_dirty` false, the new group listed, `DATABASE_URL` masked.

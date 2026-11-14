@@ -37,7 +37,7 @@ RUN set -eu; \
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy project packages — layout matches import paths in source code
-# The commit this image was built from (compose passes GIT_COMMIT_SHA). The forward producer records
+# The commit this image was built from (compose passes the .env variable CODE_GIT_SHA, not GIT_COMMIT_SHA, which stays pinned to the freeze commit). The forward producer records
 # it in every run and refuses to write when it is empty or "unknown" (decision 0012, D8).
 ARG CODE_GIT_SHA=
 ENV CODE_GIT_SHA=${CODE_GIT_SHA}

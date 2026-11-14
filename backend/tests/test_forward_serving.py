@@ -527,7 +527,10 @@ def test_the_image_bakes_the_commit_sha_from_a_build_arg() -> None:
     dockerfile = (root / "backend/Dockerfile").read_text()
     assert "ARG CODE_GIT_SHA" in dockerfile and "CODE_GIT_SHA=${CODE_GIT_SHA}" in dockerfile
     compose = (root / "infra/hosts/vps1/compose.yml").read_text()
-    assert compose.count("CODE_GIT_SHA: ${GIT_COMMIT_SHA") >= 2  # etl and training builds
+    # etl and training builds read their own .env variable. GIT_COMMIT_SHA stays pinned to the freeze
+    # commit, so deriving the code sha from it would record false provenance after a later sync.
+    assert compose.count("CODE_GIT_SHA: ${CODE_GIT_SHA:-}") >= 2
+    assert "CODE_GIT_SHA: ${GIT_COMMIT_SHA" not in compose
 
 
 def test_report_freshness_is_logged(manifest, caplog) -> None:

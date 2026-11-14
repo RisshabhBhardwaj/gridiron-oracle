@@ -130,7 +130,12 @@ TFT/GNN retrains wait for their own fold profile.
   The runbook has a wall-time estimate, labeled as one.
 - **Release provenance:** `/srv/gridiron` has no `.git`, so set
   `GIT_COMMIT_SHA` in `.env` (`api` and `training` read it through
-  `env_file`) to the commit the deployed code was built from.
+  `env_file`) to the commit the release was frozen from; it stays pinned
+  there until the next re-freeze. The forward producer's code provenance is a
+  separate `.env` variable, `CODE_GIT_SHA`: set it to the synced Mac HEAD
+  (`git rev-parse HEAD`) after every code sync and before any image build. It
+  is a build arg for `etl` and `training`; an empty value makes the producer
+  refuse to write a forward run.
 - Every training run pings its dead-man URL on success only
   (`HEALTHCHECKS_TRAIN_SMALL_URL` / `HEALTHCHECKS_TRAIN_FULL_URL`).
 

@@ -180,7 +180,7 @@ services:
       context: ../../..
       dockerfile: backend/Dockerfile
       args:
-        CODE_GIT_SHA: ${GIT_COMMIT_SHA:-}
+        CODE_GIT_SHA: ${CODE_GIT_SHA:-}
     image: gridiron-etl:full
     profiles: ["jobs"]
     # weekly_refresh.py has no ping of its own: curl the dead-man URL on
@@ -296,7 +296,7 @@ services:
       context: ../../..
       dockerfile: backend/Dockerfile
       args:
-        CODE_GIT_SHA: ${GIT_COMMIT_SHA:-}
+        CODE_GIT_SHA: ${CODE_GIT_SHA:-}
     image: gridiron-etl:full
     profiles: ["training"]
     command: sleep infinity
