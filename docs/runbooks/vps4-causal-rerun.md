@@ -84,7 +84,7 @@ docker tag gridiron-api:serving gridiron-api:pre-rerun-$STAMP
 sudo systemctl start gridiron-backup.service        # the off-box (R2) copy; check: journalctl -u gridiron-backup -n 20
 ```
 
-The R2 backup needs `R2_*` in `.env` (placeholders until the owner sets them). If the unit fails for that reason, stop and tell the owner: the local dump above is then the only copy, and it is on the same disk. Copy it to the Mac as well: `[Mac] scp $BOX:rerun_backup/oracle_pre_rerun_*.dump ~/Projects/_backups/gridiron_oracle/`.
+The R2 copy is configured and passed on 2026-11-14, but it is unencrypted until the owner sets `AGE_RECIPIENT`. If the unit fails, stop and tell the owner: the local dump above is then the only copy, and it is on the same disk. Copy it to the Mac as well: `[Mac] scp $BOX:rerun_backup/oracle_pre_rerun_*.dump ~/Projects/Archive/backups/gridiron_oracle/`.
 Output: `~/rerun_backup/` on the box.
 Rollback for the whole runbook's data steps: `docker compose exec -T db pg_restore -U oracle -d oracle --clean --if-exists < dump` after stopping `api`.
 
@@ -218,7 +218,7 @@ docker compose --profile training exec -T training bash -c \
   'S=$(cat /train_out/last_full_stamp); cd /train_out/oof/rebuild_$S; ls stack_*.csv | wc -l; ls attr_stack_*.parquet | wc -l; sha256sum -c SHA256SUMS | grep -vc ": OK$"'
 ```
 
-Expect `32`, `32`, `0`. Archive off the box: `[Mac] ssh $BOX 'cd /srv/gridiron/infra/hosts/vps1 && docker compose --profile training cp training:/train_out/oof/rebuild_<STAMP> -' | tar -x -C ~/Projects/_backups/gridiron_oracle/`.
+Expect `32`, `32`, `0`. Archive off the box: `[Mac] ssh $BOX 'cd /srv/gridiron/infra/hosts/vps1 && docker compose --profile training cp training:/train_out/oof/rebuild_<STAMP> -' | tar -x -C ~/Projects/Archive/backups/gridiron_oracle/`.
 
 ## Phase C: promote, commit, bring the release home
 
@@ -431,7 +431,7 @@ Rollback: the refresh only writes pending rows until step 8; to undo a promoted 
 
 | Path | Where | Committed |
 |---|---|---|
-| `/train_out/oof/rebuild_<STAMP>/` | box volume | no (archived to `~/Projects/_backups/gridiron_oracle/`) |
+| `/train_out/oof/rebuild_<STAMP>/` | box volume | no (archived to `~/Projects/Archive/backups/gridiron_oracle/`) |
 | `releases/candidates/causal_20261114/` (32 stacks, 32 attributions, 32 coefficient files, selection report, reference) | repo, image | yes, C2 |
 | `releases/current_baseline.json` | repo, image | yes, C2 (promote output) then C3 (freeze output) |
 | `releases/artifacts/MANIFEST.json` | repo | yes, C3 (new entries `provisional`) |
