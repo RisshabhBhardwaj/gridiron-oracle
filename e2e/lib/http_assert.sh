@@ -11,7 +11,7 @@
 : "${PASS:=0}"
 : "${FAIL:=0}"
 
-RESP_BODY="${RESP_BODY:-$(mktemp -t gridiron_smoke)}"
+RESP_BODY="${RESP_BODY:-$(mktemp "${TMPDIR:-/tmp}/gridiron_smoke.XXXXXX")}"
 
 http_assert_cleanup() {
   [ -n "${RESP_BODY:-}" ] && rm -f "$RESP_BODY"
