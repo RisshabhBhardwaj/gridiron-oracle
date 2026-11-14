@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from pipeline.availability import AvailabilityResult, is_served
-from pipeline.availability_refresh import AvailabilityRefreshRefused, refresh_availability
+from pipeline.availability_refresh import AvailabilityRefreshRefused, refresh_availability, reapply_latest_availability
 from pipeline.availability_store import AvailabilityFetchError
 from backend.tests._fake_db import FakeConn, install_batch_recorder
 
@@ -387,3 +387,67 @@ def test_the_default_run_ids_are_the_approved_ids_and_never_a_pending_run_not_na
     assert not [i for i in ids if "pending" in i]  # a pending id belongs to one in-flight run
     own = "weekly_auto_2026_pending_" + "a" * 32
     assert default_run_ids(2026, pending_id=own) == ids + [own]
+
+
+# ── re-applying the newest snapshot after the producer or a restore (review N2) ───────────
+def _reapply(conn, statuses, **kw):
+    return reapply_latest_availability(
+        conn, SEASON, WEEK, now=lambda: NOW, loader=_loader(statuses),
+        run_ids=kw.pop("run_ids", ["weekly_auto_2026", "weekly_auto_2026_pending_x"]), sleep=lambda s: None, **kw,
+    )
+
+
+def test_a_newer_snapshot_than_the_producers_wins_for_the_games_not_started():
+    """The producer stored p1 Questionable from its own as_of; a Friday snapshot says Out."""
+    conn = _conn()
+    result = _reapply(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    assert [(r["player_id"], r["status"]) for r in _updates(conn)] == [("p1", "Out")]
+    assert "g_thu" not in _updates(conn)[0]["game_ids"]  # a game that has started stays frozen
+    assert result["changed"] == 1 and result["availability_snapshot_id"] == "avail_new"
+    assert conn.commits == 1
+
+
+def test_a_reapply_fetches_nothing_and_asks_the_loader_for_the_snapshot_known_now():
+    seen = {}
+
+    def loader(conn, season, week, player_ids, as_of, **kw):
+        seen["as_of"] = as_of
+        return _loader({})(conn, season, week, player_ids, as_of)
+
+    conn = _conn()
+    reapply_latest_availability(conn, SEASON, WEEK, now=lambda: NOW, loader=loader, run_ids=["weekly_auto_2026"])
+    assert seen["as_of"] == NOW
+
+
+def test_a_reapply_that_changes_nothing_writes_nothing():
+    conn = _conn()
+    result = _reapply(conn, {"p1": "Questionable", "p2": None, "p3": "Out"})
+    assert result["changed"] == 0
+    assert _updates(conn) == []
+    assert not any("INSERT INTO forecast_runs" in e[1] for e in conn.log if e[0] == "execute")
+
+
+def test_a_reapply_that_changes_something_records_why_in_forecast_runs():
+    conn = _conn()
+    _reapply(conn, {"p1": "Out", "p2": None, "p3": "Out"}, reason="after_producer")
+    insert = next(e for e in conn.log if e[0] == "execute" and "INSERT INTO forecast_runs" in e[1])
+    assert insert[2][0].startswith("availability_refresh_2026_w11_")
+    assert '"kind": "availability_refresh"' in insert[2][5] and '"reason": "after_producer"' in insert[2][5]
+
+
+def test_a_reapply_in_a_week_whose_games_have_all_started_is_a_quiet_skip():
+    started = (("g1", THURSDAY, 24, 17), ("g2", THURSDAY, 10, 3))
+    conn = _conn(games=started)
+    result = _reapply(conn, {"p1": "Out"})
+    assert result["skipped"] and result["changed"] == 0
+    assert conn.writes == []
+
+
+def test_a_reapply_waits_for_the_week_lock_then_gives_up_loudly():
+    conn = _conn(lock=False)
+    sleeps = []
+    with pytest.raises(AvailabilityRefreshRefused, match="lock"):
+        reapply_latest_availability(conn, SEASON, WEEK, now=lambda: NOW, loader=_loader({}),
+                                    run_ids=["weekly_auto_2026"], attempts=3, delay=1.0, sleep=sleeps.append)
+    assert sleeps == [1.0, 2.0]
+    assert conn.writes == []

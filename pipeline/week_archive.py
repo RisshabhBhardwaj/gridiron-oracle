@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 from pipeline.week_lock import lock_week_with_retry
 
@@ -76,15 +76,29 @@ def discard_week(cur, season: int, week: int) -> None:
     cur.execute("DELETE FROM projections_replaced WHERE season = %s AND week = %s", (season, week))
 
 
+def _reapply_availability(conn, season: int, week: int) -> None:
+    from pipeline.availability_refresh import default_run_ids, reapply_latest_availability
+
+    reapply_latest_availability(
+        conn, season, week, run_ids=default_run_ids(season), reason="after_restore",
+    )
+
+
 def restore_week(
     conn, season: int, week: int, *, attempts: int = 3, delay: float = 5.0,
     sleep: Callable[[float], None] = time.sleep,
+    reapply: Optional[Callable] = _reapply_availability,
 ) -> int:
     """Put the archived rows back, replacing whatever the failed refresh left for the week.
 
     Returns the rows restored; 0 (and no change) when the week has no archive. Waits for another
     writer's week lock with a bounded retry (``attempts`` tries, backoff from ``delay``), then raises;
     raises on any error, after rolling back.
+
+    Once the restore has committed, ``reapply`` (default: the newest stored availability snapshot, for
+    the games not started) brings the restored statuses up to date, since the archive can be older than
+    a Friday refresh (review N2). A failure there is logged, not raised: the week is served again and the
+    next Friday refresh corrects it.
     """
     try:
         if not lock_week_with_retry(conn, season, week, attempts=attempts, delay=delay, sleep=sleep):
@@ -110,6 +124,11 @@ def restore_week(
         conn.rollback()
         raise
     logger.warning("restored %d archived rows for season=%d week=%d", n, season, week)
+    if reapply is not None:
+        try:
+            reapply(conn, season, week)
+        except Exception as exc:
+            logger.error("restored week %d, but re-applying the newest availability failed: %s", week, exc)
     return n
 
 

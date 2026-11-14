@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -28,13 +29,17 @@ import pandas as pd
 import psycopg2.extras
 
 from pipeline.availability_store import capture_snapshot, load_availability
-from pipeline.week_lock import try_lock_week
+from pipeline.week_lock import lock_week_with_retry, try_lock_week
 
 logger = logging.getLogger(__name__)
 
 
 class AvailabilityRefreshRefused(RuntimeError):
     """A guard refused the refresh. Nothing was written."""
+
+
+class NoOpenGames(AvailabilityRefreshRefused):
+    """Every game of the week has started (or the week has none left to update)."""
 
 
 def _utcnow() -> datetime:
@@ -61,7 +66,7 @@ def _open_games(conn, season: int, week: int, as_of: datetime) -> tuple[list[str
         if g[2] is None and g[3] is None and g[1] is not None and pd.Timestamp(g[1]) > pd.Timestamp(as_of)
     ]
     if not open_ids:
-        raise AvailabilityRefreshRefused(
+        raise NoOpenGames(
             f"every game in week {week} has started at {as_of.isoformat()}; nothing left to update"
         )
     return open_ids, len(games) - len(open_ids)
@@ -134,6 +139,70 @@ def default_run_ids(season: int, pending_id: Optional[str] = None) -> list[str]:
     return sorted(approved_pipeline_run_ids()) + ([pending_id] if pending_id else [])
 
 
+def _write_week(
+    conn, season: int, week: int, run_ids: list[str], as_of: datetime, loader: Callable, *,
+    lock: Callable[[], bool], fallback_snapshot_id: Optional[str], extra_summary: dict,
+    record_unchanged: bool,
+) -> dict:
+    """The Friday update path: lock the week, load statuses at ``as_of``, update the games not started.
+
+    One transaction, rolled back on any error. ``refresh_availability`` and ``reapply_latest_availability``
+    differ only in how they get ``as_of`` and the lock, and in whether an unchanged run is recorded.
+    """
+    try:
+        # One writer per week: the forward producer writes these same rows. Held until the commit below.
+        if not lock():
+            raise AvailabilityRefreshRefused(
+                f"another writer holds the lock for season={season} week={week} (the forward producer or a "
+                "second refresh); nothing was updated. Retry when it has finished"
+            )
+        # The clock may have crossed a kickoff during the fetch: decide the open games at ``as_of``.
+        game_ids, frozen = _open_games(conn, season, week, as_of)
+        current = _forward_rows(conn, season, week, run_ids, game_ids)
+        result = loader(conn, season, week, sorted(current), as_of)
+        changes = [
+            {"player_id": pid, "status": result.statuses.get(pid), "season": season, "week": week,
+             "run_ids": run_ids, "game_ids": game_ids}
+            for pid in sorted(current)
+            if result.statuses.get(pid) != current[pid]
+        ]
+        key = f"availability_refresh_{season}_w{week:02d}_{as_of.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+        snapshot_id = result.snapshot_id or fallback_snapshot_id
+        summary = {
+            "kind": "availability_refresh", "as_of": as_of.isoformat(),
+            "availability_snapshot_id": snapshot_id,
+            "players": len(current), "changed": len(changes), "counts": dict(result.counts),
+            "games_updated": len(game_ids), "games_frozen": frozen, **extra_summary,
+        }
+        with conn.cursor() as cur:
+            if changes:
+                psycopg2.extras.execute_batch(
+                    cur,
+                    "UPDATE projections SET availability_status = %(status)s "
+                    "WHERE season = %(season)s AND week = %(week)s AND player_id = %(player_id)s "
+                    "AND pipeline_run_id = ANY(%(run_ids)s) AND game_id = ANY(%(game_ids)s)",
+                    changes,
+                    page_size=500,
+                )
+            if changes or record_unchanged:
+                cur.execute(
+                    "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (key, season, week, as_of, len(changes), json.dumps(summary, default=str)),
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    logger.info("availability refresh %s: %d of %d players changed", key, len(changes), len(current))
+    return {
+        "forecast_run_key": key, "season": season, "week": week, "as_of": as_of.isoformat(),
+        "availability_snapshot_id": snapshot_id,
+        "players": len(current), "changed": len(changes), "unchanged": len(current) - len(changes),
+        "games_updated": len(game_ids), "games_frozen": frozen,
+    }
+
+
 def refresh_availability(
     conn,
     season: int,
@@ -152,56 +221,53 @@ def refresh_availability(
     as_of = now()
     if as_of.tzinfo is None:
         raise ValueError("now() must be timezone-aware")
+    return _write_week(
+        conn, season, week, run_ids, as_of, loader,
+        lock=lambda: try_lock_week(conn, season, week),
+        fallback_snapshot_id=snapshot.get("snapshot_id"), extra_summary={}, record_unchanged=True,
+    )
+
+
+def reapply_latest_availability(
+    conn,
+    season: int,
+    week: int,
+    *,
+    run_ids: list[str],
+    reason: str = "reapply",
+    now: Callable[[], datetime] = _utcnow,
+    loader: Callable = load_availability,
+    attempts: int = 3,
+    delay: float = 5.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict:
+    """Apply the newest snapshot already stored (fetched at or before now) to the week's unstarted games.
+
+    The forward producer stores the statuses known at the model's ``as_of``, and a restore brings back the
+    statuses of the archive. Either can be older than a snapshot a Friday refresh stored meanwhile, so the
+    weekly refresh calls this after the producer and after a restore (review N2). It fetches nothing and
+    leaves the model's ``as_of`` alone; it uses the Friday update path. A week whose games have all
+    started is skipped; nothing is recorded when no status changes. Waits for the week lock with a
+    bounded retry, then refuses.
+    """
+    as_of = now()
+    if as_of.tzinfo is None:
+        raise ValueError("now() must be timezone-aware")
+
+    def lock() -> bool:
+        return lock_week_with_retry(conn, season, week, attempts=attempts, delay=delay, sleep=sleep)
+
     try:
-        # One writer per week: the forward producer writes these same rows. Held until the commit below.
-        if not try_lock_week(conn, season, week):
-            raise AvailabilityRefreshRefused(
-                f"another writer holds the lock for season={season} week={week} (the forward producer or a "
-                "second refresh); nothing was updated. Retry when it has finished"
-            )
-        # The clock may have crossed a kickoff during the fetch: decide the open games at the new as_of.
-        game_ids, frozen = _open_games(conn, season, week, as_of)
-        current = _forward_rows(conn, season, week, run_ids, game_ids)
-        result = loader(conn, season, week, sorted(current), as_of)
-        changes = [
-            {"player_id": pid, "status": result.statuses.get(pid), "season": season, "week": week,
-             "run_ids": run_ids, "game_ids": game_ids}
-            for pid in sorted(current)
-            if result.statuses.get(pid) != current[pid]
-        ]
-        key = f"availability_refresh_{season}_w{week:02d}_{as_of.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-        summary = {
-            "kind": "availability_refresh", "as_of": as_of.isoformat(),
-            "availability_snapshot_id": result.snapshot_id or snapshot.get("snapshot_id"),
-            "players": len(current), "changed": len(changes), "counts": dict(result.counts),
-            "games_updated": len(game_ids), "games_frozen": frozen,
-        }
-        with conn.cursor() as cur:
-            if changes:
-                psycopg2.extras.execute_batch(
-                    cur,
-                    "UPDATE projections SET availability_status = %(status)s "
-                    "WHERE season = %(season)s AND week = %(week)s AND player_id = %(player_id)s "
-                    "AND pipeline_run_id = ANY(%(run_ids)s) AND game_id = ANY(%(game_ids)s)",
-                    changes,
-                    page_size=500,
-                )
-            cur.execute(
-                "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (key, season, week, as_of, len(changes), json.dumps(summary, default=str)),
-            )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    logger.info("availability refresh %s: %d of %d players changed", key, len(changes), len(current))
-    return {
-        "forecast_run_key": key, "season": season, "week": week, "as_of": as_of.isoformat(),
-        "availability_snapshot_id": summary["availability_snapshot_id"],
-        "players": len(current), "changed": len(changes), "unchanged": len(current) - len(changes),
-        "games_updated": len(game_ids), "games_frozen": frozen,
-    }
+        return _write_week(
+            conn, season, week, run_ids, as_of, loader, lock=lock, fallback_snapshot_id=None,
+            extra_summary={"reason": reason}, record_unchanged=False,
+        )
+    except NoOpenGames as exc:
+        logger.info("availability reapply skipped for season=%d week=%d: %s", season, week, exc)
+        return {"skipped": str(exc), "season": season, "week": week, "changed": 0}
 
 
-__all__ = ["AvailabilityRefreshRefused", "default_run_ids", "refresh_availability", "resolve_target_week"]
+__all__ = [
+    "AvailabilityRefreshRefused", "NoOpenGames", "default_run_ids", "reapply_latest_availability",
+    "refresh_availability", "resolve_target_week",
+]

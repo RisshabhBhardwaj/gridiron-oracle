@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from ml import season_constants
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
+from pipeline.availability_refresh import default_run_ids, reapply_latest_availability
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
 from pipeline.pending_runs import clear_leftovers, new_pending_run_id, require_run_producer
 from pipeline.schema import normalize_dsn
@@ -250,6 +251,11 @@ def produce_forward_week(
         report = run_forward(
             conn, season, week, feature_run_id=built["pipeline_run_id"], replace_week=replace_week,
             pending_id=pending_id,
+        )
+        # The producer stored the statuses known at its own as_of. A Friday refresh may have stored a
+        # newer snapshot since (a replace after Friday): apply it to the games not started (review N2).
+        reapply_latest_availability(
+            conn, season, week, run_ids=default_run_ids(season, pending_id), reason="after_producer",
         )
     logger.info("Forward producer wrote: %s", {k: report.get(k) for k in ("rows_served", "rows_not_served")})
     return report

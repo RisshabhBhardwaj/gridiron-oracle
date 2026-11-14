@@ -56,7 +56,7 @@ def test_archived_rows_counts_the_weeks_leftover():
 
 def test_restore_replaces_the_week_with_the_archive_in_one_transaction():
     conn = _conn(archived=5)
-    assert restore_week(conn, SEASON, WEEK) == 5
+    assert restore_week(conn, SEASON, WEEK, reapply=None) == 5
     writes = [q.lstrip() for q in _sql(conn) if q.lstrip().upper().startswith(("INSERT", "DELETE"))]
     assert writes[0].startswith("DELETE FROM projections WHERE")
     assert writes[1].startswith("INSERT INTO projections (")
@@ -88,7 +88,7 @@ def test_restore_retries_while_another_writer_holds_the_week_then_succeeds():
     route, calls = _lock_after(3)
     conn.routes[0] = ("-- wk:lock", route)
     sleeps: list[float] = []
-    assert restore_week(conn, SEASON, WEEK, attempts=3, delay=2.0, sleep=sleeps.append) == 5
+    assert restore_week(conn, SEASON, WEEK, attempts=3, delay=2.0, sleep=sleeps.append, reapply=None) == 5
     assert calls["n"] == 3
     assert sleeps == [2.0, 4.0]  # backoff doubles between attempts
     assert conn.commits == 1
@@ -132,3 +132,34 @@ def test_the_restore_script_restores_through_the_library(monkeypatch):
     monkeypatch.setattr(script, "restore_week", lambda conn, season, week: seen.setdefault("args", (season, week)) and 7)
     assert script.main(["--season", "2026", "--week", "11", "--database-url", "postgres://x/y"]) == 0
     assert seen["args"] == (2026, 11)
+
+
+# ── a restore must not bring back a status older than the newest snapshot (review N2) ──────
+def test_a_restore_reapplies_the_newest_availability_after_it_commits():
+    conn = _conn(archived=5)
+    seen = []
+
+    def reapply(c, season, week):
+        seen.append((c is conn, season, week, conn.commits))
+
+    assert restore_week(conn, SEASON, WEEK, reapply=reapply) == 5
+    assert seen == [(True, SEASON, WEEK, 1)]  # after the restore's own commit
+
+
+def test_a_restore_with_no_archive_reapplies_nothing():
+    conn = _conn(archived=0)
+    seen = []
+    restore_week(conn, SEASON, WEEK, reapply=lambda *a: seen.append(a))
+    assert seen == []
+
+
+def test_a_failing_reapply_does_not_undo_a_restore_that_succeeded(caplog):
+    conn = _conn(archived=5)
+
+    def boom(*_a):
+        raise RuntimeError("no snapshot")
+
+    with caplog.at_level("ERROR", logger="pipeline.week_archive"):
+        assert restore_week(conn, SEASON, WEEK, reapply=boom) == 5
+    assert conn.commits == 1
+    assert any("no snapshot" in r.getMessage() for r in caplog.records)

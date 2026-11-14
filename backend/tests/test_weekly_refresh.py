@@ -25,6 +25,7 @@ _PATCHED_STEPS = {
     "availability": "pipeline.availability_store.capture_snapshot",
     "features": "scripts.build_forward_features.build_forward_snapshot",
     "forward": "ml.forward_serving.run_forward",
+    "reapply": "scripts.weekly_refresh.reapply_latest_availability",
     "restore": "scripts.weekly_refresh.restore_week",
     "simulation": "scripts.materialize_season_simulation.materialize",
     "team_game": "scripts.materialize_team_game_predictions.materialize",
@@ -584,4 +585,37 @@ def test_a_run_whose_producer_left_no_row_is_not_promoted_and_the_week_is_restor
     assert rc == 1
     assert not any("UPDATE" in c.args[0] for c in m["cursor"].execute.call_args_list)  # nothing relabelled
     assert m["dead_letter"].call_args.args[1] == "weekly_refresh/atomic_promote"
+    m["restore"].assert_called_once()
+
+
+# ── a newer availability snapshot is never overwritten by the producer or a restore (review N2) ──
+def test_the_newest_availability_is_reapplied_right_after_the_producer_wrote():
+    """A replace after a Friday refresh must keep the Friday status: the producer used its own as_of."""
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["reapply"].side_effect = lambda *a, **k: order.append("reapply")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0
+    assert order == ["stack", "availability", "features", "forward", "reapply", "simulation", "team_game", "acceptance"]
+    call = m["reapply"].call_args
+    assert call.args[1:3] == (2026, 3)
+    pending = m["forward"].call_args.kwargs["pending_id"]
+    assert pending in call.kwargs["run_ids"] and "weekly_auto_2026" in call.kwargs["run_ids"]
+    assert call.kwargs["reason"] == "after_producer"
+
+
+def test_a_failed_reapply_fails_the_producer_step_and_restores_the_week():
+    from pipeline.availability_refresh import AvailabilityRefreshRefused
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["reapply"].side_effect = AvailabilityRefreshRefused("another writer holds the lock")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
+    m["simulation"].assert_not_called()
     m["restore"].assert_called_once()
