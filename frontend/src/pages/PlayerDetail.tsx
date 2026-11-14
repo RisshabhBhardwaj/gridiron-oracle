@@ -1,86 +1,115 @@
-import { useEffect } from 'react'
-import clsx from 'clsx'
+import { useEffect, useState } from 'react'
 import { ChevronLeft } from 'lucide-react'
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { usePredict } from '@/hooks/usePredict'
-import { useExplain } from '@/hooks/useExplain'
-import { ProjectionCard } from '@/components/ProjectionCard'
-import { SHAPChart } from '@/components/SHAPChart'
-import { PercentileFan } from '@/components/PercentileFan'
-import { WhatIfStudio } from '@/components/WhatIfStudio'
 import { useOdds, findPlayerLine } from '@/hooks/useOdds'
-import { calcEdge } from '@/lib/edge'
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { useCurrentSeason } from '@/hooks/useCurrentSeason'
+import { useSeasonProjections } from '@/hooks/useSeasonProjections'
+import { ExplainPanel } from '@/components/ExplainPanel'
+import { PlayerDetailSkeleton } from '@/components/PlayerDetailSkeleton'
+import { PlayerHero } from '@/components/PlayerHero'
+import { PositionBadge } from '@/components/PositionBadge'
+import { ProjectionCard } from '@/components/ProjectionCard'
+import { SimulationFigure } from '@/components/SimulationFigure'
+import { WhatIfStudio } from '@/components/WhatIfStudio'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
-import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
-import { useSeasonProjections } from '@/hooks/useSeasonProjections'
-import { STATS, STAT_LABELS, CURRENT_SEASON, LAST_FANTASY_WEEK, statUnit } from '@/lib/constants'
-import { useSearch } from '@/context/SearchContext'
-import { ApiError } from '@/lib/api-client'
-import { Panel } from '@/components/shared/Panel'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { PositionBadge } from '@/components/PositionBadge'
-import { positionTone, toneClass } from '@/lib/tokens'
+import { useSearch } from '@/context/SearchContext'
+import { calcEdge } from '@/lib/edge'
+import { provenanceLabel, weekFigureLabel } from '@/lib/forecast-provenance'
+import { isCurrentOrLater, isLiveLineWeek, isNoForecastError, parseWeek, repeatsHeroFigure, weekFigure } from '@/lib/player-page'
+import { CURRENT_SEASON, CURRENT_WEEK, LAST_FANTASY_WEEK, STATS, STAT_LABELS, statUnit } from '@/lib/constants'
+import { toneClass } from '@/lib/tokens'
+import type { SeasonPlayerProjection, SeasonStatProjection } from '@/types/api'
 
 const STAT_ITEMS = STATS.map((s) => ({ value: s, label: STAT_LABELS[s] ?? s }))
 
+function parseSeason(raw: string | null, fallback: number): number {
+  if (raw === null) return fallback
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= 2000 && n <= 2100 ? n : fallback
+}
+
 export function PlayerDetail() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { player_id } = useParams<{ player_id: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { setDefaults } = useSearch()
+  const { setDefaults, players: searchPlayers } = useSearch()
+  const [showSimulation, setShowSimulation] = useState(false)
 
-  const week   = Number(searchParams.get('week')   ?? '1')
-  const season = Number(searchParams.get('season') ?? String(CURRENT_SEASON))
-  const stat   = searchParams.get('stat')   ?? 'receiving_yards'
-  const name   = searchParams.get('name')   ?? ''
+  // A link without a week or season means "now". Hold every request until the real
+  // current week is known, so the page never asks for a placeholder week first.
+  const { data: current, isPlaceholderData: currentIsPlaceholder } = useCurrentSeason()
+  const needsCurrent = parseWeek(searchParams.get('week'), -1) === -1 || parseSeason(searchParams.get('season'), -1) === -1
+  const waitingForCurrent = needsCurrent && currentIsPlaceholder
+  const now = { season: current?.season ?? CURRENT_SEASON, week: current?.week ?? CURRENT_WEEK }
 
-  const { data: predictData, isLoading: predictLoading, isError: predictError, error: predictErr, refetch: predictRefetch } =
-    usePredict({ player: name, week, season, stat, enabled: name.length > 0 })
+  const week = parseWeek(searchParams.get('week'), now.week)
+  const season = parseSeason(searchParams.get('season'), now.season)
+  const stat = searchParams.get('stat') ?? 'receiving_yards'
+  const name = searchParams.get('name') ?? ''
+  const viewed = { season, week }
 
-  const { data: explainData, isLoading: explainLoading } =
-    useExplain({ player_id: player_id ?? '', week, season, stat })
+  const predict = usePredict({ player: name, week, season, stat, enabled: name.length > 0 && !waitingForCurrent })
+  const figure = weekFigure(predict.data)
 
-  const { data: oddsData } = useOdds({ playerNames: [name], stat, enabled: name.length > 0 })
-
-  // Clamp: week 18 + 1 would ask for start_week=19, which the endpoint rejects, and
-  // the rest-of-season card would silently never appear.
+  // One season query serves two jobs: who this is (team, position) when /predict has no
+  // answer, and the opt-in rest-of-season simulation. Unfiltered, so it needs no position.
   const rosStartWeek = Math.min(week + 1, LAST_FANTASY_WEEK)
-  const { data: seasonData } = useSeasonProjections({ season, startWeek: rosStartWeek, positions: predictData?.position ? [predictData.position] : [] })
-  const rosStatKey = stat as keyof import('@/types/api').SeasonPlayerProjection
-  const rosProjectionData = seasonData?.projections?.find((p) => p.player_id === player_id)?.[rosStatKey] as import('@/types/api').SeasonStatProjection | undefined
-  const rosProjection = rosProjectionData?.mean ?? null
+  const seasonQuery = useSeasonProjections({
+    season,
+    startWeek: rosStartWeek,
+    positions: [],
+    enabled: name.length > 0 && !waitingForCurrent,
+  })
+  const seasonRow: SeasonPlayerProjection | undefined = seasonQuery.data?.projections.find((p) => p.player_id === player_id)
+  const searchRow = searchPlayers.find((p) => p.player_id === player_id)
+  const position = predict.data?.position ?? seasonRow?.position ?? searchRow?.position ?? ''
+  const team = seasonRow?.team ?? searchRow?.team ?? null
 
-  function handleStatChange(newStat: string) {
-    setSearchParams((prev) => { const next = new URLSearchParams(prev); next.set('stat', newStat); return next })
-  }
+  const rosStat = (seasonRow?.[stat as 'fantasy_ppr'] ?? null) as SeasonStatProjection | null
+  const offerRosSimulation = rosStat != null && isCurrentOrLater(viewed, now)
 
-  const projection = predictData?.percentiles.p50 ?? 0
-  const floor      = predictData?.percentiles.p10 ?? null
-  const ceiling    = predictData?.percentiles.p90 ?? null
-  const position   = predictData?.position ?? ''
-  const tone       = toneClass(positionTone(position))
+  // A row that is served but is not an allow-listed forecast: never the Week N number.
+  // Its figure stays behind the opt-in, labelled for what it is.
+  const servedNonForecast = predict.data && figure.kind === 'none' ? predict.data : null
+  const simulatedWeek = servedNonForecast?.percentiles?.p50 ?? null
+  const hasSimulation = simulatedWeek != null || offerRosSimulation
 
-  // Without a server-side key, useOdds returns generated lines (source 'mock').
-  // A generated number is not a market price, and an edge computed from it would
-  // be invented, so only live lines are shown.
-  const liveOdds   = oddsData?.source === 'live' ? oddsData : null
-  const bookLine   = liveOdds ? findPlayerLine(liveOdds.player_props, name) : null
-  const edge       = bookLine != null ? calcEdge(projection, bookLine) : null
-  const edgePos    = edge !== null && edge > 0
+  // The sportsbook only prices the week being played now. A line next to a past week
+  // would be a different game's line, so it is only looked up for the live week.
+  const liveWeek = isLiveLineWeek(viewed, now)
+  const odds = useOdds({ playerNames: [name], stat, enabled: name.length > 0 && figure.kind === 'forecast' && liveWeek })
+  // Without a server-side key useOdds returns generated lines (source 'mock'). A generated
+  // number is not a market price, so only live lines are shown.
+  const liveOdds = odds.data?.source === 'live' ? odds.data : null
+  const bookLine = liveOdds && figure.kind === 'forecast' ? findPlayerLine(liveOdds.player_props, name) : null
+  const edge = bookLine != null && figure.kind === 'forecast' ? calcEdge(figure.value, bookLine) : null
 
   useEffect(() => {
     setDefaults({ week, season, stat })
   }, [season, setDefaults, stat, week])
 
+  function handleStatChange(next: string) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev)
+      params.set('stat', next)
+      return params
+    }, { replace: true })
+  }
+
+  // Back goes to where the visitor came from; opened straight from a link, it goes Home.
+  function handleBack() {
+    if (location.key === 'default') navigate('/')
+    else navigate(-1)
+  }
+
   if (!name) {
     return (
       <div className="flex flex-col gap-4">
-        <button
-          onClick={() => navigate('/')}
-          className="self-start text-xs font-medium text-fg-muted hover:text-fg transition-colors"
-        >
+        <button onClick={() => navigate('/')} className="self-start text-xs font-medium text-fg-muted transition-colors hover:text-fg">
           Back to Home
         </button>
         <div className="rounded-xl border border-line bg-surface-raised p-6">
@@ -94,49 +123,53 @@ export function PlayerDetail() {
     )
   }
 
+  const loading = waitingForCurrent || predict.isLoading
+  const noForecast = !loading && (isNoForecastError(predict.error) || (predict.data != null && figure.kind === 'none'))
+  const failed = !loading && predict.isError && !isNoForecastError(predict.error)
+  const forecast = !loading && figure.kind === 'forecast' && predict.data ? { figure, data: predict.data } : null
+
+  const unit = statUnit(stat)
+  const fantasyValue = forecast?.data.projection.ppr_points ?? null
+  const showFantasy = forecast != null && fantasyValue != null && !repeatsHeroFigure(stat, forecast.figure.value, fantasyValue)
+  const boom = forecast?.data.boom_probability ?? null
+  const bust = forecast?.data.bust_probability ?? null
+  const hasTiles = showFantasy || boom != null || bust != null
+  const fantasyLabel =
+    forecast?.data.fantasy_scoring === 'half_ppr' ? 'Fantasy points, half-PPR'
+    : forecast?.data.fantasy_scoring === 'standard' ? 'Fantasy points, standard'
+    : 'Fantasy points, PPR'
+  const played = !isCurrentOrLater(viewed, now)
+
   return (
     <div className="flex flex-col gap-6">
-
-      {/* Header */}
+      {/* Header: who this is is on screen in every state. */}
       <div>
-        {/* Back button */}
         <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-fg-muted hover:text-fg text-xs font-medium mb-4 transition-colors group"
+          onClick={handleBack}
+          className="group mb-4 flex items-center gap-2 text-xs font-medium text-fg-muted transition-colors hover:text-fg"
         >
           <ChevronLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" aria-hidden="true" />
           Back
         </button>
 
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          {/* Player title block */}
-          <div className="flex items-center gap-4">
-            {/* Position circle */}
-            {position && (
-              <div className={clsx(tone, 'w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0 bg-tone/[0.08] border border-tone/25 shadow-[0_0_20px_rgb(var(--tone)/0.12)]')}>
-                <PositionBadge position={position} />
-              </div>
-            )}
-            <div className={tone}>
-              <h1 className="font-display text-5xl leading-tight tracking-wide bg-gradient-to-br from-tone to-tone/60 bg-clip-text text-transparent">
-                {(name || 'PLAYER').toUpperCase()}
-              </h1>
-              {predictData && (
-                <p className="text-xs text-fg-muted mt-0.5">
-                  Week {week} · {season}
-                </p>
-              )}
-            </div>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="break-words font-display text-4xl leading-tight tracking-wide text-fg sm:text-5xl">
+              {name.toUpperCase()}
+            </h1>
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-muted">
+              {position && <PositionBadge position={position} />}
+              {/* Availability (injury / status) goes here when the data exists. Not built yet: decision 0012 D3. */}
+              {/* <AvailabilityBadge playerId={player_id} /> */}
+              {team && <span className="font-medium text-fg">{team}</span>}
+              <span>Week {week} · {season}{played ? ' · already played' : ''}</span>
+            </p>
           </div>
 
-          {/* Stat selector: 15 options, so a dropdown rather than a wall of buttons */}
+          {/* 15 options, so a dropdown rather than a wall of buttons */}
           <div className="flex w-full flex-col gap-1.5 sm:w-64">
             <span className="section-label" aria-hidden="true">Stat</span>
-            <Select
-              items={STAT_ITEMS}
-              value={stat}
-              onValueChange={(next) => { if (next) handleStatChange(next) }}
-            >
+            <Select items={STAT_ITEMS} value={stat} onValueChange={(next) => { if (next) handleStatChange(next) }}>
               <SelectTrigger aria-label="Stat" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -150,202 +183,107 @@ export function PlayerDetail() {
         </div>
       </div>
 
-      {/* Staleness */}
-      {predictData && <DataStalenessWarning dataFreshness={predictData.data_freshness} />}
+      {loading && <PlayerDetailSkeleton />}
 
-      {/* Loading */}
-      {predictLoading && (
-        <div className="flex justify-center py-16">
-          <LoadingSpinner size="lg" />
+      {failed && predict.error && (
+        <div role="alert">
+          <ErrorBanner error={predict.error} onRetry={() => void predict.refetch()} />
         </div>
       )}
 
-      {/* Error — distinguish the honest "no forecast yet" 404 from a real failure */}
-      {predictError && predictErr && (
-        predictErr instanceof ApiError && predictErr.status === 404 && predictErr.structuredDetail?.forecast_available === false ? (
-          <NoForecastBanner season={season} week={week} playerName={name} />
-        ) : (
-          <ErrorBanner error={predictErr} onRetry={() => void predictRefetch()} />
-        )
+      {noForecast && (
+        <NoForecastBanner season={season} week={week} playerName={name}>
+          {hasSimulation && !showSimulation && (
+            <button
+              type="button"
+              onClick={() => setShowSimulation(true)}
+              className="inline-flex items-center rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-white/20 hover:text-fg"
+            >
+              Show the preseason simulation
+            </button>
+          )}
+        </NoForecastBanner>
       )}
 
-      {/* Content */}
-      {predictData && (
-        <div className="flex flex-col gap-5 animate-fade-in">
-
-          {/* Adjusted numbers are marked: a weight change is a what-if, not a retest */}
-          {predictData.weighting === 'user' && (
-            <p role="note" className="text-xs text-fg-muted leading-relaxed">
-              Adjusted for your saved weights — a what-if, not checked against past results.
+      {forecast && (
+        <div className="flex animate-fade-in flex-col gap-5">
+          {forecast.data.weighting === 'user' && (
+            <p role="note" className="text-xs leading-relaxed text-fg-muted">
+              These numbers reflect your saved settings. They are a what-if and have not been checked against past results.
             </p>
           )}
 
-          {/* Metric cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <ProjectionCard label="WK Proj"  value={projection} unit={statUnit(stat)} tone="info" />
-            {rosProjection !== null ? (
-              <ProjectionCard label="ROS Proj" value={rosProjection} unit={statUnit(stat)} tone="highlight" />
-            ) : null}
-            
-            {/* Book Line Card (if available) */}
-            {bookLine !== null ? (
-              <div
-                className={clsx(
-                  toneClass(edgePos ? 'positive' : 'negative'),
-                  'rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden bg-tone/[0.06] border border-tone/30 shadow-card',
-                )}
-              >
-                <div className="corner-glow absolute top-0 right-0 w-16 h-16 rounded-bl-full opacity-30" />
-                <span className="section-label">Sportsbook line</span>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="font-display text-4xl leading-none text-fg">
-                    {bookLine.toFixed(1)}
-                  </span>
-                  {statUnit(stat) && (
-                    <span className="text-xs font-medium text-fg/50">{statUnit(stat)}</span>
-                  )}
-                </div>
-                <span className="text-xs font-bold text-tone">
-                  {edgePos ? '+' : ''}{edge?.toFixed(1)}% edge
-                </span>
+          <div className={hasTiles ? 'grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : undefined}>
+            <PlayerHero
+              label={weekFigureLabel(week, stat)}
+              value={forecast.figure.value}
+              low={forecast.figure.low}
+              high={forecast.figure.high}
+              unit={unit}
+            />
+            {hasTiles && (
+              <div className="grid grid-cols-1 content-start gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                {showFantasy && <ProjectionCard label={fantasyLabel} value={fantasyValue} unit="pts" tone="highlight" />}
+                {boom != null && <ProjectionCard label="Boom chance" value={boom * 100} unit="%" tone="positive" subtext="Chance of a great week" />}
+                {bust != null && <ProjectionCard label="Bust chance" value={bust * 100} unit="%" tone="negative" subtext="Chance of a bad week" />}
               </div>
-            ) : (
-              <ProjectionCard
-                label="Sportsbook line"
-                value={null}
-                emptyText="No line yet"
-                subtext="Compare the range below with the line at your sportsbook."
-                tone="muted"
-              />
             )}
-
-            <ProjectionCard label="Bad week (1 in 10)" value={floor}      unit={statUnit(stat)} tone="negative" />
-            <ProjectionCard label="Great week (1 in 10)" value={ceiling}  unit={statUnit(stat)} tone="positive" />
-            {/* Pass null straight through. ProjectionCard shows a dash for it. Turning it
-                into 0 would turn "the model said nothing" into "0% bust risk". */}
-            <ProjectionCard
-              label="Boom %"
-              value={predictData.boom_probability == null ? null : predictData.boom_probability * 100}
-              unit="%"
-              tone="positive"
-              subtext={predictData.boom_probability == null ? 'Not available for this stat' : undefined}
-            />
-            <ProjectionCard
-              label="Bust %"
-              value={predictData.bust_probability == null ? null : predictData.bust_probability * 100}
-              unit="%"
-              tone="negative"
-              subtext={predictData.bust_probability == null ? 'Not available for this stat' : undefined}
-            />
-            <ProjectionCard
-              label={
-                predictData.fantasy_scoring === 'half_ppr' ? 'Fantasy Half-PPR'
-                : predictData.fantasy_scoring === 'standard' ? 'Fantasy Standard'
-                : 'Fantasy PPR'
-              }
-              value={predictData.projection.ppr_points}
-              unit="pts"
-              tone="highlight"
-              subtext={predictData.projection.ppr_points == null ? 'Not available for this stat' : undefined}
-            />
           </div>
 
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Panel title="Likely range">
-              <PercentileFan p10={floor} p50={projection} p90={ceiling} label={STAT_LABELS[stat] ?? stat} unit={statUnit(stat)} />
-            </Panel>
-
-            <Panel title="What drives this projection">
-              {explainLoading && (
-                <div className="flex justify-center py-8">
-                  <LoadingSpinner size="md" />
-                </div>
-              )}
-              {!explainLoading && explainData && explainData.top_factors.length > 0 && (
-                <div className="flex flex-col gap-3">
-                  <SHAPChart factors={explainData.top_factors} height={280} />
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
-                    <span className="px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08]">
-                      {explainData.attribution_source === 'real_shap' ? 'Full breakdown' : 'Simplified explanation'}
-                    </span>
-                    {explainData.attribution_source !== 'real_shap' && (
-                      <span>
-                        A simplified explanation, not the full breakdown.
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-              {!explainLoading && explainData && explainData.top_factors.length === 0 && (
-                <p className="text-fg-muted text-sm py-8 text-center">
-                  No explanation available for this player and week yet.
-                </p>
-              )}
-              {/* The explain endpoint answers 503 when no breakdown is published for this
-                  stat. Without this the panel was a titled box with nothing in it. */}
-              {!explainLoading && !explainData && (
-                <p className="text-fg-muted text-sm py-8 text-center">
-                  We cannot show what drives this projection for this stat yet.
-                  Try another stat above.
-                </p>
-              )}
-            </Panel>
-          </div>
-
-          {/* Skill estimates */}
-          {(predictData.kalman_ability_estimate != null || predictData.confidence_score != null) && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {predictData.kalman_ability_estimate != null && (
-                <ProjectionCard
-                  label="Underlying skill estimate"
-                  value={predictData.kalman_ability_estimate}
-                  tone="info"
-                />
-              )}
-              {predictData.kalman_uncertainty != null && (
-                <ProjectionCard
-                  label="Skill uncertainty"
-                  value={predictData.kalman_uncertainty}
-                  tone="muted"
-                />
-              )}
-              {predictData.confidence_score != null && (
-                <ProjectionCard
-                  label="Confidence"
-                  value={predictData.confidence_score * 100}
-                  unit="%"
-                  tone="warning"
-                />
-              )}
+          {bookLine != null && edge != null && (
+            <div className={`${toneClass(edge > 0 ? 'positive' : 'negative')} flex flex-wrap items-baseline justify-between gap-2 rounded-xl border border-tone/30 bg-tone/[0.06] px-4 py-3`}>
+              <p className="text-sm text-fg">
+                Sportsbook line <span className="font-display text-xl text-tone">{bookLine.toFixed(1)}</span>
+                {unit && <span className="ml-1 text-xs text-fg-muted">{unit}</span>}
+              </p>
+              <p className="text-xs font-semibold text-tone">
+                Our projection is {Math.abs(edge).toFixed(1)}% {edge > 0 ? 'above' : 'below'} the line
+              </p>
             </div>
           )}
 
-          {/* What-If Studio */}
-          {player_id && (
-            <>
-              {liveOdds && (
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
-                  <span className="px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08]">
-                    {liveOdds.provider} live line
-                  </span>
-                  {bookLine !== null && (
-                    <span>
-                      Current line {bookLine.toFixed(1)} vs model {projection.toFixed(1)} ({edgePos ? '+' : ''}{edge?.toFixed(1)}% edge)
-                    </span>
-                  )}
-                </div>
-              )}
-              <WhatIfStudio
-                playerId={player_id}
-                week={week}
-                season={season}
-                stat={stat}
-                baseProjection={projection}
-              />
-            </>
+          {offerRosSimulation && !showSimulation && (
+            <button
+              type="button"
+              onClick={() => setShowSimulation(true)}
+              className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-white/20 hover:text-fg"
+            >
+              Show the preseason simulation
+            </button>
           )}
         </div>
+      )}
+
+      {showSimulation && hasSimulation && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {simulatedWeek != null && servedNonForecast && (
+            <SimulationFigure
+              label={`${STAT_LABELS[stat] ?? stat}, simulated`}
+              provenance={provenanceLabel(servedNonForecast.interval_method)}
+              value={simulatedWeek}
+              low={servedNonForecast.percentiles.p10 ?? null}
+              high={servedNonForecast.percentiles.p90 ?? null}
+              unit={unit}
+            />
+          )}
+          {offerRosSimulation && rosStat && seasonRow && (
+            <SimulationFigure
+              label={`Rest of season · ${STAT_LABELS[stat] ?? stat}`}
+              provenance={provenanceLabel(seasonRow.interval_method)}
+              value={rosStat.mean}
+              low={rosStat.p10}
+              high={rosStat.p90}
+              unit={unit}
+            />
+          )}
+        </div>
+      )}
+
+      {forecast && player_id && (
+        <>
+          <ExplainPanel playerId={player_id} week={week} season={season} stat={stat} />
+          <WhatIfStudio playerId={player_id} week={week} season={season} stat={stat} />
+        </>
       )}
     </div>
   )
