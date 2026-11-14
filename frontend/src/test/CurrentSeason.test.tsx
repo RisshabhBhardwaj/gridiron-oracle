@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
@@ -126,13 +127,63 @@ describe('CurrentSeason', () => {
 
     it('labels the section and every card when the visitor asks for the simulation', async () => {
       renderWithProviders(<CurrentSeason />)
-      fireEvent.click(await screen.findByRole('button', { name: /show preseason simulation/i }))
+      fireEvent.click(await screen.findByRole('button', { name: /show these numbers anyway/i }))
       expect(await screen.findByText('Justin Jefferson')).toBeInTheDocument()
       const label = 'Preseason simulation, not updated for games played'
       // One heading plus one line on each of the two cards.
       expect(screen.getAllByText(label)).toHaveLength(3)
       expect(screen.queryByText(/Week 5 · Fantasy Points/)).not.toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: /hide preseason simulation/i }))
+      fireEvent.click(screen.getByRole('button', { name: /hide these numbers/i }))
+      expect(screen.queryByText('Justin Jefferson')).not.toBeInTheDocument()
+    })
+
+    it.each(['playing_time_gaussian_mc', 'scenario_monte_carlo', 'unavailable', 'posterior_samples'])(
+      'treats %s rows as not a forecast too',
+      async (method) => {
+        server.use(
+          http.get('/api/projections/season/:season/weeks/:week', () => {
+            const body = factories.seasonWeekProjectionsResponse()
+            body.projections = body.projections.map((p) => ({ ...p, interval_method: method }))
+            return HttpResponse.json(body)
+          }),
+        )
+        renderWithProviders(<CurrentSeason />)
+        expect(await screen.findByText('No forecast yet for Week 5, 2025')).toBeInTheDocument()
+        expect(screen.queryByText('Justin Jefferson')).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: /show these numbers anyway/i }))
+        await screen.findByText('Justin Jefferson')
+        const own = /unavailable|posterior_samples/.test(method)
+          ? 'Not a verified weekly forecast'
+          : 'Simulation, not a weekly forecast'
+        expect(screen.getAllByText(own)).toHaveLength(3)
+        expect(screen.queryByText(/Preseason simulation/)).not.toBeInTheDocument()
+      },
+    )
+
+    it('shows the notice when the start week is changed to Week 3 and the endpoint answers with Monte Carlo rows', async () => {
+      const startWeeks: string[] = []
+      server.use(
+        http.get('/api/projections/season/:season/weeks/:week', ({ request }) => {
+          const sw = new URL(request.url).searchParams.get('start_week') ?? ''
+          startWeeks.push(sw)
+          const body = factories.seasonWeekProjectionsResponse()
+          const method = sw === '1' ? 'causal_oof_conformal_90' : 'playing_time_gaussian_mc'
+          body.projections = body.projections.map((p) => ({ ...p, interval_method: method }))
+          return HttpResponse.json(body)
+        }),
+      )
+      const user = userEvent.setup()
+      renderWithProviders(<CurrentSeason />)
+      // start_week=1 serves real-forecast rows here: no notice.
+      expect(await screen.findByText('Justin Jefferson')).toBeInTheDocument()
+      expect(screen.queryByText(/No forecast yet/)).not.toBeInTheDocument()
+      // The start week lives on the Season-Long tab but also drives the Weekly request.
+      await user.click(screen.getByText('Season-Long'))
+      await user.click(await screen.findByRole('combobox', { name: 'Start Week:' }))
+      await user.click(await screen.findByRole('option', { name: 'From Week 3' }))
+      await user.click(screen.getByText('Weekly'))
+      expect(await screen.findByText('No forecast yet for Week 5, 2025')).toBeInTheDocument()
+      expect(startWeeks).toContain('3')
       expect(screen.queryByText('Justin Jefferson')).not.toBeInTheDocument()
     })
 
@@ -142,7 +193,7 @@ describe('CurrentSeason', () => {
       expect(await screen.findByText('Justin Jefferson')).toBeInTheDocument()
       expect(screen.queryByText(/No forecast yet/)).not.toBeInTheDocument()
       expect(screen.queryByText(/Preseason simulation/)).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /preseason simulation/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /these numbers/i })).not.toBeInTheDocument()
       expect(screen.getAllByText('Week 5 · Fantasy Points (PPR)').length).toBeGreaterThan(0)
     })
 

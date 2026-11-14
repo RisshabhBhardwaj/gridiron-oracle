@@ -11,7 +11,7 @@ import { SkeletonCard } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
-import { isForecastRow, needsSimulationNotice, SIMULATION_LABEL, toSearchablePlayers, weekFigureLabel } from '@/lib/forecast-provenance'
+import { isForecastRow, needsSimulationNotice, noticeLabel, provenanceLabel, toSearchablePlayers, weekFigureLabel } from '@/lib/forecast-provenance'
 import { CURRENT_SEASON, POSITIONS, SEASON_SIM_STATS, STAT_LABELS, type SeasonSimStat } from '@/lib/constants'
 import type { SeasonPlayerProjection } from '@/types/api'
 import { PositionBadge } from '@/components/PositionBadge'
@@ -95,7 +95,7 @@ function PlayerCard({ row, onClick, statKey, week }: PlayerCardProps) {
         </span>
       </div>
       {simulated && (
-        <p className="-mt-1 text-[11px] leading-snug text-fg-muted">{SIMULATION_LABEL}</p>
+        <p className="-mt-1 text-[11px] leading-snug text-fg-muted">{provenanceLabel(row.interval_method)}</p>
       )}
 
       <div className="flex flex-col gap-1 mt-1">
@@ -138,7 +138,7 @@ export function CurrentSeason() {
   const [startWeek, setStartWeek] = useState<number>(1)
   const [statKey, setStatKey] = useState<SeasonSimStat>('fantasy_ppr')
   const [selectedPositions, setSelectedPositions] = useState<string[]>(['WR', 'RB', 'TE', 'QB'])
-  // The preseason simulation is hidden on the Weekly tab until the visitor asks for it.
+  // Simulated numbers are hidden on the Weekly tab until the visitor asks for it.
   const [showSimulation, setShowSimulation] = useState(false)
 
   // Projections queries
@@ -449,13 +449,13 @@ export function CurrentSeason() {
                 onClick={() => setShowSimulation((v) => !v)}
                 className="inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-white/10 text-fg-muted hover:text-fg hover:border-white/20"
               >
-                {showSimulation ? 'Hide preseason simulation' : 'Show preseason simulation'}
+                {showSimulation ? 'Hide these numbers' : 'Show these numbers anyway'}
               </button>
             </NoForecastBanner>
           )}
           {simulationShown && (
             <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">
-              {SIMULATION_LABEL}
+              {noticeLabel(weeklyRows ?? [])}
             </h2>
           )}
           {(activeTab === 'weekly' ? weeklyQuery.isLoading : seasonQuery.isLoading) ? (

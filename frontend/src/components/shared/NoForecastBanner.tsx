@@ -16,7 +16,7 @@ interface NoForecastBannerProps {
   scope?: 'player' | 'week'
   /** Week scope only: switches the page to its season-long view. */
   onOpenSeasonLong?: () => void
-  /** Extra actions after the standard ones (for example the opt-in simulation toggle). */
+  /** Extra actions after the standard ones (for example the opt-in toggle for the simulated numbers). */
   children?: ReactNode
 }
 
@@ -56,7 +56,7 @@ export function NoForecastBanner({ season, week, playerName, scope = 'player', o
         </p>
         <p className="text-xs mt-1 leading-relaxed text-fg-muted">
           {scope === 'week'
-            ? `We do not have a real Week ${week} forecast yet. The numbers we do have are a preseason simulation that does not know about games already played, so we do not show them as a Week ${week} forecast.`
+            ? `We do not have a real Week ${week} forecast yet. The numbers we do have are simulations, not forecasts for that week, so we do not show them as one.`
             : `We do not have a Week ${week} projection for ${who} in ${season} yet. Season-long projections are ready on the draft board.`}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
