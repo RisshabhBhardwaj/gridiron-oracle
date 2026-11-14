@@ -8,6 +8,9 @@ transaction of unknown length.
 """
 from __future__ import annotations
 
+import time
+from typing import Callable
+
 # Two-int advisory key: (namespace, season * 100 + week). The namespace keeps this lock from colliding
 # with any other advisory lock the application takes. "GOFW" as a 32-bit int.
 WEEK_LOCK_NAMESPACE = 0x474F4657
@@ -25,3 +28,22 @@ def try_lock_week(conn, season: int, week: int) -> bool:
         )
         row = cur.fetchone()
     return bool(row and row[0] is True)
+
+
+def lock_week_with_retry(
+    conn, season: int, week: int, *, attempts: int = 3, delay: float = 5.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    """``try_lock_week`` up to ``attempts`` times, doubling ``delay`` between tries.
+
+    For callers that must not give up on the first collision (a restore after a failed refresh). Each
+    failed try ends its transaction before sleeping, so nothing is held while waiting. True means the
+    lock is held by the current transaction.
+    """
+    for i in range(max(1, attempts)):
+        if try_lock_week(conn, season, week):
+            return True
+        conn.rollback()
+        if i < attempts - 1:
+            sleep(delay * (2 ** i))
+    return False

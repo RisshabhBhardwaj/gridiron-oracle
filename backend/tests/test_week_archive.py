@@ -72,11 +72,36 @@ def test_restore_with_no_archive_touches_nothing():
     assert conn.commits == 0
 
 
-def test_restore_refuses_while_another_writer_holds_the_week():
+def _lock_after(free_on: int):
+    """A lock route that is held for the first ``free_on - 1`` attempts, then free."""
+    calls = {"n": 0}
+
+    def route(sql, params):
+        calls["n"] += 1
+        return (["locked"], [(calls["n"] >= free_on,)])
+
+    return route, calls
+
+
+def test_restore_retries_while_another_writer_holds_the_week_then_succeeds():
+    conn = _conn(archived=5)
+    route, calls = _lock_after(3)
+    conn.routes[0] = ("-- wk:lock", route)
+    sleeps: list[float] = []
+    assert restore_week(conn, SEASON, WEEK, attempts=3, delay=2.0, sleep=sleeps.append) == 5
+    assert calls["n"] == 3
+    assert sleeps == [2.0, 4.0]  # backoff doubles between attempts
+    assert conn.commits == 1
+
+
+def test_restore_gives_up_after_the_attempts_and_changes_nothing():
     conn = _conn(lock=False)
+    sleeps: list[float] = []
     with pytest.raises(RuntimeError, match="another writer"):
-        restore_week(conn, SEASON, WEEK)
-    assert conn.writes == []
+        restore_week(conn, SEASON, WEEK, attempts=3, delay=1.0, sleep=sleeps.append)
+    assert len(sleeps) == 2
+    assert sum(1 for e in conn.log if e[0] == "execute" and "-- wk:lock" in e[1]) == 3
+    assert conn.writes == [] and conn.commits == 0
 
 
 def test_a_failed_restore_rolls_back_and_raises():

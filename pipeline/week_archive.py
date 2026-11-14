@@ -14,8 +14,10 @@ lacks it) instead of silently dropping data.
 from __future__ import annotations
 
 import logging
+import time
+from typing import Callable
 
-from pipeline.week_lock import try_lock_week
+from pipeline.week_lock import lock_week_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +67,21 @@ def discard_week(cur, season: int, week: int) -> None:
     cur.execute("DELETE FROM projections_replaced WHERE season = %s AND week = %s", (season, week))
 
 
-def restore_week(conn, season: int, week: int) -> int:
+def restore_week(
+    conn, season: int, week: int, *, attempts: int = 3, delay: float = 5.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
     """Put the archived rows back, replacing whatever the failed refresh left for the week.
 
-    Returns the rows restored; 0 (and no change) when the week has no archive. Raises when another
-    writer holds the week, or on any error, after rolling back.
+    Returns the rows restored; 0 (and no change) when the week has no archive. Waits for another
+    writer's week lock with a bounded retry (``attempts`` tries, backoff from ``delay``), then raises;
+    raises on any error, after rolling back.
     """
     try:
-        if not try_lock_week(conn, season, week):
+        if not lock_week_with_retry(conn, season, week, attempts=attempts, delay=delay, sleep=sleep):
             raise RuntimeError(
-                f"another writer holds the lock for season={season} week={week}; the archive was not restored"
+                f"another writer holds the lock for season={season} week={week} after {attempts} attempts; "
+                "the archive was not restored"
             )
         with conn.cursor() as cur:
             n = archived_rows(cur, season, week)
