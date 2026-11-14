@@ -15,7 +15,8 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 
 - Manager changed 2026-11-13: Muse cancelled; the Claude Gridiron manager now owns Gridiron and the Box B host layer (`/srv/HOST.md`) for Gridiron, ATS and statuta. Host key matches the internal brief.
 - Timers: backup daily 23:00 UTC passes (last 2026-11-13; uploads **unencrypted** because `AGE_RECIPIENT` is unset). `train-small` (daily 01:00) and `train-full` (Fri 22:00) fail loud by design: `TRAIN_*_CMD` unset. First ETL Tue 2026-11-17 13:00 UTC; watch it.
-- ATS backup timer (21:30 UTC, owner-approved) is **not installed**. The ATS side is reworking the script to run fully in a container (pg_dump → age → rclone, no plaintext on disk, runs as `deploy`); R2 keys are present as `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`. Install and enable the units only after the ATS manager reports a passing manual run. No host packages needed.
+- ATS backup timer (21:30 UTC, owner-approved) **installed 2026-11-14** (ATS main 68a2137, runs as `deploy`, containerised pg_dump → age → rclone); first run uploaded and size-verified. `/srv/HOST.md` has the timer/owner table.
+- ETL by hand 2026-11-14: ETL image rebuilt (old one predated the blank-env fix); data now through 2026 week 10; pending (unpromoted) projections + season sim written; **fails at team-game predictions** because Elo is absent for 2019–2023 training rows (box `feature_matrix` is cut to 2024+). Full history restored as scratch DB `oracle_hist_20260827` on the box (alembic 0025; feature_matrix 2019–2026). Rerun prep next.
 
 ## State of `main`
 
@@ -69,7 +70,7 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 ## To-dos and reminders
 
-- Old full local DB (PG16, as of 2026-08-27; 6 GB of it is re-downloadable `staging_nflreadpy`) is now only a backup: `~/Projects/_backups/gridiron_oracle/infra_oracle_pg16_20260827.dump` (530 MB, `pg_restore`-verified 2026-10-23). Its Docker volume was deleted. Copy it to the VPS during migration.
+- Old full local DB (PG16, as of 2026-08-27; 6 GB of it is re-downloadable `staging_nflreadpy`) is now only a backup: `~/Projects/Archive/backups/gridiron_oracle/infra_oracle_pg16_20260827.dump` (moved from `~/Projects/_backups/`; also copied to Box B 2026-11-14 and restored there as scratch DB `oracle_hist_20260827`) (530 MB, `pg_restore`-verified 2026-10-23). Its Docker volume was deleted. 
 - Keep `docs/DATA_SOURCES.md` documenting `load_pfr_advstats` (a test enforces it).
 - Evidence entries in `releases/artifacts/MANIFEST.json` are "provisional"; flip to frozen after a clean rebuild reproduces them.
 - The baseline JSON and nine baseline files still contain absolute `/Users/...` paths. Fix them only by re-freezing with the repo-relative writer (`scripts/freeze_baseline.py`), never by hand.
