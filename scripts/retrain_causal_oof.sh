@@ -26,6 +26,11 @@
 #   PY             python, default .venv_311/bin/python.
 #   DATABASE_URL   required unless the default local URL is right.
 #   SKIP_CONTRACT  set to 1 to skip the feature-contract check (dry runs only).
+#   STOP_FILE      path checked before each cell (default $TRAIN_OUT_ROOT/STOP when
+#                  TRAIN_OUT_ROOT is set, else unused). If it exists the script
+#                  exits 75 after the cell in progress, so the box can hand CPU
+#                  back to its neighbours without losing a cell. Remove the file
+#                  and re-run with the same STAMP to resume.
 #
 # macOS bash 3.2 compatible: no associative arrays.
 set -euo pipefail
@@ -92,7 +97,13 @@ train_base() {  # model stat pos
     >"$LOG_DIR/${MODEL}_${STAT}_${POS}.log" 2>&1
 }
 
+STOP_FILE="${STOP_FILE:-${TRAIN_OUT_ROOT:+$TRAIN_OUT_ROOT/STOP}}"
+
 for CELL in "${CELLS[@]}"; do
+  if [[ -n "$STOP_FILE" && -e "$STOP_FILE" ]]; then
+    echo "stop file $STOP_FILE present: pausing before $CELL (re-run with STAMP=$STAMP to resume)" >&2
+    exit 75
+  fi
   STAT="${CELL%%:*}"
   POS="${CELL##*:}"
   echo "=== $STAT/$POS ==="

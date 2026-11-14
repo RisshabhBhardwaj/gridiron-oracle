@@ -48,7 +48,16 @@ if [[ "$MODE" == "full" ]]; then
     echo "$STAMP" >"$POINTER"
     echo "starting rebuild $STAMP"
   fi
+  # A subset run must never be recorded as a complete rebuild.
+  unset ONLY_CELLS
+  # `touch $TRAIN_OUT_ROOT/STOP` pauses after the current cell (exit 75, pointer
+  # kept); delete it and start the same recipe again to resume.
   STAMP="$STAMP" N_TRIALS="${N_TRIALS:-20}" bash scripts/retrain_causal_oof.sh
+  N_STACKS="$(find "$TRAIN_OUT_ROOT/oof/rebuild_$STAMP" -maxdepth 1 -name 'stack_*.csv' | wc -l | tr -d ' ')"
+  if [[ "$N_STACKS" != "32" ]]; then
+    echo "rebuild $STAMP has $N_STACKS stack files, expected 32; not marking it complete" >&2
+    exit 1
+  fi
   echo "$STAMP" >"$TRAIN_OUT_ROOT/last_full_stamp"
   rm -f "$POINTER"
   echo "full rebuild complete: $TRAIN_OUT_ROOT/oof/rebuild_$STAMP"
