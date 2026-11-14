@@ -92,8 +92,10 @@ def test_empty_source_is_an_error_not_an_all_clear(monkeypatch) -> None:
 
 
 def _routes(snapshots, reports):
+    """``snapshots`` rows are (snapshot_id, fetched_at) or (snapshot_id, fetched_at, n_injury_rows)."""
+    snapshots = [s if len(s) == 3 else (*s, 10) for s in snapshots]
     return [
-        ("FROM availability_snapshots", (["snapshot_id", "fetched_at"], snapshots)),
+        ("FROM availability_snapshots", (["snapshot_id", "fetched_at", "n_injury_rows"], snapshots)),
         ("FROM availability_reports", (
             ["player_id", "report_status", "practice_status", "roster_status", "date_modified"], reports)),
     ]
@@ -118,3 +120,45 @@ def test_load_refuses_when_nothing_was_known_at_as_of() -> None:
     conn = FakeConn(_routes([("future", NOW + timedelta(minutes=5))], []))
     with pytest.raises(NoAvailabilitySnapshot, match="no availability snapshot"):
         load_availability(conn, 2026, 11, ["00-1"], NOW)
+
+
+# ── a snapshot with no injury rows is never selected (review N8, fix 19) ──────────────────
+def test_capture_records_how_many_injury_rows_the_snapshot_holds(monkeypatch) -> None:
+    install_batch_recorder(monkeypatch)
+    conn = FakeConn()
+    snap = capture_snapshot(conn, 2026, 11, fetch=_fetch, now=lambda: NOW)
+    insert = next(w for w in conn.writes if w[0] == "execute" and "INSERT INTO availability_snapshots" in w[1])
+    assert "n_injury_rows" in insert[1]
+    assert insert[2][-1] == 2  # 00-0000001 and 00-0000002 carry a report or practice status; the roster row does not
+    assert snap["n_injury_rows"] == 2
+
+
+def test_a_roster_only_capture_is_stored_but_recorded_as_having_no_injury_rows(monkeypatch) -> None:
+    install_batch_recorder(monkeypatch)
+    conn = FakeConn()
+    snap = capture_snapshot(conn, 2026, 11, fetch=lambda s, w: (_injuries().iloc[0:0], _roster()), now=lambda: NOW)
+    assert snap["n_injury_rows"] == 0 and snap["n_reports"] == 1
+
+
+def test_a_newer_roster_only_snapshot_is_skipped_for_the_newest_accepted_one() -> None:
+    conn = FakeConn(_routes(
+        [("good", NOW - timedelta(days=1), 12), ("roster_only", NOW - timedelta(minutes=5), 0)],
+        [("00-1", "Out", None, None, None)],
+    ))
+    result = load_availability(conn, 2026, 11, ["00-1"], NOW)
+    assert result.snapshot_id == "good"
+    assert result.statuses == {"00-1": "Out"}  # the roster-only snapshot would have cleared it
+    report_query = [e for e in conn.log if e[0] == "execute" and "availability_reports" in e[1]][0]
+    assert report_query[2] == ("good",)
+
+
+def test_only_roster_only_snapshots_means_no_snapshot_at_all() -> None:
+    conn = FakeConn(_routes([("roster_only", NOW - timedelta(minutes=5), 0)], []))
+    with pytest.raises(NoAvailabilitySnapshot, match="injury"):
+        load_availability(conn, 2026, 11, ["00-1"], NOW)
+
+
+def test_naming_a_roster_only_snapshot_does_not_make_it_acceptable() -> None:
+    conn = FakeConn(_routes([("good", NOW - timedelta(days=1), 12), ("roster_only", NOW - timedelta(minutes=5), 0)], []))
+    with pytest.raises(NoAvailabilitySnapshot):
+        load_availability(conn, 2026, 11, ["00-1"], NOW, snapshot_id="roster_only")

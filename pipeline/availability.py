@@ -95,6 +95,25 @@ def select_snapshot(snapshots: Iterable[dict], as_of: datetime) -> Optional[dict
     return max(known, key=lambda s: s["fetched_at"]) if known else None
 
 
+def is_accepted(snapshot: dict) -> bool:
+    """A snapshot is accepted when it holds injury-report rows (a report or practice status).
+
+    Roster rows alone map every Out and Doubtful player to no status, so a snapshot without injury rows
+    would clear designations and serve those players. Acceptance is decided once, at capture
+    (``availability_snapshots.n_injury_rows``); a snapshot that does not say is not accepted.
+    """
+    return int(snapshot.get("n_injury_rows") or 0) > 0
+
+
+def select_accepted_snapshot(snapshots: Iterable[dict], as_of: datetime) -> Optional[dict]:
+    """The one rule for which snapshot supplies statuses: the newest accepted one fetched at or before ``as_of``.
+
+    The forward producer, the Friday refresh, the reapply after the producer and after a restore all read
+    statuses through ``load_availability``, which calls this and nothing else.
+    """
+    return select_snapshot([s for s in snapshots if is_accepted(s)], as_of)
+
+
 @dataclass
 class AvailabilityResult:
     """Statuses for a set of players, and what they were derived from."""

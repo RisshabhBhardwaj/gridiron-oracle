@@ -59,6 +59,7 @@ def make_conn(
     snapshot: bool = True,
     reports: list[tuple] | None = None,
     avail_fetched: datetime | None = None,
+    snapshots: list[tuple] | None = None,
     lock: bool = True,
     archived: int = 0,
     old_rows: int = 120,
@@ -86,7 +87,8 @@ def make_conn(
             [(SNAPSHOT_ID, AS_OF, snapshot_rows, {"kind": "forward_feature_snapshot"})] if snapshot else [],
         )),
         ("-- g3:frame", (columns, rows)),
-        ("FROM availability_snapshots", (["snapshot_id", "fetched_at"], [("avail_1", fetched)])),
+        ("FROM availability_snapshots", (
+            ["snapshot_id", "fetched_at", "n_injury_rows"], snapshots or [("avail_1", fetched, 40)])),
         ("FROM availability_reports", (
             ["player_id", "report_status", "practice_status", "roster_status", "date_modified"], reports)),
         ("-- wk:lock", (["locked"], [(lock,)])),  # last: tests address routes above by index
@@ -731,3 +733,20 @@ def test_a_dry_run_does_not_take_the_week_lock(manifest) -> None:
     conn = make_conn()
     go(conn, manifest, dry_run=True)
     assert not any("-- wk:lock" in e[1] for e in conn.log if e[0] == "execute")
+
+
+# ── D3 reads only accepted snapshots (review N8, fix 19) ─────────────────────────────────
+def test_d3_skips_a_newer_roster_only_snapshot_and_uses_the_last_accepted_one(manifest) -> None:
+    conn = make_conn(snapshots=[("avail_good", AS_OF - timedelta(hours=3), 40),
+                                ("avail_roster_only", AS_OF - timedelta(minutes=10), 0)])
+    report = go(conn, manifest)
+    assert report["availability"]["snapshot_id"] == "avail_good"
+    q = [e for e in conn.log if e[0] == "execute" and "FROM availability_reports" in e[1]][0]
+    assert q[2] == ("avail_good",)
+
+
+def test_d3_refuses_when_no_snapshot_has_injury_rows(manifest) -> None:
+    conn = make_conn(snapshots=[("avail_roster_only", AS_OF - timedelta(minutes=10), 0)])
+    with pytest.raises(ForwardGuardError) as e:
+        go(conn, manifest)
+    assert_refused(conn, "D3", e.value, "availability")

@@ -9,7 +9,9 @@ excluded. History rows leave the column NULL.
   Allowed values: Questionable, Doubtful (served), Out, Reserve, Suspended, Inactive (not served).
 * ``availability_snapshots`` / ``availability_reports``: each fetch of the injury and
   weekly-roster sources, stored whole with its fetch time, so a later run can show exactly
-  what was known (``pipeline/availability_store.py``).
+  what was known (``pipeline/availability_store.py``). ``n_injury_rows`` records at capture whether
+  the snapshot is usable: roster rows alone would clear every Out designation, so a snapshot
+  with none is stored but never selected.
 
 Additive only. The downgrade removes exactly what the upgrade added.
 
@@ -71,6 +73,8 @@ def upgrade() -> None:
             fetched_at  TIMESTAMPTZ NOT NULL,
             source      TEXT        NOT NULL,
             n_reports   INTEGER     NOT NULL,
+            -- rows with a report or practice status. A snapshot with none is never used for statuses
+            n_injury_rows INTEGER   NOT NULL,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
         )
         """

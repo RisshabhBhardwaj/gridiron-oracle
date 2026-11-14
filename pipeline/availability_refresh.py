@@ -8,8 +8,9 @@ writes in one transaction, records itself in ``forecast_runs`` under its own key
 * the week has games and at least one has not started (no score, kickoff after the new ``as_of``);
 * forward projection rows exist for those games;
 * no other writer holds the (season, week) lock (``pipeline.week_lock``);
-* the fresh snapshot has injury-report rows (a report or practice status), since roster rows alone
-  would clear every designation.
+* the fresh snapshot has injury-report rows (a report or practice status, recorded at capture as
+  ``n_injury_rows``), since roster rows alone would clear every designation. Every path that reads
+  statuses uses only such snapshots (``availability_store.load_availability``).
 
 Work is per game (coordinator answer 6): rows of a game that has started are frozen, and only rows of
 games still to be played are updated, so a Thursday game never stops Friday's update of Sunday.
@@ -109,13 +110,14 @@ def resolve_target_week(conn, season: int, now: datetime) -> int:
 def _require_injury_reports(conn, snapshot_id: str) -> int:
     """Refuse a snapshot with no injury-report rows. By Friday every team has filed reports.
 
-    ``capture_snapshot`` only refuses when injuries and rosters are both empty. Roster rows alone would
-    map every Out/Doubtful player to no status, and the refresh would serve all of them.
+    ``capture_snapshot`` only refuses when injuries and rosters are both empty, and records
+    ``n_injury_rows``. Such a snapshot is never selected (``select_accepted_snapshot``), so the loader would
+    not use it anyway; this refuses early and says why, so the Friday run fails loudly instead of quietly
+    keeping older statuses.
     """
     with conn.cursor() as cur:
         cur.execute(
-            "-- av:injury_rows\nSELECT count(*) FROM availability_reports WHERE snapshot_id = %s "
-            "AND (report_status IS NOT NULL OR practice_status IS NOT NULL)",
+            "-- av:injury_rows\nSELECT n_injury_rows FROM availability_snapshots WHERE snapshot_id = %s",
             (snapshot_id,),
         )
         row = cur.fetchone()

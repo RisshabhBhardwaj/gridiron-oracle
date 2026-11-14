@@ -352,12 +352,11 @@ def test_a_snapshot_with_no_injury_report_rows_is_refused_and_changes_nothing():
     assert not any(e[0] == "execute" and "INSERT INTO forecast_runs" in e[1] for e in conn.log)
 
 
-def test_the_injury_row_check_counts_report_or_practice_status_of_this_snapshot():
+def test_the_injury_row_check_reads_the_count_recorded_at_capture_for_this_snapshot():
     conn = _conn()
     _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
     q = next(e for e in conn.log if e[0] == "execute" and "-- av:injury_rows" in e[1])
-    assert "report_status IS NOT NULL" in q[1] and "practice_status IS NOT NULL" in q[1]
-    assert "availability_reports" in q[1] and q[2] == ("avail_new",)
+    assert "n_injury_rows" in q[1] and "availability_snapshots" in q[1] and q[2] == ("avail_new",)
 
 
 def test_the_refresh_takes_the_week_lock_before_reading_the_rows_it_will_update():
@@ -451,3 +450,51 @@ def test_a_reapply_waits_for_the_week_lock_then_gives_up_loudly():
                                     run_ids=["weekly_auto_2026"], attempts=3, delay=1.0, sleep=sleeps.append)
     assert sleeps == [1.0, 2.0]
     assert conn.writes == []
+
+
+# ── the reapply and the restore read only accepted snapshots (review N8, fix 19) ──────────
+def _with_snapshots(conn, snapshots, reports):
+    conn.routes.extend([
+        ("FROM availability_snapshots", (["snapshot_id", "fetched_at", "n_injury_rows"], snapshots)),
+        ("FROM availability_reports", (
+            ["player_id", "report_status", "practice_status", "roster_status", "date_modified"], reports)),
+    ])
+    return conn
+
+
+def _report_query_ids(conn):
+    return [e[2] for e in conn.log if e[0] == "execute" and "FROM availability_reports" in e[1]]
+
+
+def test_a_reapply_skips_a_newer_roster_only_snapshot_so_out_stays_out():
+    from pipeline.availability_store import load_availability
+
+    conn = _with_snapshots(
+        _conn(), [("good", NOW - timedelta(days=1), 30), ("roster_only", NOW - timedelta(minutes=2), 0)],
+        [("p3", "Out", None, None, None)],
+    )
+    result = reapply_latest_availability(
+        conn, SEASON, WEEK, now=lambda: NOW, loader=load_availability, run_ids=["weekly_auto_2026"],
+        sleep=lambda s: None,
+    )
+    assert _report_query_ids(conn) == [("good",)]
+    assert result["availability_snapshot_id"] == "good"
+    assert all(u["player_id"] != "p3" for u in _updates(conn))  # p3 was Out and is still Out
+
+
+def test_a_restore_reapplies_only_an_accepted_snapshot():
+    from pipeline.week_archive import restore_week
+
+    future = datetime.now(timezone.utc) + timedelta(days=2)
+    now = datetime.now(timezone.utc)
+    conn = _conn(games=(("g_sun", future, None, None),))
+    conn.routes.extend([
+        ("-- wa:columns", (["column_name"], [("id",), ("player_id",), ("game_id",), ("season",), ("week",)])),
+        ("-- wa:existing", (["n"], [(5,)])),
+    ])
+    _with_snapshots(
+        conn, [("good", now - timedelta(days=1), 30), ("roster_only", now - timedelta(minutes=2), 0)],
+        [("p3", "Out", None, None, None)],
+    )
+    assert restore_week(conn, SEASON, WEEK) == 5
+    assert _report_query_ids(conn) == [("good",)]

@@ -146,3 +146,11 @@ def test_the_validate_runs_after_the_exclusive_lock_was_released_with_its_own_lo
     assert "SET lock_timeout" in after_commit and "SET LOCAL" not in after_commit
     # And the session setting must not leak into the migrations that follow.
     assert "RESET lock_timeout" in sql[validate:]
+
+
+def test_0028_stores_how_many_injury_rows_each_snapshot_has() -> None:
+    """Acceptance is recorded at capture (review N8): a snapshot with none is never selected."""
+    sql = _sql(command.upgrade, f"{PREV}:{REV}")
+    create = sql[sql.index("CREATE TABLE IF NOT EXISTS availability_snapshots"):]
+    create = create[:create.index(";")]
+    assert "n_injury_rows INTEGER NOT NULL" in " ".join(create.split())

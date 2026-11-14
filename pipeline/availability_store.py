@@ -25,7 +25,8 @@ from pipeline.availability import (
     normalize_report_status,
     normalize_roster_status,
     resolve_statuses,
-    select_snapshot,
+    is_accepted,
+    select_accepted_snapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ class AvailabilityFetchError(RuntimeError):
 
 
 class NoAvailabilitySnapshot(RuntimeError):
-    """No snapshot was fetched at or before ``as_of``; availability is unknown, not clear."""
+    """No accepted snapshot (one with injury-report rows) was fetched at or before ``as_of``; availability is unknown, not clear."""
 
 
 def fetch_source_frames(season: int, week: int) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -245,14 +246,20 @@ def capture_snapshot(
         raise _refuse(f"{len(rows)} rows for one week exceeds the cap of {MAX_REPORT_ROWS}")
     logger.info("availability source for season=%s week=%s: %d rows, %d duplicate row(s) merged to the most "
                 "restrictive", season, week, len(rows), stats["duplicates"])
+    # Acceptance, decided once: injury-report rows (a report or practice status). Roster rows alone would map
+    # every Out/Doubtful player to no status, so such a snapshot is stored for the record but never selected.
+    n_injury_rows = sum(1 for r in rows if r["report_status"] or r["practice_status"])
+    if n_injury_rows == 0:
+        logger.warning("availability snapshot for season=%s week=%s has no injury-report rows; it is stored "
+                       "but will never be used for statuses", season, week)
     snapshot_id = f"avail_{season}_w{week:02d}_{fetched_at.strftime('%Y%m%dT%H%M%SZ')}"
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO availability_snapshots "
-                "(snapshot_id, season, week, fetched_at, source, n_reports) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (snapshot_id, season, week, fetched_at, SOURCE, len(rows)),
+                "(snapshot_id, season, week, fetched_at, source, n_reports, n_injury_rows) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (snapshot_id, season, week, fetched_at, SOURCE, len(rows), n_injury_rows),
             )
             psycopg2.extras.execute_batch(
                 cur,
@@ -268,7 +275,8 @@ def capture_snapshot(
         conn.rollback()
         raise
     logger.info("availability snapshot %s stored: %d reports", snapshot_id, len(rows))
-    return {"snapshot_id": snapshot_id, "fetched_at": fetched_at, "n_reports": len(rows), "source": SOURCE}
+    return {"snapshot_id": snapshot_id, "fetched_at": fetched_at, "n_reports": len(rows),
+            "n_injury_rows": n_injury_rows, "source": SOURCE}
 
 
 def load_availability(
@@ -280,25 +288,28 @@ def load_availability(
     *,
     snapshot_id: Optional[str] = None,
 ) -> AvailabilityResult:
-    """Statuses for ``player_ids`` from the newest snapshot known at ``as_of``.
+    """Statuses for ``player_ids`` from the newest *accepted* snapshot known at ``as_of``.
 
-    Raises ``NoAvailabilitySnapshot`` when none was fetched by then: unknown availability
-    is not the same as everyone being healthy.
+    This is the only place statuses are read: the producer, the Friday refresh and both reapplies come
+    through here. A snapshot without injury rows is never chosen (``select_accepted_snapshot``).
+    Raises ``NoAvailabilitySnapshot`` when none was fetched by then or none is accepted: unknown
+    availability is not the same as everyone being healthy.
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT snapshot_id, fetched_at FROM availability_snapshots "
+            "SELECT snapshot_id, fetched_at, n_injury_rows FROM availability_snapshots "
             "WHERE season = %s AND week = %s",
             (season, week),
         )
-        snapshots = [{"snapshot_id": r[0], "fetched_at": r[1]} for r in cur.fetchall()]
-    chosen = select_snapshot(snapshots, as_of)
+        snapshots = [{"snapshot_id": r[0], "fetched_at": r[1], "n_injury_rows": r[2]} for r in cur.fetchall()]
+    chosen = select_accepted_snapshot(snapshots, as_of)
     if snapshot_id is not None:
-        chosen = next((s for s in snapshots if s["snapshot_id"] == snapshot_id and s["fetched_at"] <= as_of), None)
+        chosen = next((s for s in snapshots if s["snapshot_id"] == snapshot_id and s["fetched_at"] <= as_of
+                       and is_accepted(s)), None)
     if chosen is None:
         raise NoAvailabilitySnapshot(
-            f"no availability snapshot for season={season} week={week} was fetched at or before "
-            f"{as_of.isoformat()}; availability is unknown"
+            f"no availability snapshot with injury-report rows for season={season} week={week} was fetched at "
+            f"or before {as_of.isoformat()} ({len(snapshots)} stored); availability is unknown"
         )
     with conn.cursor() as cur:
         cur.execute(
