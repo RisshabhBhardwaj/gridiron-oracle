@@ -15,7 +15,7 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 
 - Manager changed 2026-11-13: Muse cancelled; the Claude Gridiron manager now owns Gridiron and the Box B host layer (`/srv/HOST.md`) for Gridiron, ATS and statuta. Host key matches the internal brief.
 - Timers: backup daily 23:00 UTC passes (last 2026-11-13; uploads **unencrypted** because `AGE_RECIPIENT` is unset). `train-small` (daily 01:00) and `train-full` (Fri 22:00) fail loud by design: `TRAIN_*_CMD` unset. First ETL Tue 2026-11-17 13:00 UTC; watch it.
-- ATS backup timer (21:30 UTC, owner-approved) is **not installed**. Blockers on the ATS side: `/srv/ats/backup-ats.sh` not on the box, host has no `age` or `aws` CLI, `/srv/ats/.env` has no R2 access keys. Install the units once the ATS manager clears these.
+- ATS backup timer (21:30 UTC, owner-approved) is **not installed**. The ATS side is reworking the script to run fully in a container (pg_dump → age → rclone, no plaintext on disk, runs as `deploy`); R2 keys are present as `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`. Install and enable the units only after the ATS manager reports a passing manual run. No host packages needed.
 
 ## State of `main`
 
