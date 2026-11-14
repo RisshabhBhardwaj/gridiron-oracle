@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+receiving_yards,mae,1506,1745,1506,1745,player has at least this many completed games earlier in the same season,1,23.806238600676586,26.31787501549961,25.83764940239044,True,True,True,25.99790535895739,True,2021,WR
+receiving_yards,mae,1493,1727,1493,1727,player has at least this many completed games earlier in the same season,1,23.936049395721408,25.49858983748049,26.44195132842152,True,True,True,25.281473326409905,True,2022,WR
+receiving_yards,mae,1434,1805,1434,1805,player has at least this many completed games earlier in the same season,1,23.617569539373694,26.214716424262452,26.51534170153417,True,True,True,26.734362633897522,True,2023,WR
+receiving_yards,mae,1459,1758,1459,1758,player has at least this many completed games earlier in the same season,1,23.4079253165971,26.80591984050187,26.721041809458534,True,True,True,26.031032369508285,True,2024,WR
+receiving_yards,mae,1499,1776,1499,1776,player has at least this many completed games earlier in the same season,1,23.240640971047323,25.1712889421963,25.273738047587283,True,True,True,25.721007052209593,True,2025,WR

@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+passing_yards,mae,417,493,417,493,player has at least this many completed games earlier in the same season,1,59.5337103496592,69.00698808413466,68.22142286171064,True,True,True,66.87061634441304,True,2021,QB
+passing_yards,mae,438,480,438,480,player has at least this many completed games earlier in the same season,1,58.82889192506999,65.81136609871422,67.35958904109589,True,True,True,65.35021995276853,True,2022,QB
+passing_yards,mae,411,487,411,487,player has at least this many completed games earlier in the same season,1,63.74396735983857,77.3405073174231,68.28994322789943,True,True,True,75.09379021143234,True,2023,QB
+passing_yards,mae,430,499,430,499,player has at least this many completed games earlier in the same season,1,64.03677013293756,80.34279624280488,68.60697674418604,True,True,True,67.36544465101841,True,2024,QB
+passing_yards,mae,427,489,427,489,player has at least this many completed games earlier in the same season,1,61.692619064945276,70.75616569587302,69.08469945355192,True,True,True,68.2743265513087,True,2025,QB
