@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from backend.tests.fail_on_skip import pytest_runtest_makereport  # noqa: F401  (hook; see module)
+from backend.tests.fail_on_skip import (  # noqa: F401  (hooks; see module)
+    pytest_collectreport,
+    pytest_runtest_makereport,
+)
 
 
 @pytest.fixture(autouse=True)

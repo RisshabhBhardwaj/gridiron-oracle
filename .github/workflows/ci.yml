@@ -264,7 +264,8 @@ jobs:
       # deliberate addition here. Not listed: backend/tests/test_integration.py.
       # Its tests need trained 2026 projections, materialized team_game_predictions
       # and the built C++ engine, none of which an empty CI database has, so they
-      # would all skip (and fail this job). It still runs locally and in `make ci`.
+      # would all skip (and fail this job). It runs only locally, against a seeded
+      # database (`make test-integration`); `make ci` deselects integration tests.
       - name: Integration tests (a skip fails the job)
         run: |
           python -m pytest \
