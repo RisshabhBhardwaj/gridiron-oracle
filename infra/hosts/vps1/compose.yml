@@ -59,9 +59,8 @@ services:
   # Gridiron's own Postgres (never shared with ATS). No published port:
   # reachable only over the `internal` network.
   db:
-    image: postgres:18
-    # TODO(deploy): pin the digest observed at deploy, e.g.
-    # image: postgres:18@sha256:<digest from `docker pull postgres:18`>
+    image: postgres@sha256:b9f6b8ff03b62f3cfd9d9ba3fe56226a9991c79d3fb46fd46536263bf02be553
+    # postgres:18, digest pinned at deploy (Box B, 2026-11). To bump: docker pull postgres:18, copy its digest here.
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-oracle}
@@ -138,9 +137,8 @@ services:
   # Outbound-only: no inbound firewall ports besides SSH. Tunnel token is
   # env-only (name in .env.example, value never in git).
   cloudflared:
-    image: cloudflare/cloudflared:2026.2.0
-    # TODO(deploy): pin the digest observed at deploy, e.g.
-    # image: cloudflare/cloudflared:2026.2.0@sha256:<digest>
+    image: cloudflare/cloudflared@sha256:404528c1cd63c3eb882c257ae524919e4376115e6fe57befca8d603656a91a4c
+    # cloudflare/cloudflared:2026.2.0, digest pinned at deploy (Box B, 2026-11). To bump: docker pull cloudflare/cloudflared:2026.2.0, copy its digest here.
     # Token mode: ingress comes from the Cloudflare-side tunnel configuration
     # (API-managed), not from a local file — --config is rejected alongside
     # --token in current cloudflared. cloudflared.config.yml stays in the
@@ -301,7 +299,8 @@ services:
   # stay on. mlflow (512m) and jaeger (512m) do NOT fit alongside the site and
   # stay OFF; enable at most one at a time with the trio down (see README).
   mlflow:
-    image: python:3.11-slim
+    image: python@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
+    # python:3.11-slim, digest pinned at deploy (Box B, 2026-11). To bump: docker pull python:3.11-slim, copy its digest here.
     profiles: ["observability"]
     command:
       - /bin/sh
@@ -337,8 +336,8 @@ services:
     logging: *logging
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.107.0
-    # TODO(deploy): pin the digest observed at deploy.
+    image: otel/opentelemetry-collector-contrib@sha256:b65527791431d76d058b2813748a3f4a8912540d7b23beac2f6b4e02c872f5b7
+    # otel/opentelemetry-collector-contrib:0.107.0, digest pinned at deploy (Box B, 2026-11). To bump: docker pull otel/opentelemetry-collector-contrib:0.107.0, copy its digest here.
     profiles: ["observability"]
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
@@ -358,8 +357,8 @@ services:
   # Included because the shared otel-collector config exports to jaeger:4317;
   # without it the collector logs export errors all window long.
   jaeger:
-    image: jaegertracing/all-in-one:1.59
-    # TODO(deploy): pin the digest observed at deploy.
+    image: jaegertracing/all-in-one@sha256:e369bd9a8e4a212bfed67aaff59b77ce0676df32828aaccca468a866efcb732b
+    # jaegertracing/all-in-one:1.59, digest pinned at deploy (Box B, 2026-11). To bump: docker pull jaegertracing/all-in-one:1.59, copy its digest here.
     profiles: ["observability"]
     environment:
       - COLLECTOR_OTLP_ENABLED=true
@@ -382,8 +381,8 @@ services:
     logging: *logging
 
   prometheus:
-    image: prom/prometheus:v2.53.0
-    # TODO(deploy): pin the digest observed at deploy.
+    image: prom/prometheus@sha256:075b1ba2c4ebb04bc3a6ab86c06ec8d8099f8fda1c96ef6d104d9bb1def1d8bc
+    # prom/prometheus:v2.53.0, digest pinned at deploy (Box B, 2026-11). To bump: docker pull prom/prometheus:v2.53.0, copy its digest here.
     profiles: ["observability"]
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -411,8 +410,8 @@ services:
     logging: *logging
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
-    # TODO(deploy): pin the digest observed at deploy.
+    image: prom/alertmanager@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
+    # prom/alertmanager:v0.27.0, digest pinned at deploy (Box B, 2026-11). To bump: docker pull prom/alertmanager:v0.27.0, copy its digest here.
     profiles: ["observability"]
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"

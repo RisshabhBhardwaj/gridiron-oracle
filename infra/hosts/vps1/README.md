@@ -170,8 +170,8 @@ cp .env.example .env && chmod 600 .env   # fill in — names in .env.example
 #    (owner: `cloudflared tunnel create gridiron-vps1` + DNS route first).
 #    cloudflared needs nothing region-specific — it dials the nearby PoP.
 
-# 4. Pin image digests: `docker pull <each image>` and fill the
-#    TODO(deploy) digest comments in compose.yml / Dockerfile.backup.
+# 4. Image digests are pinned in compose.yml. To bump one: `docker pull <tag>`
+#    and copy its digest onto that service's `image:` line.
 
 # 5. Build + start serving:
 docker compose build api
@@ -246,8 +246,9 @@ rebuild of these files.
   sops-ready: secrets enter only via `.env` (never images, compose files, or
   logs), so adopting `sops -d secrets/gridiron.sops.env > .env` later needs
   no compose changes.
-- **No digest pins yet.** Every image carries a `TODO(deploy)` digest
-  comment, filled from `docker pull` output at deploy time.
+- **Third-party images are pinned by digest** (copied from Box B, 2026-11-14).
+  Each `image:` line has a comment naming the tag; bump by pulling the tag and
+  copying its digest. Locally built images (`gridiron-*`) are not pinned.
 - **Scheduler: systemd timers, not cron.** A cron sidecar would sit in RAM
   to sleep until Tuesday, and plain host cron cannot join the training slice
   or express `Conflicts=`/`RuntimeMaxSec`. Timers give slice assignment,
