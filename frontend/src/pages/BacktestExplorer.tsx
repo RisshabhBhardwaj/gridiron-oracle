@@ -187,17 +187,25 @@ export function BacktestExplorer() {
           <Panel title={`How much better than the simple method, by season: ${statLabel(stat)}`}>
             <ChartFrame
               height={280}
-              label={`Bar chart of the percent our projections beat the simple method by, per season, for ${statLabel(stat)}. ${chart.summary}`}
+              label={`${statLabel(stat)}: ${verdictSentence(selectionVerdict, 'season tests')} Bar chart of the percent our projections beat the simple method by, per season. ${chart.summary}`}
+              table={{
+                caption: `Percent better than the simple method, by season: ${statLabel(stat)}`,
+                head: ['Season', ...chart.series],
+                rows: chart.points.map((pt) => [
+                  String(pt.season),
+                  ...chart.series.map((p) => (pt[p] == null ? '—' : `${(pt[p] as number) >= 0 ? '+' : ''}${pt[p]}%`)),
+                ]),
+              }}
             >
               <BarChart data={chart.points} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
                 <ChartGrid />
                 <ChartXAxis
                   dataKey="season"
-                  label={{ value: 'Season', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 11 }}
+                  label={{ value: 'Season', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 12 }}
                 />
                 <ChartYAxis
                   tickFormatter={(v: number) => `${v}%`}
-                  label={{ value: '% better than simple method', angle: -90, position: 'insideLeft', offset: 0, fill: chartTheme.axisText, fontSize: 11, style: { textAnchor: 'middle' } }}
+                  label={{ value: '% better than simple method', angle: -90, position: 'insideLeft', offset: 0, fill: chartTheme.axisText, fontSize: 12, style: { textAnchor: 'middle' } }}
                 />
                 <ChartTooltip
                   formatter={(value, name) => {
@@ -205,7 +213,7 @@ export function BacktestExplorer() {
                     return [`${Math.abs(v).toFixed(1)}% ${v >= 0 ? 'better' : 'worse'} than the simple method`, name]
                   }}
                 />
-                <Legend wrapperStyle={{ fontSize: '11px', color: chartTheme.axisText, paddingTop: 8 }} verticalAlign="top" />
+                <Legend wrapperStyle={{ fontSize: '12px', color: chartTheme.axisText, paddingTop: 8 }} verticalAlign="top" />
                 <ReferenceLine y={0} stroke={chartTheme.axisLine} />
                 {chart.series.map((pos) => (
                   <Bar key={pos} dataKey={pos} name={pos} fill={seriesColor(pos)} radius={[4, 4, 0, 0]} />
@@ -221,7 +229,7 @@ export function BacktestExplorer() {
             ) : (
               <div className="flex flex-col gap-3">
                 {metricLabel && <p className="text-xs text-fg-muted">Scores shown: {metricLabel}</p>}
-                <div className="relative -mx-5 overflow-x-auto">
+                <div role="region" aria-label="Backtest results table; scrolls sideways on small screens" tabIndex={0} className="relative -mx-5 overflow-x-auto">
                   <DataTable columns={COLUMNS} data={rows} />
                 </div>
               </div>

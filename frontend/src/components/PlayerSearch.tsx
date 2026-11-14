@@ -154,14 +154,14 @@ export function PlayerSearch() {
             aria-label="Close search"
             className={clsx('flex items-center rounded-md p-1 text-fg-muted transition-colors hover:text-fg', FOCUS_RING)}
           >
-            <kbd className="hidden rounded border border-white/10 bg-white/[0.08] px-2 py-0.5 font-mono text-[10px] sm:inline">ESC</kbd>
+            <kbd className="hidden rounded border border-white/10 bg-white/[0.08] px-2 py-0.5 font-mono text-xs sm:inline">ESC</kbd>
             <X className="size-5 sm:hidden" aria-hidden="true" />
           </DialogClose>
         </div>
 
         {/* Results */}
         <div className="max-h-[min(20rem,60dvh)] overflow-y-auto">
-          <div className="border-b border-white/[0.04] px-5 py-2 text-[11px] text-fg-muted" aria-live="polite">
+          <div className="border-b border-white/[0.04] px-5 py-2 text-xs text-fg-muted" aria-live="polite">
             {helperText}
             {noForecastNote && <span className="block">{noForecastNote}</span>}
           </div>
@@ -187,7 +187,7 @@ export function PlayerSearch() {
           ) : (
             <div className="py-2">
               {query.length === 0 && (
-                <p className="px-5 py-2 text-[10px] font-semibold uppercase tracking-widest text-fg-muted">
+                <p className="px-5 py-2 text-xs font-semibold uppercase tracking-widest text-fg-muted">
                   All Players
                 </p>
               )}
@@ -212,7 +212,7 @@ export function PlayerSearch() {
 
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-fg">{player.player_name}</p>
-                        <p className="text-[11px] text-fg-muted">{player.team ?? 'UNK'}</p>
+                        <p className="text-xs text-fg-muted">{player.team ?? 'UNK'}</p>
                       </div>
 
                       {/* Only a real figure goes here. "No forecast yet" is said once, under the search box. */}
@@ -237,14 +237,14 @@ export function PlayerSearch() {
 
         {/* Footer hint */}
         <div className="flex items-center justify-between border-t border-white/[0.04] px-5 py-2.5">
-          <div className="flex items-center gap-3 text-[10px] text-fg-muted">
+          <div className="flex items-center gap-3 text-xs text-fg-muted">
             <span>↵ open highlighted player</span>
             <span className="hidden sm:inline">↑↓ move selection</span>
             <span className="hidden sm:inline">ESC to close</span>
           </div>
           <div className="hidden items-center gap-1 sm:flex">
-            <kbd className="rounded border border-white/[0.08] bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">⌘K</kbd>
-            <span className="text-[10px] text-fg-muted">to toggle</span>
+            <kbd className="rounded border border-white/[0.08] bg-white/[0.06] px-1.5 py-0.5 font-mono text-xs text-fg-muted">⌘K</kbd>
+            <span className="text-xs text-fg-muted">to toggle</span>
           </div>
         </div>
       </DialogContent>

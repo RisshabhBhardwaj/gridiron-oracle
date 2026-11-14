@@ -13,6 +13,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** The visible keyboard-focus ring every button and link carries. */
+/**
+ * The same ring as the single `:focus-visible` rule in index.css. Links and buttons get it from
+ * that rule; add this class only on an element the rule does not match (a script-focusable div)
+ * or whose own classes reset the outline.
+ */
 export const FOCUS_RING =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'

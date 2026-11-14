@@ -70,11 +70,11 @@ export function NavBar() {
               id="nav-search-btn"
               className="hidden sm:flex items-center gap-2 rounded-md border border-line bg-surface-raised px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent/40 hover:text-accent"
               title="Search players (Cmd+K)"
-              aria-label="Search players"
+              aria-keyshortcuts="Meta+K Control+K"
             >
               <Search className="size-3.5" aria-hidden="true" />
-              <span>Search</span>
-              <kbd className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[9px]">
+              <span>Search players</span>
+              <kbd aria-hidden="true" className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-xs">
                 ⌘K
               </kbd>
             </button>

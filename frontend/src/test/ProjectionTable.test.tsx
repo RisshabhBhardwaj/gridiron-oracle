@@ -413,6 +413,15 @@ describe('Current Season player table', () => {
       expect(window.localStorage.getItem('gridiron.projections.view')).toBe('table')
     })
 
+    it('a card is a real link to the player page, not a clickable div', async () => {
+      installMemoryStorage().setItem('gridiron.projections.view', 'cards')
+      serveWeekly(makeRows(2))
+      renderPage()
+      const link = await screen.findByRole('link', { name: /Aaron Aplayer0/ })
+      expect(link).toHaveAttribute('href', expect.stringContaining('/player/p-0?week=5&season=2025'))
+      expect(screen.queryByRole('button', { name: /Aaron Aplayer0/ })).not.toBeInTheDocument()
+    })
+
     it('works when storage is blocked: starts on the table and still switches', async () => {
       const storage = installMemoryStorage()
       storage.getItem = () => { throw new Error('blocked') }

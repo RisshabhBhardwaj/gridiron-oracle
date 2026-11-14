@@ -98,8 +98,8 @@ export function Settings() {
   if (isPending) {
     return (
       <LoadingRegion label="Loading settings" className="flex max-w-2xl flex-col gap-6">
-        <div aria-hidden="true" className="flex flex-col gap-2">
-          <div className="h-12 font-display text-5xl">{/* holds the heading's height */}</div>
+        <div className="flex flex-col gap-2">
+          {heading}
           <Skeleton className="h-4 w-72 max-w-full" />
         </div>
         <Skeleton className="h-[34rem] rounded-xl" />
@@ -238,7 +238,7 @@ export function Settings() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-fg font-medium">Largest slice of the bankroll allowed on one bet</p>
-              <p className="text-[10px] text-fg-muted mt-0.5">
+              <p className="text-xs text-fg-muted mt-0.5">
                 Lower is safer. The default is 25%.
               </p>
             </div>

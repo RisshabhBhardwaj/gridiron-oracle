@@ -1,7 +1,7 @@
 import { useId, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Link, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, LayoutGrid, Search, Table2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ChevronDown, ChevronLeft, ChevronRight, Info, LayoutGrid, Search, Table2 } from 'lucide-react'
 import { DataTable, type TableColumn } from '@/components/ui/data-table'
 import { PositionBadge } from '@/components/PositionBadge'
 import { NOT_READY_PRIMARY } from '@/components/shared/NotReady'
@@ -90,7 +90,6 @@ interface ProjectionListProps {
  * switching view keeps your place. Eight hundred rows never render at once.
  */
 export function ProjectionList({ rows, statKey, scope, season, week, view, onViewChange, onResetPositions }: ProjectionListProps) {
-  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
   const [pageState, setPageState] = useState({ key: '', page: 0 })
@@ -283,8 +282,15 @@ export function ProjectionList({ rows, statKey, scope, season, week, view, onVie
       </div>
 
       <details className="group text-xs text-fg-muted">
-        <summary className={cn('inline-flex cursor-pointer select-none items-center gap-1 rounded py-1 hover:text-fg', FOCUS_RING)}>
+        <summary
+          className={cn(
+            'inline-flex cursor-pointer select-none items-center gap-1.5 rounded py-1.5 font-medium text-fg underline decoration-line decoration-dotted underline-offset-4 hover:text-fg [&::-webkit-details-marker]:hidden',
+            FOCUS_RING,
+          )}
+        >
+          <Info className="h-3.5 w-3.5" aria-hidden="true" />
           How to read the range
+          <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <p className="mt-1 max-w-3xl leading-relaxed">{rangeExplanation(scope)}</p>
       </details>
@@ -328,7 +334,7 @@ export function ProjectionList({ rows, statKey, scope, season, week, view, onVie
               statKey={statKey}
               scope={scope}
               week={week}
-              onClick={() => navigate(hrefFor(e))}
+              href={hrefFor(e)}
             />
           ))}
         </div>
@@ -379,10 +385,10 @@ interface PlayerCardProps {
   statKey: string
   scope: ListScope
   week: number
-  onClick: () => void
+  href: string
 }
 
-function PlayerCard({ entry, statKey, scope, week, onClick }: PlayerCardProps) {
+function PlayerCard({ entry, statKey, scope, week, href }: PlayerCardProps) {
   const { row, stat } = entry
   // On the Weekly tab, a row that is not a real forecast says what it is on the card itself.
   const simulated = scope === 'weekly' && !isForecastRow(row)
@@ -390,16 +396,13 @@ function PlayerCard({ entry, statKey, scope, week, onClick }: PlayerCardProps) {
   const words = rangeWords(scope)
 
   return (
-    <div
+    <Link
+      to={href}
       className={clsx(
         toneClass(positionTone(row.position)),
-        'relative rounded-xl overflow-hidden flex flex-col gap-3 p-4 group cursor-pointer transition-all duration-200 hover:-translate-y-0.5',
+        'relative rounded-xl overflow-hidden flex flex-col gap-3 p-4 group transition-all duration-200 hover:-translate-y-0.5',
         'bg-panel-gradient border border-white/[0.06] shadow-[0_2px_12px_rgb(var(--shadow)/0.3)]',
       )}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') onClick() }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
@@ -440,6 +443,6 @@ function PlayerCard({ entry, statKey, scope, week, onClick }: PlayerCardProps) {
           <span>{words.high} {formatFigure(range.ceiling)}</span>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }

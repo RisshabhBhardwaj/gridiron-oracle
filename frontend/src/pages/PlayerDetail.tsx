@@ -119,7 +119,7 @@ export function PlayerDetail() {
           Back to Home
         </button>
         <div className="rounded-xl border border-line bg-surface-raised p-6">
-          <p className="text-sm font-semibold text-fg">No player selected</p>
+          <h1 className="text-sm font-semibold text-fg">No player selected</h1>
           <p className="mt-1 text-xs text-fg-muted">
             This page is opened from search, which supplies the player name in the URL.
             Search for a player from the home page to see their projection.

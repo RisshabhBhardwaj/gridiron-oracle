@@ -50,7 +50,7 @@ function RadioGroupItem({
         {...props}
       >
         <span className="text-sm font-bold text-fg-muted group-data-[checked]:text-tone">{label}</span>
-        {description && <span className="text-[10px] text-fg-muted">{description}</span>}
+        {description && <span className="text-xs text-fg-muted">{description}</span>}
       </RadioPrimitive.Root>
     )
   }
