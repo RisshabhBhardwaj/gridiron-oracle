@@ -555,7 +555,7 @@ class TestDiscoveryHygiene:
         pinned = {Path(p).name for p in manifest.protected_relpaths()}
         # Legacy ml/oof is retained as non-serving training history.  The
         # active release pins immutable artifacts under releases/candidates.
-        candidate_dir = REPO_ROOT / "releases" / "candidates" / "causal_20260821_fixed"
+        candidate_dir = REPO_ROOT / _active_candidate_relpath()
         on_disk = {p.name for p in candidate_dir.glob("stack_*.csv")}
         assert on_disk <= pinned, f"unpinned active stack(s): {sorted(on_disk - pinned)}"
 
@@ -591,6 +591,21 @@ class TestDiscoveryHygiene:
 
 
 # ── Lock 5 — C-16: no purge of release artifacts ──────────────────────────────
+
+
+def _active_candidate_relpath() -> str:
+    """Repo-relative directory holding the stacks the current manifest pins.
+
+    Derived from the pins, not hard-coded, so a re-freeze moves these tests
+    with the release. All pinned stacks must share one candidate directory.
+    """
+    am.clear_cache()
+    manifest = load_manifest(REPO_ROOT / "releases" / "current_baseline.json", root=REPO_ROOT)
+    parents = {str(Path(rel).parent) for rel in manifest.stack_index.values()}
+    assert len(parents) == 1, f"pinned stacks span several directories: {sorted(parents)}"
+    (parent,) = parents
+    assert parent.startswith("releases/candidates/"), parent
+    return parent
 
 
 class TestNoPurge:
@@ -639,16 +654,17 @@ class TestNoPurge:
         from guard_release_artifacts import protected_in
 
         am.clear_cache()
+        active = _active_candidate_relpath()
         protected = protected_in(
-            REPO_ROOT / "releases" / "candidates" / "causal_20260821_fixed",
+            REPO_ROOT / active,
             manifest_path=REPO_ROOT / "releases" / "current_baseline.json",
         )
         assert protected, "guard found nothing to protect under active candidate"
-        assert all(p.startswith("releases/candidates/causal_20260821_fixed/") for p in protected)
+        assert all(p.startswith(f"{active}/") for p in protected)
 
     def test_guard_exits_nonzero_for_the_serving_directory(self):
         result = subprocess.run(
-            [sys.executable, "scripts/guard_release_artifacts.py", "--check-purge", "releases/candidates/causal_20260821_fixed"],
+            [sys.executable, "scripts/guard_release_artifacts.py", "--check-purge", _active_candidate_relpath()],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
