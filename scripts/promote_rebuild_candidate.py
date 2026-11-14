@@ -184,6 +184,13 @@ def promote(
     kept = [r for r in approved if not r.startswith(STACK_RUN_PREFIX)]
     removed = [r for r in approved if r.startswith(STACK_RUN_PREFIX)]
 
+    if not kept:
+        raise PromotionError(
+            "removing the earlier stack run ids would leave no approved pipeline run id, and "
+            "materialization fails closed without one (503). Keep at least one non-stack id in "
+            "projection_policy.approved_pipeline_run_ids."
+        )
+
     summary = {
         "release_id": release_id,
         "cells": len(cells),

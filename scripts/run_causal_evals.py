@@ -65,11 +65,9 @@ def load_history(db_url: str, stats: Iterable[str], max_season: int) -> pd.DataF
     select = ", ".join(["player_id", "season", "week", *columns])
     conn = psycopg2.connect(_psycopg2_dsn(db_url))
     try:
-        frame = pd.read_sql_query(
-            f"SELECT {select} FROM feature_matrix WHERE season <= %(max)s",
-            conn,
-            params={"max": max_season},
-        )
+        cur = conn.cursor()
+        cur.execute(f"SELECT {select} FROM feature_matrix WHERE season <= %s", (max_season,))
+        frame = pd.DataFrame(cur.fetchall(), columns=[d[0] for d in cur.description])
     finally:
         conn.close()
     return frame.rename(columns={TARGET_COL_MAP[s]: s for s in stats})

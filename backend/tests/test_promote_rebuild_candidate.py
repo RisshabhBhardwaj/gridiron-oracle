@@ -137,3 +137,14 @@ def test_selection_report_is_required(tmp_path):
     (rebuild / prc.SELECTION_FILE).unlink()
     with pytest.raises(prc.PromotionError, match="select_nonregressing_stacks"):
         prc.promote(rebuild, "causal_test", root=root)
+
+
+def test_refuses_when_no_non_stack_approved_id_would_remain(tmp_path):
+    rebuild, root = _rebuild(tmp_path), _root(tmp_path)
+    manifest = root / "releases" / "current_baseline.json"
+    payload = json.loads(manifest.read_text())
+    payload["projection_policy"]["approved_pipeline_run_ids"] = ["stack_materialize_20260822T144443Z"]
+    manifest.write_text(json.dumps(payload))
+    with pytest.raises(prc.PromotionError, match="fails closed"):
+        prc.promote(rebuild, "causal_test", root=root)
+    assert not (root / "releases" / "candidates").exists()
