@@ -170,7 +170,7 @@ export function WhatIfStudio({ playerId, week, season, stat }: WhatIfStudioProps
             <House className="size-5 text-fg-muted" aria-hidden="true" />
             <div>
               <p className="text-sm font-medium text-fg" id="dome-label">Indoor / Dome Game</p>
-              <p className="text-[10px] text-fg-muted">Removes all weather penalties</p>
+              <p className="text-xs text-fg-muted">Removes all weather penalties</p>
             </div>
           </div>
           <Switch
@@ -216,7 +216,7 @@ export function WhatIfStudio({ playerId, week, season, stat }: WhatIfStudioProps
           })}
         </div>
 
-        <div className="rounded-xl px-4 py-3 text-[11px] text-fg-muted bg-white/[0.03] border border-white/[0.06]">
+        <div className="rounded-xl px-4 py-3 text-xs text-fg-muted bg-white/[0.03] border border-white/[0.06]">
           <span className="text-fg font-medium">Assumptions:</span> snap share scales opportunity, wind and temperature apply passing/receiving penalties, defender grade uses 70 as neutral, and dome mode removes weather effects.
         </div>
         </div>

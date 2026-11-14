@@ -49,7 +49,7 @@ export function ExplainPanel({ playerId, week, season, stat }: ExplainPanelProps
       {!isLoading && data && data.top_factors.length > 0 && (
         <div className="flex flex-col gap-3">
           <SHAPChart factors={data.top_factors} height={280} />
-          <p className="text-[11px] text-fg-muted">
+          <p className="text-xs text-fg-muted">
             {data.attribution_source === 'real_shap' ? 'Full breakdown' : 'Simplified explanation, not the full breakdown'}
           </p>
         </div>

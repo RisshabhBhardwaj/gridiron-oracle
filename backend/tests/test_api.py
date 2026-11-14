@@ -361,6 +361,51 @@ class TestExplain:
             # Label must not be a raw feature name (no underscores as separator)
             # (plain English labels have spaces)
 
+    def _patch_explain_with(self, explain_side_effect):
+        """Patch everything /explain touches except the SHAP step, which raises."""
+        from contextlib import ExitStack
+
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "backend.app.api.explain.ProjectionService.get_feature_dict",
+            return_value={"kalman_est_receiving_yards": 74.2},
+        ))
+        stack.enter_context(patch(
+            "backend.app.api.explain.ProjectionService._player_meta",
+            return_value=("Justin Jefferson", "WR", "MIN"),
+        ))
+        stack.enter_context(patch(
+            "ml.shap_service.SHAPService.explain",
+            side_effect=explain_side_effect,
+        ))
+        return stack
+
+    def test_explain_no_published_breakdown_is_404_with_structured_detail(self):
+        """No SHAP model for this stat/position in artifact-backed mode is a property
+        of the served release, not an outage: 404 and a structured detail, same style
+        as /predict's forecast_available."""
+        from backend.app.core.runtime_mode import ArtifactRequiredError
+
+        with self._patch_explain_with(ArtifactRequiredError("no SHAP model for receiving_yards/WR")):
+            r = client.get("/explain/00-0035228?week=12&season=2025")
+
+        assert r.status_code == 404
+        detail = r.json()["detail"]
+        assert detail["explanation_available"] is False
+        assert isinstance(detail["message"], str) and detail["message"]
+        # The message is for people: it must not echo the internal exception text.
+        assert "ArtifactRequiredError" not in detail["message"]
+        assert "no SHAP model" not in detail["message"]
+
+    def test_explain_real_failure_stays_a_server_error(self):
+        """Anything that is not "no breakdown published" is a real failure: still 5xx."""
+        with self._patch_explain_with(RuntimeError("boom")):
+            r = TestClient(app, raise_server_exceptions=False).get(
+                "/explain/00-0035228?week=12&season=2025"
+            )
+
+        assert r.status_code >= 500
+
 
 # ---------------------------------------------------------------------------
 # E. /scenario

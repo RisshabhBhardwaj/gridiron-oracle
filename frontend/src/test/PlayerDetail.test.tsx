@@ -392,10 +392,19 @@ describe('PlayerDetail', () => {
       expect(calls).toBe(3)
     })
 
-    it('a 404 ("not published") is a plain message with no Retry', async () => {
-      server.use(http.get('/api/explain/:player_id', () => HttpResponse.json({ detail: 'none' }, { status: 404 })))
+    it('a 404 with the backend\'s structured detail ("not published") is a plain message with no Retry', async () => {
+      server.use(
+        http.get('/api/explain/:player_id', () =>
+          HttpResponse.json(
+            { detail: { explanation_available: false, message: "No breakdown ... stat='receiving_yards' and position='WR' in the current release." } },
+            { status: 404 },
+          ),
+        ),
+      )
       renderPlayer()
       expect(await screen.findByText(/do not have a breakdown for this stat yet/i)).toBeInTheDocument()
+      // The server's own wording is not shown; the page uses its own words.
+      expect(screen.queryByText(/current release/i)).not.toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     })
