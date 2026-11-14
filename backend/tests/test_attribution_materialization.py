@@ -134,3 +134,30 @@ def test_materializer_refuses_duplicate_attribution_rows(monkeypatch, tmp_path):
     module = _materializer_with(monkeypatch, tmp_path, attr)
     with pytest.raises(ba.AttributionError, match="repeats"):
         module._load_cell_attributions("receiving_yards", "WR", stack)
+
+
+def test_lgbm_identity_fallback_rewrites_the_stack_attributions(tmp_path):
+    from scripts.select_nonregressing_stacks import _rewrite_attribution_as_lgbm
+
+    stack = _stack_frame().assign(season=2024, week=1)
+    lgbm = stack.rename(columns={"projection": "y_pred"})
+    blended = _attr_frame(stack.assign(projection=stack["projection"] + 3.0))
+    stack_path = tmp_path / "stack_receiving_yards_WR_ab12cd34.csv"
+    ba.write_attribution_file(blended.assign(y_pred=stack["projection"] + 3.0), stack_path)
+    lgbm_attr = _attr_frame(stack).assign(y_pred=lgbm["y_pred"].to_numpy())
+    ba.write_attribution_file(lgbm_attr, tmp_path / "lgbm_receiving_yards_WR_ee99.csv")
+
+    served = lgbm[["player_id", "game_id", "season", "week", "y_pred"]]
+    assert _rewrite_attribution_as_lgbm(tmp_path, stack_path, "receiving_yards", "WR", served)
+    out = pd.read_parquet(ba.attribution_path_for(stack_path))
+    assert ba.max_residual(out) <= ba.ATTRIBUTION_TOLERANCE
+    assert np.allclose(out["y_pred"], served["y_pred"])
+    assert np.allclose(out["base"], 20.0)
+
+
+def test_lgbm_identity_fallback_skips_a_stack_with_no_attributions(tmp_path):
+    from scripts.select_nonregressing_stacks import _rewrite_attribution_as_lgbm
+
+    stack = _stack_frame().rename(columns={"projection": "y_pred"})
+    path = tmp_path / "stack_receiving_yards_WR_ab12cd34.csv"
+    assert not _rewrite_attribution_as_lgbm(tmp_path, path, "receiving_yards", "WR", stack)

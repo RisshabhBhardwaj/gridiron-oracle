@@ -15,6 +15,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, sha256_of
+from ml.bucket_attribution import (
+    ATTR_COLUMNS,
+    AttributionError,
+    assert_additive,
+    attribution_path_for,
+    write_attribution_file,
+)
 
 
 def _mean_variance_fallback(seasonal: list[dict[str, object]]) -> bool:
@@ -40,6 +47,36 @@ def _one(directory: Path, pattern: str) -> Path:
     if len(paths) != 1:
         raise ValueError(f"Expected one {pattern}, found {[p.name for p in paths]}")
     return paths[0]
+
+
+def _rewrite_attribution_as_lgbm(candidate_dir: Path, stack_path: Path, stat: str, position: str, stack: pd.DataFrame) -> bool:
+    """Make the stack's stored attributions the LightGBM learner's own.
+
+    Called when a cell falls back to LightGBM identity: the served value is then
+    ``lgbm_pred``, so its attributions are the LightGBM attributions of the same
+    rows, not the blend. Returns False when the stack has no attribution file
+    (a run made without ``--attributions``); raises if it has one and the
+    LightGBM file is missing or does not add up.
+    """
+    stack_attr = attribution_path_for(stack_path)
+    if not stack_attr.exists():
+        return False
+    lgbm_attr = _one(candidate_dir, f"attr_lgbm_{stat}_{position}_*.parquet")
+    learner = pd.read_parquet(lgbm_attr)
+    keys = stack[["player_id", "game_id"]]
+    merged = keys.merge(
+        learner[["player_id", "game_id", *ATTR_COLUMNS]],
+        on=["player_id", "game_id"], how="left", validate="1:1",
+    )
+    if merged["base"].isna().any():
+        raise AttributionError(f"{lgbm_attr.name} lacks rows of {stack_path.name}")
+    frame = stack[["player_id", "game_id", "season", "week"]].copy()
+    frame["y_pred"] = stack["y_pred"].to_numpy(dtype=float)
+    for column in ATTR_COLUMNS:
+        frame[column] = merged[column].to_numpy(dtype=float)
+    assert_additive(frame, context=f"lgbm identity {stat}/{position}")
+    write_attribution_file(frame, stack_path)
+    return True
 
 
 def select(candidate_dir: Path, baseline_path: Path) -> dict[str, object]:
@@ -77,6 +114,7 @@ def select(candidate_dir: Path, baseline_path: Path) -> dict[str, object]:
             stack.to_csv(stack_path, index=False)
             coef = candidate_dir / f"ridge_{stat}_{position}_coefs.json"
             coef.write_text(json.dumps({"learner_order": ["lgbm", "catboost"], "weights": {"lgbm": 1.0, "catboost": 0.0}, "intercept": 0.0}, indent=2) + "\n")
+            _rewrite_attribution_as_lgbm(candidate_dir, stack_path, stat, position, stack)
         decisions[f"{stat}:{position}"] = {"selection": "lgbm_identity" if fallback else "ridge_stack", "before": seasonal}
 
     baseline = {
