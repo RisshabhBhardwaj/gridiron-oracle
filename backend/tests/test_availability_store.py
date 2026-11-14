@@ -26,10 +26,11 @@ def _injuries() -> pd.DataFrame:
     return pd.DataFrame({
         "season": [2026, 2026, 2026],
         "week": [11, 11, 10],
-        "gsis_id": ["00-1", "00-2", "00-3"],
+        "gsis_id": ["00-0000001", "00-0000002", "00-0000003"],
         "team": ["KC", "KC", "KC"],
         "report_status": ["Out", "Questionable", "Out"],
         "practice_status": ["Did Not Participate In Practice", "Limited Participation in Practice", None],
+        "date_modified": ["2026-11-14T20:00:00Z", "2026-11-14T20:00:00Z", "2026-11-07T20:00:00Z"],
     })
 
 
@@ -37,7 +38,7 @@ def _roster() -> pd.DataFrame:
     return pd.DataFrame({
         "season": [2026, 2026, 2026, 2026],
         "week": [11, 11, 11, 10],
-        "gsis_id": ["00-4", "00-5", "00-6", "00-7"],
+        "gsis_id": ["00-0000004", "00-0000005", "00-0000006", "00-0000007"],
         "team": ["KC", "KC", "KC", "KC"],
         "status": ["RES", "ACT", "DEV", "RES"],
     })
@@ -59,9 +60,9 @@ def test_capture_stores_snapshot_and_only_the_target_week(monkeypatch) -> None:
     batch = next(w for w in conn.writes if w[0] == "batch")
     stored = {r["player_id"]: r for r in batch[2]}
     # week 11 injuries, plus roster rows that carry information (RES), not ACT/DEV; week 10 is ignored.
-    assert set(stored) == {"00-1", "00-2", "00-4"}
-    assert stored["00-1"]["report_status"] == "Out"
-    assert stored["00-4"]["roster_status"] == "RES"
+    assert set(stored) == {"00-0000001", "00-0000002", "00-0000004"}
+    assert stored["00-0000001"]["report_status"] == "Out"
+    assert stored["00-0000004"]["roster_status"] == "RES"
     assert snap["n_reports"] == 3
 
 

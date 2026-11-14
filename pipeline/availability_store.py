@@ -1,9 +1,10 @@
 """Availability snapshots: fetch, store with the fetch time, read back as of a moment.
 
 The source is nflverse via ``nflreadpy``: ``load_injuries`` (weekly ``report_status``)
-and ``load_rosters_weekly`` (``status``: RES, INA, SUS ...). Neither file carries a
-per-row publication time (checked 2026-11-14), so every fetch is stored whole with
-the time it finished. Nothing in a snapshot can have been published after that time,
+and ``load_rosters_weekly`` (``status``: RES, INA, SUS ...). The source has no trustworthy
+per-row publication time, so every fetch is stored whole with the time it finished.
+``validate_source`` refuses a file whose columns, labels, ids or dates do not look like nflverse's
+(required columns, label allow-lists, gsis ids, ``date_modified <= fetched_at``) before anything is stored. Nothing in a snapshot can have been published after that time,
 so a producer run with ``as_of`` at or after it may use it, and an earlier run may not.
 Tables are created by ``alembic/versions/20261114_0028_availability_status.py``.
 """
@@ -11,6 +12,7 @@ Tables are created by ``alembic/versions/20261114_0028_availability_status.py``.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -18,7 +20,9 @@ import pandas as pd
 import psycopg2.extras
 
 from pipeline.availability import (
+    _SEVERITY,
     AvailabilityResult,
+    normalize_report_status,
     normalize_roster_status,
     resolve_statuses,
     select_snapshot,
@@ -29,6 +33,22 @@ logger = logging.getLogger(__name__)
 SOURCE = "nflverse:load_injuries+load_rosters_weekly"
 # Roster codes that say nothing about a game's availability are not stored.
 _UNINFORMATIVE_ROSTER = {"ACT", "DEV"}
+
+# What a source file must look like before it is stored (security review M2). A file that does not
+# match is refused whole: the old parser mapped every unknown value to "no designation", which is
+# served, so schema drift or a bad file silently cleared Out and Reserve players.
+# The label sets below are the known nflverse values; an unknown label is refused and logged, so the
+# first dry-run capture shows what to add (extend these constants, never loosen the check).
+REQUIRED_INJURY_COLUMNS = ("gsis_id", "week", "season", "report_status", "date_modified")
+REQUIRED_ROSTER_COLUMNS = ("gsis_id", "status", "week", "season")
+KNOWN_REPORT_STATUSES = frozenset({"out", "doubtful", "questionable", "probable"})
+KNOWN_PRACTICE_STATUSES = frozenset({
+    "full participation in practice", "limited participation in practice", "did not participate in practice",
+    "full", "limited", "did not participate", "dnp",
+})
+KNOWN_ROSTER_CODES = frozenset({"ACT", "DEV", "TRC", "TRD", "RES", "INA", "SUS", "CUT", "RET", "EXE"})
+GSIS_ID = re.compile(r"^00-\d{7}$")
+MAX_REPORT_ROWS = 5000  # a week has a few hundred designations; this bounds what a bad file can store
 
 
 class AvailabilityFetchError(RuntimeError):
@@ -64,15 +84,34 @@ def _clean(value):
     return None if value is None or (isinstance(value, float) and pd.isna(value)) else value
 
 
-def build_report_rows(injuries: pd.DataFrame, rosters: pd.DataFrame, season: int, week: int) -> list[dict]:
-    """One row per player carrying anything informative for the target week."""
+def _report_rank(row: dict) -> tuple:
+    """Lower is more restrictive. Order-independent: ties break on the stored text."""
+    status = normalize_report_status(row.get("report_status"))
+    rank = _SEVERITY.index(status) if status in _SEVERITY else len(_SEVERITY)
+    return (rank, str(row.get("practice_status")), str(row.get("date_modified")))
+
+
+def _roster_rank(code) -> tuple:
+    status = normalize_roster_status(code)
+    return (_SEVERITY.index(status) if status in _SEVERITY else len(_SEVERITY), str(code))
+
+
+def build_report_rows(
+    injuries: pd.DataFrame, rosters: pd.DataFrame, season: int, week: int, *, stats: Optional[dict] = None
+) -> list[dict]:
+    """One row per player carrying anything informative for the target week.
+
+    A player with several rows keeps the most restrictive one, whatever the order of the file.
+    ``stats["duplicates"]`` counts the extra rows that were merged away.
+    """
     rows: dict[str, dict] = {}
+    duplicates = 0
     inj = _week_rows(injuries, season, week)
     for r in inj.itertuples(index=False):
         pid = _clean(getattr(r, "gsis_id", None))
         if not pid:
             continue
-        rows[str(pid)] = {
+        row = {
             "player_id": str(pid),
             "team": _clean(getattr(r, "team", None)),
             "report_status": _clean(getattr(r, "report_status", None)),
@@ -80,7 +119,13 @@ def build_report_rows(injuries: pd.DataFrame, rosters: pd.DataFrame, season: int
             "roster_status": None,
             "date_modified": _clean(getattr(r, "date_modified", None)),
         }
+        if str(pid) in rows:
+            duplicates += 1
+            if _report_rank(row) >= _report_rank(rows[str(pid)]):
+                continue
+        rows[str(pid)] = row
     ros = _week_rows(rosters, season, week)
+    seen_roster: set[str] = set()
     for r in ros.itertuples(index=False):
         pid = _clean(getattr(r, "gsis_id", None))
         status = _clean(getattr(r, "status", None))
@@ -91,8 +136,81 @@ def build_report_rows(injuries: pd.DataFrame, rosters: pd.DataFrame, season: int
             "report_status": None, "practice_status": None, "roster_status": None,
             "date_modified": None,
         })
+        if str(pid) in seen_roster:
+            duplicates += 1
+            if _roster_rank(str(status)) >= _roster_rank(row["roster_status"]):
+                continue
+        seen_roster.add(str(pid))
         row["roster_status"] = str(status)
+    if stats is not None:
+        stats["duplicates"] = duplicates
     return list(rows.values())
+
+
+def _refuse(message: str) -> AvailabilityFetchError:
+    logger.warning("availability source refused: %s", message)
+    return AvailabilityFetchError(f"availability source refused: {message}")
+
+
+def _require_columns(frame: pd.DataFrame, required: tuple[str, ...], name: str) -> None:
+    if frame is None or (frame.empty and len(frame.columns) == 0):
+        return  # nothing came back: capture_snapshot reports it as an empty source
+    missing = [c for c in required if c not in frame.columns]
+    if missing:
+        raise _refuse(f"{name} frame is missing required column(s) {missing}")
+
+
+def _check_labels(frame: pd.DataFrame, column: str, known: frozenset, name: str, *, upper: bool = False) -> None:
+    if frame.empty or column not in frame.columns:
+        return
+    unknown: set[str] = set()
+    for value in frame[column]:
+        if _clean(value) is None:
+            continue
+        text = str(value).strip()
+        if (text.upper() if upper else text.lower()) not in known:
+            unknown.add(text)
+    if unknown:
+        raise _refuse(f"unknown {name} label(s) {sorted(unknown)[:10]}; not treating them as served")
+
+
+def _check_ids(frame: pd.DataFrame, name: str) -> None:
+    if frame.empty:
+        return
+    bad = sorted({str(v) for v in frame["gsis_id"] if _clean(v) is not None and not GSIS_ID.match(str(v))})
+    if bad:
+        raise _refuse(f"{name} has id(s) not in gsis format 00-NNNNNNN: {bad[:10]}")
+
+
+def _check_dates(frame: pd.DataFrame, fetched_at: datetime) -> None:
+    if frame.empty or "date_modified" not in frame.columns:
+        return
+    raw = frame["date_modified"]
+    stamps = pd.to_datetime(raw, utc=True, errors="coerce")
+    unreadable = raw.notna() & stamps.isna()
+    if unreadable.any():
+        raise _refuse(f"{int(unreadable.sum())} injury row(s) have an unreadable date_modified")
+    late = stamps.notna() & (stamps > pd.Timestamp(fetched_at))
+    if late.any():
+        raise _refuse(
+            f"{int(late.sum())} injury row(s) have date_modified after the fetch time {fetched_at.isoformat()}; "
+            "a report cannot be published after it was fetched"
+        )
+
+
+def validate_source(
+    injuries: pd.DataFrame, rosters: pd.DataFrame, season: int, week: int, fetched_at: datetime
+) -> None:
+    """Refuse a source file that does not look like nflverse's, before anything is stored."""
+    _require_columns(injuries, REQUIRED_INJURY_COLUMNS, "injuries")
+    _require_columns(rosters, REQUIRED_ROSTER_COLUMNS, "rosters")
+    inj, ros = _week_rows(injuries, season, week), _week_rows(rosters, season, week)
+    _check_labels(inj, "report_status", KNOWN_REPORT_STATUSES, "report_status")
+    _check_labels(inj, "practice_status", KNOWN_PRACTICE_STATUSES, "practice_status")
+    _check_labels(ros, "status", KNOWN_ROSTER_CODES, "roster status", upper=True)
+    _check_ids(inj, "injuries")
+    _check_ids(ros, "rosters")
+    _check_dates(inj, fetched_at)
 
 
 def capture_snapshot(
@@ -115,12 +233,18 @@ def capture_snapshot(
     fetched_at = now()
     if fetched_at.tzinfo is None:
         raise ValueError("now() must be timezone-aware")
-    rows = build_report_rows(injuries, rosters, season, week)
+    validate_source(injuries, rosters, season, week, fetched_at)
+    stats: dict = {}
+    rows = build_report_rows(injuries, rosters, season, week, stats=stats)
     if not rows:
         raise AvailabilityFetchError(
             f"no injury or roster rows for season={season} week={week}; "
             "an empty source is not an all-clear"
         )
+    if len(rows) > MAX_REPORT_ROWS:
+        raise _refuse(f"{len(rows)} rows for one week exceeds the cap of {MAX_REPORT_ROWS}")
+    logger.info("availability source for season=%s week=%s: %d rows, %d duplicate row(s) merged to the most "
+                "restrictive", season, week, len(rows), stats["duplicates"])
     snapshot_id = f"avail_{season}_w{week:02d}_{fetched_at.strftime('%Y%m%dT%H%M%SZ')}"
     try:
         with conn.cursor() as cur:
