@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+fumbles,poisson_deviance,773,872,773,872,player has at least this many completed games earlier in the same season,1,0.2398554227424884,0.6783765520582717,0.8440159580402128,True,True,True,0.5879667014007164,True,2021,TE
+fumbles,poisson_deviance,767,897,767,897,player has at least this many completed games earlier in the same season,1,0.1499125328198792,0.21142309631140538,0.5121717543976526,True,True,True,0.1845837063467012,True,2022,TE
+fumbles,poisson_deviance,760,891,760,891,player has at least this many completed games earlier in the same season,1,0.21453017840416871,0.5895596337709592,0.8690516133100241,True,True,True,0.25009468250513234,True,2023,TE
+fumbles,poisson_deviance,847,935,847,935,player has at least this many completed games earlier in the same season,1,0.25226225047237616,0.7803403979162576,0.9487846453151617,True,True,True,0.6839057962234021,True,2024,TE
+fumbles,poisson_deviance,816,952,816,952,player has at least this many completed games earlier in the same season,1,0.21913325238840323,0.6377272763485553,0.8483242461693934,True,True,True,0.606540485351943,True,2025,TE

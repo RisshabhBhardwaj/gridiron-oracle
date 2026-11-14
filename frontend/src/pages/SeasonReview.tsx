@@ -1,299 +1,227 @@
-import { useState, useMemo } from 'react'
-import clsx from 'clsx'
-import { useBacktest } from '@/hooks/useBacktest'
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { ErrorBanner } from '@/components/shared/ErrorBanner'
-import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
-import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
-import { useCurrentSeason } from '@/hooks/useCurrentSeason'
-import { positionTone, toneClass, type Tone } from '@/lib/tokens'
-import type { SeasonMetrics } from '@/types/api'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { LegacyRow } from '@tanstack/react-table/legacy'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import type { BacktestRow } from '@/types/api'
+import { useBacktest } from '@/hooks/useBacktest'
+import { useCurrentSeason } from '@/hooks/useCurrentSeason'
+import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataTable, type TableColumn } from '@/components/ui/data-table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { EvidenceVerdict } from '@/components/evidence/EvidenceVerdict'
+import { EvidenceUnavailable } from '@/components/evidence/EvidenceUnavailable'
+import { BaselineGuide } from '@/components/evidence/BaselineGuide'
+import { ImprovementCell } from '@/components/evidence/ImprovementCell'
+import { PositionFilter } from '@/components/evidence/PositionFilter'
+import { POSITIONS } from '@/lib/constants'
+import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf } from '@/lib/evidence'
+import { positionTone, toneClass } from '@/lib/tokens'
+import { cn } from '@/lib/utils'
 
-const SEASON_ITEMS = [
-  { value: '2025', label: '2025 Season' },
-  { value: '2024', label: '2024 Season' },
-]
-const STAT_ITEMS = BACKTEST_STATS.map((s) => ({ value: s, label: STAT_LABELS[s] || s }))
-
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  tone = 'info',
-}: {
-  title: string
-  value: string | number
-  subtitle?: string
-  tone?: Tone
-}) {
+function PositionCard({ row }: { row: BacktestRow }) {
   return (
-    <div
-      className={clsx(
-        toneClass(tone),
-        'p-4 rounded-xl flex flex-col justify-between bg-panel-gradient border border-white/[0.06] shadow-[0_2px_12px_rgb(var(--shadow)/0.3)]',
-      )}
-    >
-      <span className="text-xs font-semibold uppercase tracking-wider text-fg-muted">{title}</span>
-      <div className="my-2">
-        <span className="font-display text-3xl text-tone">
-          {value}
-        </span>
+    <div className={cn(toneClass(positionTone(row.position)), 'flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-panel-gradient p-4')}>
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-bold text-tone">{row.position}</span>
+        <ImprovementCell pct={row.improvement_vs_naive_pct} />
       </div>
-      {subtitle && <span className="text-[11px] text-fg-muted">{subtitle}</span>}
+      <dl className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <dt className="text-fg-muted">Our score</dt>
+          <dd className="font-display text-2xl text-fg">{formatScore(row.model_score)}</dd>
+        </div>
+        <div>
+          <dt className="text-fg-muted">Simple method</dt>
+          <dd className="font-display text-2xl text-fg-muted">{formatScore(row.naive_score)}</dd>
+        </div>
+      </dl>
     </div>
   )
 }
 
+const COLUMNS: TableColumn<BacktestRow>[] = [
+  {
+    header: 'Position',
+    accessorKey: 'position',
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => (
+      <span className={cn(toneClass(positionTone(row.original.position)), 'font-bold text-tone')}>{row.original.position}</span>
+    ),
+  },
+  {
+    header: 'Player-games',
+    hideOnPhone: true,
+    accessorKey: 'n',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{row.original.n.toLocaleString()}</span>,
+  },
+  {
+    header: 'Our score',
+    accessorKey: 'model_score',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="font-semibold text-fg">{formatScore(row.original.model_score)}</span>,
+  },
+  {
+    header: 'Simple method',
+    accessorKey: 'naive_score',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{formatScore(row.original.naive_score)}</span>,
+  },
+  {
+    header: 'Trailing 3',
+    hideOnPhone: true,
+    accessorKey: 'trailing3_score',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{formatScore(row.original.trailing3_score)}</span>,
+  },
+  {
+    header: 'Marcel',
+    hideOnPhone: true,
+    accessorKey: 'marcel_score',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{formatScore(row.original.marcel_score)}</span>,
+  },
+  {
+    header: 'Better than simple method',
+    accessorKey: 'improvement_vs_naive_pct',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <ImprovementCell pct={row.original.improvement_vs_naive_pct} />,
+  },
+]
+
 export function SeasonReview() {
-  const [selectedSeason, setSelectedSeason] = useState<number>(2025)
-  // Must be a stat the shipped backtest artifact actually covers. fantasy_ppr
-  // is not in it, so the page's default request returned 503 and every metric
-  // rendered as an em-dash. See BACKTEST_STATS.
-  const [selectedStat, setSelectedStat] = useState<string>('receiving_yards')
-  const [selectedPositions, setSelectedPositions] = useState<string[]>(['WR', 'RB', 'TE', 'QB'])
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
+  const [selectedStat, setSelectedStat] = useState('receiving_yards')
+  const [chosen, setChosen] = useState<string[]>([...POSITIONS])
 
   const { data: currentSeasonMeta } = useCurrentSeason()
   const currentSeason = currentSeasonMeta?.season
 
-  const { data: backtest, isLoading, error } = useBacktest({
-    stat: selectedStat,
-    positions: selectedPositions,
-  })
+  const { data, isLoading, isError, error, refetch } = useBacktest({ stat: selectedStat })
 
-  const seasonMetrics = useMemo(() => {
-    if (!backtest?.by_season) return []
-    return backtest.by_season.filter((m) => m.season === selectedSeason)
-  }, [backtest, selectedSeason])
+  const seasons = useMemo(() => (data ? [...data.seasons].sort((a, b) => b - a) : []), [data])
+  const season = selectedSeason !== null && seasons.includes(selectedSeason) ? selectedSeason : (seasons[0] ?? null)
+  const seasonItems = useMemo(() => seasons.map((s) => ({ value: String(s), label: `${s} Season` })), [seasons])
 
-  const columns: TableColumn<SeasonMetrics>[] = useMemo(
-    () => [
-      {
-        header: 'Position',
-        accessorKey: 'position',
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-          <span className={clsx(toneClass(positionTone(row.original.position)), 'font-bold text-tone')}>
-            {row.original.position}
-          </span>
-        ),
-      },
-      {
-        header: 'Games',
-        accessorKey: 'n_games',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-          <span className="text-fg-muted">{row.original.n_games}</span>
-        ),
-      },
-      {
-        header: 'Our average miss',
-        accessorKey: 'stack_mae',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-          <span className="font-semibold text-fg">{row.original.stack_mae.toFixed(2)}</span>
-        ),
-      },
-      {
-        header: 'Our big-miss penalty',
-        accessorKey: 'stack_rmse',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-          <span className="text-fg-muted">{row.original.stack_rmse.toFixed(2)}</span>
-        ),
-      },
-      {
-        header: 'Our range quality',
-        accessorKey: 'stack_crps',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-          <span className="text-fg-muted">{row.original.stack_crps.toFixed(2)}</span>
-        ),
-      },
-      {
-        header: 'Simple-method average miss',
-        accessorKey: 'naive_mae',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-          <span className="text-fg-muted">{row.original.naive_mae.toFixed(2)}</span>
-        ),
-      },
-      {
-        header: 'In-range rate',
-        accessorKey: 'coverage_80',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => {
-          const inBand =
-            row.original.coverage_80 >= 0.75 && row.original.coverage_80 <= 0.85
-          return (
-            <span className={`font-semibold ${inBand ? 'text-positive' : 'text-warning'}`}>
-              {(row.original.coverage_80 * 100).toFixed(1)}%
-            </span>
-          )
-        },
-      },
-      {
-        header: 'Better than simple method',
-        accessorKey: 'baseline_improvement_pct',
-        align: 'right',
-        mono: true,
-        cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => {
-          const gain = row.original.baseline_improvement_pct
-          return (
-            <span className={`font-semibold ${gain >= 0 ? 'text-positive' : 'text-negative'}`}>
-              {gain >= 0 ? '+' : ''}
-              {/* Already a percentage in the backtest artifact, unlike
-                  coverage_80, which is a fraction. Scaling it again
-                  rendered a -20.05% regression as -2005.1%. */}
-              {gain.toFixed(1)}%
-            </span>
-          )
-        },
-      },
-    ],
-    [],
+  const stats = useMemo(() => (data ? statsIn(data.available) : [selectedStat]), [data, selectedStat])
+  const statItems = useMemo(() => stats.map((s) => ({ value: s, label: statLabel(s) })), [stats])
+  const hasRows = useMemo(() => (data ? positionsWithRows(data.available, selectedStat) : new Set<string>()), [data, selectedStat])
+
+  const positions = useMemo(() => {
+    const kept = chosen.filter((p) => hasRows.has(p))
+    return kept.length > 0 ? kept : POSITIONS.filter((p) => hasRows.has(p))
+  }, [chosen, hasRows])
+
+  const rows = useMemo(
+    () =>
+      data
+        ? data.rows
+            .filter((r) => r.season === season && positions.includes(r.position))
+            .sort((a, b) => POSITIONS.indexOf(a.position as (typeof POSITIONS)[number]) - POSITIONS.indexOf(b.position as (typeof POSITIONS)[number]))
+        : [],
+    [data, season, positions],
   )
+  const verdict = useMemo(() => verdictOf(rows), [rows])
+  const metricLabel = rows[0]?.metric_label
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-line/60 pb-5">
+      <header className="flex flex-col justify-between gap-4 border-b border-line/60 pb-5 md:flex-row md:items-center">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold font-display tracking-wider text-fg">
-              Season Review
-            </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-info/10 text-info border border-info/20">
-              Accuracy & Historical Evaluation
-            </span>
+          <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Season Review</h1>
+          <p className="mt-1 text-sm text-fg-muted">How our past projections compared with what actually happened.</p>
+        </div>
+        {seasonItems.length > 0 && season !== null && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-fg-muted" id="season-label">Season:</span>
+            <Select items={seasonItems} value={String(season)} onValueChange={(v) => { if (v) setSelectedSeason(Number(v)) }}>
+              <SelectTrigger aria-labelledby="season-label" className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {seasonItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <p className="text-xs text-fg-muted mt-1">
-            How our past projections compared with what actually happened.
-          </p>
+        )}
+      </header>
+
+      <p className="text-sm text-fg-muted">
+        <span className="font-semibold text-fg">Past results only{data && data.seasons.length > 0 ? ` (${data.seasons[0]}–${data.seasons[data.seasons.length - 1]})` : ''}. </span>
+        {currentSeason ? `This season (${currentSeason}) is on the ` : 'This season is on the '}
+        <Link to="/projections" className="text-accent underline-offset-4 hover:underline">Current Season</Link> page.
+      </p>
+
+      {isLoading && (
+        <div className="flex flex-col gap-6" role="status" aria-busy="true" aria-label="Loading results">
+          <div className="skeleton h-32 rounded-xl" />
+          <div className="skeleton h-14 rounded-xl" />
+          <div className="skeleton h-64 rounded-xl" />
         </div>
+      )}
+      {isError && (isEvidenceUnavailable(error) ? <EvidenceUnavailable onRetry={() => void refetch()} /> : <ErrorBanner error={error} onRetry={() => void refetch()} />)}
 
-        {/* Season selector limited to historical results 2024-2025 */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-fg-muted" id="season-label">Season:</span>
-          <Select
-            items={SEASON_ITEMS}
-            value={String(selectedSeason)}
-            onValueChange={(v) => { if (v) setSelectedSeason(Number(v)) }}
-          >
-            <SelectTrigger aria-labelledby="season-label" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SEASON_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      {data && season !== null && (
+        <>
+          <EvidenceVerdict
+            verdict={verdict}
+            noun={verdict.cell_seasons === 1 ? 'position' : 'positions'}
+            tableUrl={data.table_url}
+            lead={`${statLabel(selectedStat)}, ${season}`}
+          />
 
-      {/* Results notice */}
-      <div className="p-4 rounded-xl bg-surface-overlay/60 border border-line/80 flex items-start gap-3">
-        <div className="text-xs text-fg-muted leading-relaxed">
-          <span className="font-semibold text-fg">Past results only (2024–2025): </span>
-          These scores compare our projections against what actually happened in those seasons.
-          This season{currentSeason ? ` (${currentSeason})` : ''} is on the <strong className="text-accent">Current Season</strong> page.
-        </div>
-      </div>
-
-      {backtest?.data_freshness && <DataStalenessWarning dataFreshness={backtest.data_freshness} />}
-
-      {/* Control bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-surface-raised/40 p-4 rounded-xl border border-line/40">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
-          <Select
-            items={STAT_ITEMS}
-            value={selectedStat}
-            onValueChange={(v) => { if (v) setSelectedStat(v) }}
-          >
-            <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STAT_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <ToggleGroup
-          multiple
-          aria-label="Positions"
-          value={selectedPositions}
-          onValueChange={(next) => { if (next.length > 0) setSelectedPositions(next) }}
-        >
-          {POSITIONS.map((pos) => (
-            <ToggleGroupItem key={pos} value={pos} tone={positionTone(pos)}>
-              {pos}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      {/* Main Content */}
-      {isLoading ? (
-        <LoadingSpinner />
-      ) : error ? (
-        <ErrorBanner error={error} />
-      ) : (
-        <div className="flex flex-col gap-6">
-          {/* Top Aggregate Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <MetricCard
-              title="Average miss"
-              value={backtest?.overall_mae != null ? backtest.overall_mae.toFixed(2) : '—'}
-              subtitle="Mean absolute error, in points"
-              tone="info"
-            />
-            <MetricCard
-              title="Big-miss penalty"
-              value={backtest?.overall_rmse != null ? backtest.overall_rmse.toFixed(2) : '—'}
-              subtitle="Root mean squared error; large misses count extra"
-              tone="positive"
-            />
-            <MetricCard
-              title="Range quality"
-              value={backtest?.overall_crps != null ? backtest.overall_crps.toFixed(2) : '—'}
-              subtitle="How well the predicted range matched reality"
-              tone="highlight"
-            />
-            <MetricCard
-              title="Evaluated Sample Count"
-              value={seasonMetrics.reduce((sum, m) => sum + (m.n_games || 0), 0)}
-              subtitle={`${selectedSeason} player-game observations`}
-              tone="warning"
-            />
-          </div>
-
-          {/* By-Position Breakdown Table */}
-          <div className="rounded-xl overflow-hidden bg-panel-gradient border border-white/[0.06]">
-            <div className="p-4 border-b border-line/50 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-fg">
-                By position ({selectedSeason})
-              </h2>
-              <span className="text-xs text-fg-muted">Stat: {STAT_LABELS[selectedStat] || selectedStat}</span>
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line/40 bg-surface-raised/40 p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
+              <Select items={statItems} value={selectedStat} onValueChange={(v) => { if (v) setSelectedStat(v) }}>
+                <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {statItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-
-            <div className="overflow-x-auto">
-              <DataTable columns={columns} data={seasonMetrics} className="text-xs" />
-            </div>
+            <PositionFilter hasRows={hasRows} value={positions} onChange={setChosen} />
           </div>
-        </div>
+
+          {rows.length === 0 ? (
+            <p className="rounded-xl border border-line/40 py-8 text-center text-sm text-fg-muted">
+              There are no results for this selection. Pick another season, position or stat.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {rows.map((r) => (
+                  <PositionCard key={r.position} row={r} />
+                ))}
+              </div>
+
+              <section className="overflow-hidden rounded-xl border border-white/[0.06] bg-panel-gradient">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 p-4">
+                  <h2 className="text-sm font-bold text-fg">By position ({season})</h2>
+                  {metricLabel && <span className="text-xs text-fg-muted">Scores shown: {metricLabel}</span>}
+                </div>
+                <div className="relative overflow-x-auto">
+                  <DataTable columns={COLUMNS} data={rows} className="text-xs" />
+                </div>
+              </section>
+            </>
+          )}
+
+          <section className="rounded-xl border border-line/40 p-5">
+            <h2 className="mb-3 text-sm font-bold text-fg">How to read this</h2>
+            <BaselineGuide cohortRules={data.cohort_rules} />
+          </section>
+        </>
       )}
     </div>
   )

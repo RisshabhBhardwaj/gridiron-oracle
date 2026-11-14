@@ -473,6 +473,8 @@ Code SHA: `GIT_COMMIT_SHA` from `.env` is passed as the `CODE_GIT_SHA` build arg
 
 `--allow-no-availability` (manual only, never in a unit) stores every row with status `Unknown` instead of refusing when no snapshot exists. The run is logged, and the report and summary carry `availability_override`. This needs migration 0029. The API returns the value in `availability_status`; showing it in the UI is a frontend change not made here.
 
+Pinning the fitted base models: the producer needs `artifacts.base_models` in `releases/current_baseline.json`. Add them with `scripts/pin_artifact_group.py --group base_models ...` and the re-freeze steps in "Adding a pinned group to the served release (re-freeze)" below; do not edit the manifest by hand.
+
 Inactives: the NFL publishes game-day inactives about 90 minutes before kickoff. The Tuesday refresh sees only injury reports, so a Questionable player is served with his status shown. Neither the weekly refresh nor the Friday job sees inactives; do not expect either to.
 
 #### Friday availability refresh (`gridiron-availability.timer`, not enabled)
@@ -497,6 +499,24 @@ docker compose --profile training exec -T training python3 scripts/weekly_refres
 ```
 
 `--dump-path` must be an existing, non-empty file, or the command refuses with exit 2 before touching anything. The delete and the new insert run in one transaction inside `run_forward`, so a failure leaves the old week served untouched; the dump is kept as a second safety net. It refuses a week that has scores or has kicked off. It is never in a systemd unit or compose file, and a test fails if one ever carries it.
+
+## Adding a pinned group to the served release (re-freeze)
+
+Used 2026-11-14 to pin `causal_evals` (C2 `a056891`, C3 `173cfe7`); decision 0012 will use it for `base_models`. A required runtime check that reads a group fails until the group has digests, and `freeze_baseline.py` refuses a blocked runtime, so pin first, then freeze.
+
+1. On the Mac, commit the files under `releases/candidates/<release>/`, then pin them and commit (this is C2):
+   `python scripts/pin_artifact_group.py --group <name> releases/candidates/<release>/<dir>/*`
+   It refuses an existing group, paths outside `releases/candidates/`, uncommitted files and Git LFS pointers. Add `--dry-run` to check first.
+2. Run the gate, secret-scan and push. Sync to the box (rule above: only descendants of the served C3).
+3. On the box: check `training` is idle; back up `.env`, `current_baseline.json` and tag the `etl` and `api` images `pre-refreeze-<STAMP>`.
+4. Set `.env` `GIT_COMMIT_SHA` to C2's full sha. `docker compose build etl`, then recreate `training`.
+5. Freeze inside `training` with the current approved ids (read them from `projection_policy.approved_pipeline_run_ids`):
+   `docker compose --profile training exec -T -e APPROVED_PIPELINE_RUN_IDS="<ids>" training python3 scripts/freeze_baseline.py`
+   Check `git_commit` = C2, `git_dirty` false, the new group listed, `DATABASE_URL` masked.
+6. `docker compose --profile training cp training:/app/releases/current_baseline.json /srv/gridiron/releases/current_baseline.json`; rsync it to the Mac, compare digests, commit (C3), gate, secret-scan, push.
+7. Sync C3, `docker compose build api`, `docker compose up -d --no-deps api`. Check `/health` (`artifact_mode_ready` true), `/integrity` (the new group's check `ok`) and the endpoint that reads it.
+
+The api image bakes the manifest, so the live frontend must already understand any new response shape before step 7; otherwise deploy the frontend in the same window. Rollback: restore the `.env` backup and retag the `pre-refreeze` images.
 
 ## Files that land
 

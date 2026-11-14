@@ -327,43 +327,73 @@ export interface ScenarioResponse {
 
 // ── backtest.py ───────────────────────────────────────────────────────────────
 
-export interface CalibrationPoint {
-  predicted_prob: number
-  observed_freq: number
-  n_samples: number
+export interface MetricImprovement {
+  /** Player-stat seasons scored on this metric. */
+  cell_seasons: number
+  /** Average percent the model score sits below the simple method's; positive = better. */
+  mean_pct: number
 }
 
-export interface SeasonMetrics {
-  season: number
-  position: string
+export interface BacktestVerdict {
+  cell_seasons: number
+  beat_naive: number
+  beat_trailing3: number
+  beat_marcel: number
+  beat_both: number
+  causal_check_passed: number
+  /**
+   * Improvement over the simple method per scoring metric ("mae", "poisson_deviance").
+   * Different metrics are on different scales and are never averaged together.
+   */
+  improvement_by_metric: Record<string, MetricImprovement>
+}
+
+export interface BacktestRow {
   stat: string
-  n_games: number
-  stack_mae: number
-  stack_rmse: number
-  stack_crps: number
-  naive_mae: number
-  coverage_80: number
-  coverage_50: number
-  baseline_improvement_pct: number
+  position: string
+  season: number
+  /** "mae" or "poisson_deviance" */
+  metric: string
+  /** Plain-words name of the score. Lower is better. */
+  metric_label: string
+  /** Player-games compared. */
+  n: number
+  cohort_rule: string
+  model_score: number
+  /** The simple method: repeat the player's last game. */
+  naive_score: number
+  trailing3_score: number
+  marcel_score: number
+  beats_naive: boolean
+  beats_trailing3: boolean
+  beats_marcel: boolean
+  improvement_vs_naive_pct: number | null
+}
+
+export interface BacktestCell {
+  stat: string
+  position: string
+  metric: string
+  metric_label: string
 }
 
 export interface BacktestResponse {
-  model_version: string
+  release: string
+  generated_at: string | null
   seasons: number[]
+  stat: string | null
   positions: string[]
-  stat: string
-  overall_mae: number
-  overall_rmse: number
-  overall_crps: number
-  brier_score: number | null
-  calibration: CalibrationPoint[]
-  simulated_pnl: number | null
-  sharpe_ratio: number | null
-  max_drawdown: number | null
-  by_season: SeasonMetrics[]
-  data_source: string
-  metric_notes: Record<string, string>
-  data_freshness: string
+  /** Counts for the requested stat. */
+  verdict: BacktestVerdict
+  /** Counts for the whole release. */
+  release_verdict: BacktestVerdict
+  cohort_rules: string[]
+  rows: BacktestRow[]
+  /** Every stat and position the release measures. */
+  available: BacktestCell[]
+  /** id -> plain sentence for what is not published yet. */
+  not_measured: Record<string, string>
+  table_url: string
 }
 
 // ── settings.py ───────────────────────────────────────────────────────────────

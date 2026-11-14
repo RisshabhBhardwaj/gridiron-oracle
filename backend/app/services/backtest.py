@@ -1,375 +1,358 @@
 """
 backend/app/services/backtest.py
 
-Backtest service — wraps ml/backtest.py for the /backtest API endpoint.
+Backtest evidence for the /backtest endpoint and the Backtest and Season Review
+pages.
 
-Loads pre-computed backtest CSV results if available, otherwise returns
-a summary from the DB backtest_results table.
+Source: the served release's pinned causal evals (``artifacts.causal_evals`` in
+``releases/current_baseline.json``): ``causal_baseline_beats.json`` plus one
+``eval_causal_<stat>_<position>.csv`` per cell. Every file is read through
+``ml.artifact_manifest`` and checked against its SHA-256. There is no fallback:
+a missing pin, a missing file or a digest mismatch raises ``EvalsUnavailable``
+and the API answers 503. The older ml-folder CSV and the database results table
+are no longer read; they do not describe the served release.
 
-The API requires /backtest to include:
-  MAE, RMSE, Brier score, simulated P&L, Sharpe ratio,
-  max drawdown, calibration data points.
+The evals measure, per (stat, position, season), a model score against the
+simple method (last game), trailing-3 and Marcel baselines, on a causal cohort.
+They do not measure interval coverage, CRPS, Brier, P&L or calibration, so none
+of those is returned (see ``NOT_MEASURED``).
 """
 
 from __future__ import annotations
 
+import csv
+import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timezone
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-
-from backend.app.core.runtime_mode import ArtifactRequiredError, fallbacks_allowed
+from backend.app.core.runtime_mode import ArtifactRequiredError
+from ml.artifact_manifest import ArtifactManifest, GroupNotPinned, ManifestError, get_manifest
 
 logger = logging.getLogger(__name__)
 
-_RESULTS_DIR = Path(__file__).parents[3] / "ml" / "backtest_results"
+GROUP_KEY = "causal_evals"
+BEATS_NAME = "causal_baseline_beats.json"
+CSV_PREFIX = "eval_causal_"
+
+#: Plain-words statement of what the evals do not cover. Keys are stable ids.
+NOT_MEASURED: dict[str, str] = {
+    "coverage": "We don't yet publish how often outcomes land inside our range.",
+    "crps": "We don't yet publish how well our full ranges match outcomes.",
+    "brier": "We don't yet publish scores for yes/no events.",
+    "pnl": "We don't yet publish simulated betting results.",
+    "calibration": "We don't yet publish whether our stated chances match what happened.",
+}
+
+#: The only message a caller should show a user when the evidence is unavailable.
+UNAVAILABLE_MESSAGE = "Backtest results for the current release aren't available right now."
+
+
+class EvalsUnavailable(ArtifactRequiredError):
+    """The pinned evals cannot be read or do not verify. The API answers 503."""
+
+
+class EvalsNotPinned(EvalsUnavailable):
+    """The release manifest has no ``causal_evals`` pin yet (the release was not re-frozen with it)."""
+
+
+class UnknownStat(ValueError):
+    """The release has no eval for the requested stat."""
 
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
 # ---------------------------------------------------------------------------
 
-@dataclass
-class CalibrationPoint:
-    predicted_prob: float
-    observed_freq:  float
-    n_samples:      int
+@dataclass(frozen=True)
+class EvalRow:
+    stat: str
+    position: str
+    season: int
+    metric: str
+    metric_label: str
+    n: int
+    cohort_rule: str
+    model_score: float
+    naive_score: float
+    trailing3_score: float
+    marcel_score: float
+    beats_naive: bool
+    beats_trailing3: bool
+    beats_marcel: bool
+    causal_ok: bool
+
+    @property
+    def improvement_vs_naive_pct(self) -> Optional[float]:
+        """Percent the model score sits below the simple method's (positive = better)."""
+        if not self.naive_score:
+            return None
+        return (self.naive_score - self.model_score) / self.naive_score * 100.0
 
 
-@dataclass
-class SeasonMetrics:
-    season:                   int
-    position:                 str
-    stat:                     str
-    n_games:                  int
-    stack_mae:                float
-    stack_rmse:               float
-    stack_crps:               float
-    naive_mae:                float
-    coverage_80:              float
-    coverage_50:              float
-    baseline_improvement_pct: float
+@dataclass(frozen=True)
+class Cell:
+    stat: str
+    position: str
+    metric: str
+    metric_label: str
+
+
+@dataclass(frozen=True)
+class MetricImprovement:
+    """Mean percent below the simple method's score, over cells that share one metric."""
+
+    cell_seasons: int
+    mean_pct: float
+
+
+@dataclass(frozen=True)
+class Verdict:
+    cell_seasons: int
+    beat_naive: int
+    beat_trailing3: int
+    beat_marcel: int
+    beat_both: int
+    causal_check_passed: int
+    #: Keyed by metric ("mae", "poisson_deviance"). Scores on different metrics are on
+    #: different scales, so a percent is never averaged across them.
+    improvement_by_metric: dict[str, MetricImprovement]
+
+
+@dataclass(frozen=True)
+class ReleaseEvals:
+    release: str
+    generated_at: Optional[str]
+    rows: tuple[EvalRow, ...]
+    cells: tuple[Cell, ...]
+    cohort_rules: tuple[str, ...]
 
 
 @dataclass
 class BacktestSummary:
-    """Aggregated backtest metrics required by the API contract."""
-    model_version:            str
-    seasons:                  list[int]
-    positions:                list[str]
-    stat:                     str
-    overall_mae:              float
-    overall_rmse:             float
-    overall_crps:             float
-    brier_score:              Optional[float]
-    simulated_pnl:            Optional[float]
-    sharpe_ratio:             Optional[float]
-    max_drawdown:             Optional[float]
-    calibration:              list[CalibrationPoint]
-    by_season:                list[SeasonMetrics]
-    data_source:              str
-    metric_notes:             dict[str, str]
-    data_freshness:           datetime
+    release: str
+    generated_at: Optional[str]
+    seasons: list[int]
+    stat: Optional[str]
+    positions: list[str]
+    verdict: Verdict
+    release_verdict: Verdict
+    cohort_rules: list[str]
+    rows: list[EvalRow]
+    available: list[Cell]
+    not_measured: dict[str, str] = field(default_factory=lambda: dict(NOT_MEASURED))
 
 
 # ---------------------------------------------------------------------------
-# BacktestService
+# Labels
 # ---------------------------------------------------------------------------
+
+def metric_label(stat: str, metric: str) -> str:
+    """Plain words for how a cell is scored. Deviance is never called an 'average miss'."""
+    if metric == "mae":
+        unit = "points" if stat in {"fantasy_ppr", "ppr_points"} else "yards" if stat.endswith("_yards") else "units"
+        return f"Average miss, in {unit} (lower is better)"
+    if metric == "poisson_deviance":
+        return "Count error score, Poisson deviance (lower is better)"
+    return f"{metric.replace('_', ' ').capitalize()} (lower is better)"
+
+
+# ---------------------------------------------------------------------------
+# Loading
+# ---------------------------------------------------------------------------
+
+_REQUIRED_COLUMNS = (
+    "stat", "metric", "n", "cohort_rule", "model_score", "naive_score", "trailing3_score",
+    "marcel_score", "beats_naive", "beats_trailing3", "beats_marcel",
+    "max_train_season_ok", "season", "position",
+)
+
+_lock = threading.Lock()
+_PARSED: dict[tuple[tuple[str, str], ...], ReleaseEvals] = {}
+
+
+def clear_cache() -> None:
+    """Drop parsed evals (tests, deliberate re-freeze)."""
+    with _lock:
+        _PARSED.clear()
+
+
+def _default_manifest() -> ArtifactManifest:
+    return get_manifest()
+
+
+def _flag(value: str) -> bool:
+    if value not in {"True", "False"}:
+        raise ValueError(f"expected True/False, got {value!r}")
+    return value == "True"
+
+
+def _read_csv(path: Path) -> list[EvalRow]:
+    out: list[EvalRow] = []
+    with path.open(newline="") as fh:
+        reader = csv.DictReader(fh)
+        missing = [c for c in _REQUIRED_COLUMNS if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError(f"{path.name} is missing columns {missing}")
+        for r in reader:
+            out.append(EvalRow(
+                stat=r["stat"],
+                position=r["position"].upper(),
+                season=int(r["season"]),
+                metric=r["metric"],
+                metric_label=metric_label(r["stat"], r["metric"]),
+                n=int(r["n"]),
+                cohort_rule=r["cohort_rule"],
+                model_score=float(r["model_score"]),
+                naive_score=float(r["naive_score"]),
+                trailing3_score=float(r["trailing3_score"]),
+                marcel_score=float(r["marcel_score"]),
+                beats_naive=_flag(r["beats_naive"]),
+                beats_trailing3=_flag(r["beats_trailing3"]),
+                beats_marcel=_flag(r["beats_marcel"]),
+                causal_ok=_flag(r["max_train_season_ok"]),
+            ))
+    return out
+
+
+def _both(row: EvalRow) -> bool:
+    return row.beats_naive and row.beats_trailing3
+
+
+def _check_against_beats(rows: list[EvalRow], beats: dict) -> None:
+    """The summary JSON and the CSVs are pinned together; they must agree."""
+    headline = beats.get("headline") or {}
+    both = sum(_both(r) for r in rows)
+    if headline.get("beat_both") != both or headline.get("cell_seasons") != len(rows):
+        raise ValueError(
+            f"beats headline {headline} disagrees with the rows: "
+            f"{both}/{len(rows)} beat both"
+        )
+    per_cell: dict[tuple[str, str], list[EvalRow]] = {}
+    for r in rows:
+        per_cell.setdefault((r.stat, r.position), []).append(r)
+    for c in beats.get("cells", []):
+        mine = per_cell.get((c["stat"], c["position"]), [])
+        if (
+            len(mine) != c["cell_seasons"]
+            or sum(_both(r) for r in mine) != c["beat_both_count"]
+            or any(r.metric != c["metric"] for r in mine)
+        ):
+            raise ValueError(f"beats cell {c['stat']}/{c['position']} disagrees with its rows")
+
+
+def load_release_evals(manifest: Optional[ArtifactManifest] = None) -> ReleaseEvals:
+    """Read and verify the pinned evals. Raises ``EvalsUnavailable`` on any problem."""
+    try:
+        manifest = manifest or _default_manifest()
+        files = manifest.resolve_group(GROUP_KEY)
+        key = tuple(sorted((rel, manifest.digests[rel]) for rel in files))
+        with _lock:
+            cached = _PARSED.get(key)
+        if cached is not None:
+            return cached
+
+        beats_rel = next((r for r in files if Path(r).name == BEATS_NAME), None)
+        if beats_rel is None:
+            raise ValueError(f"{GROUP_KEY} pins no {BEATS_NAME}")
+        beats = json.loads(files[beats_rel].read_text())
+        rows: list[EvalRow] = []
+        for rel, path in files.items():
+            if Path(rel).name.startswith(CSV_PREFIX) and rel.endswith(".csv"):
+                rows.extend(_read_csv(path))
+        if not rows:
+            raise ValueError(f"{GROUP_KEY} pins no eval CSVs")
+        _check_against_beats(rows, beats)
+
+        rows.sort(key=lambda r: (r.stat, r.position, r.season))
+        cells = tuple(sorted(
+            {(r.stat, r.position, r.metric): Cell(r.stat, r.position, r.metric, r.metric_label)
+             for r in rows}.values(),
+            key=lambda c: (c.stat, c.position),
+        ))
+        evals = ReleaseEvals(
+            release=Path(beats_rel).parent.parent.name,
+            generated_at=beats.get("generated_at"),
+            rows=tuple(rows),
+            cells=cells,
+            cohort_rules=tuple(sorted({r.cohort_rule for r in rows})),
+        )
+    except GroupNotPinned as exc:
+        logger.error("causal evals unavailable: %s", exc)
+        raise EvalsNotPinned(str(exc)) from exc
+    except (ManifestError, OSError, ValueError, KeyError, TypeError) as exc:
+        logger.error("causal evals unavailable: %s", exc)
+        raise EvalsUnavailable(str(exc)) from exc
+    with _lock:
+        _PARSED[key] = evals
+    return evals
+
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
+def _improvement_by_metric(rows: list[EvalRow] | tuple[EvalRow, ...]) -> dict[str, MetricImprovement]:
+    gains: dict[str, list[float]] = {}
+    for r in rows:
+        g = r.improvement_vs_naive_pct
+        if g is not None:
+            gains.setdefault(r.metric, []).append(g)
+    return {m: MetricImprovement(len(v), sum(v) / len(v)) for m, v in sorted(gains.items())}
+
+
+def verdict_of(rows: list[EvalRow] | tuple[EvalRow, ...]) -> Verdict:
+    return Verdict(
+        cell_seasons=len(rows),
+        beat_naive=sum(r.beats_naive for r in rows),
+        beat_trailing3=sum(r.beats_trailing3 for r in rows),
+        beat_marcel=sum(r.beats_marcel for r in rows),
+        beat_both=sum(_both(r) for r in rows),
+        causal_check_passed=sum(r.causal_ok for r in rows),
+        improvement_by_metric=_improvement_by_metric(rows),
+    )
+
 
 class BacktestService:
-    """
-    Loads and aggregates backtest results for the API.
+    """Aggregates the served release's pinned causal evals for the API."""
 
-    Priority:
-      1. Load from CSV file in ml/backtest_results/ (fast, no DB).
-      2. Query backtest_results table in PostgreSQL.
-      3. Return synthetic placeholder if neither available.
-    """
+    def __init__(self, manifest: Optional[ArtifactManifest] = None) -> None:
+        self._manifest = manifest
 
-    def __init__(self, db_url: str, model_version: str = "latest") -> None:
-        self._db_url = db_url
-        self._model_version = model_version
-
-    # ------------------------------------------------------------------
-    # Public
-    # ------------------------------------------------------------------
+    def evals(self) -> ReleaseEvals:
+        return load_release_evals(self._manifest)
 
     def get_summary(
         self,
-        stat: str = "receiving_yards",
-        positions: list[str] | None = None,
-        model_version: str | None = None,
+        stat: Optional[str] = None,
+        positions: Optional[list[str]] = None,
     ) -> BacktestSummary:
         """
-        Return aggregated backtest metrics for the /backtest endpoint.
+        Release-wide verdict plus the rows for the selection.
 
-        Loads from CSV if available, falls back to DB, then synthetic.
+        ``stat=None`` selects every stat. ``positions=None`` selects every
+        position. An unknown stat raises ``UnknownStat``; a known stat with no
+        row for the chosen positions returns an empty selection.
         """
-        pos = positions or ["WR", "RB", "TE", "QB"]
-        mv = model_version or self._model_version
-
-        rows = self._load_csv(stat)
-        data_source = "csv"
-        if not rows:
-            rows = self._load_db(stat, pos, mv)
-            data_source = "db"
-
-        if not rows:
-            if not fallbacks_allowed():
-                raise ArtifactRequiredError(
-                    "Backtest artifacts unavailable while PRODUCT_MODE=artifact_backed"
-                )
-            logger.warning("No backtest results found — returning placeholder")
-            return self._placeholder_summary(stat, pos, mv)
-
-        return self._aggregate(rows, stat, pos, mv, data_source)
-
-    # ------------------------------------------------------------------
-    # Loaders
-    # ------------------------------------------------------------------
-
-    def _load_csv(self, stat: str) -> list[dict] | None:
-        """Scan ml/backtest_results/ for a CSV matching the stat."""
-        import pandas as pd
-
-        if not _RESULTS_DIR.exists():
-            return None
-
-        # Pick the latest run by *filename*, which carries the run stamp.
-        # Sorting by st_mtime made the choice depend on filesystem timestamps: a
-        # `touch` on an old result, or a fresh clone where every mtime is the
-        # checkout time, silently changes which backtest gets reported. The key
-        # must stay a scalar — sorting by the bare `p.stat()` struct raises
-        # TypeError as soon as more than one CSV exists.
-        candidates = sorted(
-            _RESULTS_DIR.glob("backtest_*.csv"),
-            key=lambda p: p.name,
-            reverse=True,
-        )
-        if not candidates:
-            return None
-
-        path = candidates[0]
-        try:
-            df = pd.read_csv(path)
-            if "stat" in df.columns:
-                df = df[df["stat"] == stat]
-            return df.to_dict("records") if not df.empty else None
-        except Exception as exc:
-            logger.warning("CSV load error: %s", exc)
-            return None
-
-    def _load_db(self, stat: str, positions: list[str], model_version: str) -> list[dict] | None:
-        """Load from backtest_results DB table if it exists."""
-        import psycopg2
-
-        placeholders = ",".join(["%s"] * len(positions))
-        try:
-            conn = psycopg2.connect(self._db_url)
-            cur = conn.cursor()
-            cur.execute(
-                f"""
-                SELECT eval_season, position, stat, n_games,
-                       stack_mae, stack_rmse, stack_crps,
-                       naive_mae, coverage_80, coverage_50,
-                       baseline_improvement_pct
-                FROM   backtest_results
-                WHERE  stat     = %s
-                  AND  position IN ({placeholders})
-                ORDER BY eval_season, position
-                """,
-                [stat] + positions,
-            )
-            rows = cur.fetchall()
-            cols = [d[0] for d in cur.description]
-            conn.close()
-            return [dict(zip(cols, r)) for r in rows] if rows else None
-        except Exception as exc:
-            logger.debug("backtest DB load error: %s", exc)
-            return None
-
-    # ------------------------------------------------------------------
-    # Aggregation
-    # ------------------------------------------------------------------
-
-    def _aggregate(
-        self,
-        rows: list[dict],
-        stat: str,
-        positions: list[str],
-        model_version: str,
-        data_source: str,
-    ) -> BacktestSummary:
-        """Aggregate per-(season, position) rows into a BacktestSummary."""
-        import pandas as pd
-
-        df = pd.DataFrame(rows)
-
-        # Rename column aliases between CSV and DB schemas
-        col_map = {
-            "eval_season": "season",
-            "stack_mae":   "stack_mae",
-            "stack_rmse":  "stack_rmse",
-            "stack_crps":  "stack_crps",
-        }
-        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
-
-        for col in ("stack_mae", "stack_rmse", "stack_crps", "naive_mae",
-                    "coverage_80", "coverage_50", "baseline_improvement_pct"):
-            if col not in df.columns:
-                df[col] = float("nan")
-
-        # ── Position filter ─────────────────────────────────────────────
-        # `positions` used to be echoed back in the response and applied to
-        # nothing. _load_csv filters on `stat` only, and there is no
-        # backtest_results table in production, so the CSV path always ran and
-        # the Season Review position chips were inert: selecting WR returned
-        # WR + RB + TE rows, and the "Evaluated Sample Count" card summed all
-        # of them. That is the reported inconsistency — WR alone and WR+TE
-        # could not be reconciled because neither was actually a WR figure.
-        # (The DB path did filter, so the two loaders disagreed as well.)
-        if "position" in df.columns and positions:
-            wanted = {str(p).upper() for p in positions}
-            df = df[df["position"].astype(str).str.upper().isin(wanted)]
-            rows = df.to_dict("records")
-            if df.empty:
-                logger.warning(
-                    "No backtest rows for stat=%s positions=%s", stat, sorted(wanted)
-                )
-
-        # ── Overall metrics ─────────────────────────────────────────────
-        # Weighted by n_games, not a flat mean over (season, position) rows.
-        # An unweighted mean gave a TE season with 1,301 evaluated player-games
-        # the same say as a WR season with 2,500, so the headline MAE was not
-        # the error over the selected sample.
-        def _weighted(col: str) -> float:
-            if df.empty or col not in df.columns:
-                return float("nan")
-            values = df[col].astype(float)
-            weights = df["n_games"].astype(float) if "n_games" in df.columns else None
-            valid = values.notna() & (weights.notna() & (weights > 0) if weights is not None else True)
-            if not valid.any():
-                return float("nan")
-            if weights is None:
-                return float(values[valid].mean())
-            return float(np.average(values[valid], weights=weights[valid]))
-
-        overall_mae  = _weighted("stack_mae")
-        overall_rmse = _weighted("stack_rmse")
-        overall_crps = _weighted("stack_crps")
-        if not np.isfinite(overall_crps):
-            overall_crps = overall_mae
-
-        # ── Calibration reliability diagram (derived from coverage stats) ──
-        calibration = _real_calibration(df)
-
-        # ── Per-season breakdown ─────────────────────────────────────────
-        by_season: list[SeasonMetrics] = []
-        for _, row in df.iterrows():
-            by_season.append(SeasonMetrics(
-                season=int(row.get("season", row.get("eval_season", 0))),
-                position=str(row.get("position", "")),
-                stat=stat,
-                n_games=int(row.get("n_games", 0)),
-                stack_mae=float(row["stack_mae"]),
-                stack_rmse=float(row["stack_rmse"]),
-                stack_crps=float(row.get("stack_crps", row["stack_mae"])),
-                naive_mae=float(row.get("naive_mae", 0.0)),
-                coverage_80=float(row.get("coverage_80", 0.0)),
-                coverage_50=float(row.get("coverage_50", 0.0)),
-                baseline_improvement_pct=float(row.get("baseline_improvement_pct", 0.0)),
-            ))
-
-        seasons = sorted({int(r.get("season", r.get("eval_season", 0))) for r in rows})
-
+        ev = self.evals()
+        if stat is not None and stat not in {c.stat for c in ev.cells}:
+            raise UnknownStat(stat)
+        wanted = {p.upper() for p in positions} if positions else None
+        rows = [
+            r for r in ev.rows
+            if (stat is None or r.stat == stat) and (wanted is None or r.position in wanted)
+        ]
         return BacktestSummary(
-            model_version=model_version,
-            seasons=seasons,
-            positions=positions,
+            release=ev.release,
+            generated_at=ev.generated_at,
+            seasons=sorted({r.season for r in ev.rows}),
             stat=stat,
-            overall_mae=round(overall_mae, 3),
-            overall_rmse=round(overall_rmse, 3),
-            overall_crps=round(overall_crps, 3),
-            brier_score=None,
-            simulated_pnl=None,
-            sharpe_ratio=None,
-            max_drawdown=None,
-            calibration=calibration,
-            by_season=by_season,
-            data_source=data_source,
-            metric_notes={
-                "brier_score": "Unavailable for regression forecasts until the backtest pipeline emits binary-event probabilities.",
-                "simulated_pnl": "Unavailable until the project defines a real wagering policy and links forecasts to priced market data.",
-                "sharpe_ratio": "Unavailable because simulated P&L is intentionally disabled.",
-                "max_drawdown": "Unavailable because simulated P&L is intentionally disabled.",
-            },
-            data_freshness=datetime.now(timezone.utc),
+            positions=sorted(wanted) if wanted else sorted({c.position for c in ev.cells}),
+            verdict=verdict_of(rows),
+            release_verdict=verdict_of(ev.rows),
+            cohort_rules=list(ev.cohort_rules),
+            rows=rows,
+            available=list(ev.cells),
         )
-
-    def _placeholder_summary(
-        self, stat: str, positions: list[str], model_version: str
-    ) -> BacktestSummary:
-        """Return a clearly-marked placeholder when no real data exists."""
-        return BacktestSummary(
-            model_version=model_version,
-            seasons=[],
-            positions=positions,
-            stat=stat,
-            overall_mae=float("nan"),
-            overall_rmse=float("nan"),
-            overall_crps=float("nan"),
-            brier_score=None,
-            simulated_pnl=None,
-            sharpe_ratio=None,
-            max_drawdown=None,
-            calibration=[],
-            by_season=[],
-            data_source="placeholder",
-            metric_notes={
-                "overall": "No backtest CSV or database rows are available in this environment.",
-            },
-            data_freshness=datetime.now(timezone.utc),
-        )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _real_calibration(df) -> list[CalibrationPoint]:
-    """
-    Derive a calibration reliability diagram from backtest coverage statistics.
-
-    Anchors the diagram at four empirical points:
-        (0.0 → 0.0), (0.5 → coverage_50_mean), (0.8 → coverage_80_mean), (1.0 → 1.0)
-
-    Linear interpolation fills the remaining decile points (0.1 … 1.0).
-    This avoids the previous sine-curve placeholder and grounds each point in
-    real walk-forward coverage measurements.
-    """
-    n_games = int(df["n_games"].sum()) if "n_games" in df.columns else 100
-    n_per_bucket = max(n_games // 10, 1)
-
-    cov80 = float(np.clip(
-        df["coverage_80"].mean() if "coverage_80" in df.columns else 0.80, 0.0, 1.0
-    ))
-    cov50 = float(np.clip(
-        df["coverage_50"].mean() if "coverage_50" in df.columns else 0.50, 0.0, 1.0
-    ))
-
-    anchors_x = [0.0, 0.5, 0.8, 1.0]
-    anchors_y = [0.0, cov50, cov80, 1.0]
-
-    points = []
-    for i in range(1, 11):
-        pred = i / 10.0
-        obs = float(np.clip(np.interp(pred, anchors_x, anchors_y), 0.0, 1.0))
-        points.append(CalibrationPoint(
-            predicted_prob=round(pred, 1),
-            observed_freq=round(obs, 3),
-            n_samples=n_per_bucket,
-        ))
-    return points

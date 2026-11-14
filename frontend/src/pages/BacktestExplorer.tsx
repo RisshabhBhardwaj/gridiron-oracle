@@ -1,235 +1,234 @@
-import { useState, useMemo } from 'react'
-import {
-  BarChart, Bar, Legend,
-  Scatter, ZAxis, Line, ComposedChart,
-} from 'recharts'
-import type { SeasonMetrics } from '@/types/api'
+import { useMemo, useState } from 'react'
+import { Bar, BarChart, Legend, ReferenceLine } from 'recharts'
 import type { LegacyRow } from '@tanstack/react-table/legacy'
+import type { BacktestRow } from '@/types/api'
 import { DataTable, type TableColumn } from '@/components/ui/data-table'
 import { ChartFrame, ChartGrid, ChartTooltip, ChartXAxis, ChartYAxis, chartTheme } from '@/components/charts/themed-chart'
-import { useBacktest } from '@/hooks/useBacktest'
-import { BacktestPanel } from '@/components/BacktestPanel'
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { ErrorBanner } from '@/components/shared/ErrorBanner'
-import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
-import { POSITIONS, BACKTEST_STATS, STAT_LABELS } from '@/lib/constants'
-import clsx from 'clsx'
 import { Panel } from '@/components/shared/Panel'
-import { positionTone, toneClass, token, type Tone } from '@/lib/tokens'
+import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { EvidenceVerdict } from '@/components/evidence/EvidenceVerdict'
+import { EvidenceUnavailable } from '@/components/evidence/EvidenceUnavailable'
+import { BaselineGuide } from '@/components/evidence/BaselineGuide'
+import { ImprovementCell } from '@/components/evidence/ImprovementCell'
+import { PositionFilter } from '@/components/evidence/PositionFilter'
+import { useBacktest } from '@/hooks/useBacktest'
+import { POSITIONS } from '@/lib/constants'
+import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf, verdictSentence } from '@/lib/evidence'
+import { positionTone, toneClass, token } from '@/lib/tokens'
+import { cn } from '@/lib/utils'
 
-const STAT_ITEMS = BACKTEST_STATS.map((s) => ({ value: s, label: STAT_LABELS[s] || s }))
-
-function coverageTone(coverage80: number): Tone {
-  if (coverage80 >= 0.70 && coverage80 <= 0.90) return 'positive'
-  if (coverage80 >= 0.60 && coverage80 <  0.70) return 'warning'
-  return 'negative'
+function seriesColor(position: string): string {
+  const tone = positionTone(position)
+  return token(tone === 'muted' || tone === 'accent' ? 'fg-muted' : tone, 0.85)
 }
 
-const COVERAGE_COLUMNS: TableColumn<SeasonMetrics>[] = [
+const COLUMNS: TableColumn<BacktestRow>[] = [
   {
     header: 'Season',
     accessorKey: 'season',
-    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => <span className="font-medium text-fg">{row.original.season}</span>,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="font-medium text-fg">{row.original.season}</span>,
   },
   {
     header: 'Position',
     accessorKey: 'position',
-    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-      <span className={clsx(toneClass(positionTone(row.original.position)), 'text-xs font-bold text-tone')}>
-        {row.original.position}
-      </span>
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => (
+      <span className={cn(toneClass(positionTone(row.original.position)), 'font-bold text-tone')}>{row.original.position}</span>
     ),
   },
   {
-    header: 'In range (80%)',
-    accessorKey: 'coverage_80',
-    align: 'right' as const,
+    header: 'Our score',
+    accessorKey: 'model_score',
+    align: 'right',
     mono: true,
-    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-      <span className={clsx(toneClass(coverageTone(row.original.coverage_80)), 'font-bold text-tone')}>
-        {(row.original.coverage_80 * 100).toFixed(1)}%
-      </span>
-    ),
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="font-semibold text-fg">{formatScore(row.original.model_score)}</span>,
   },
   {
-    header: 'In range (50%)',
-    accessorKey: 'coverage_50',
-    align: 'right' as const,
+    header: 'Simple method',
+    accessorKey: 'naive_score',
+    align: 'right',
     mono: true,
-    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => (
-      <span className="text-fg-muted">{(row.original.coverage_50 * 100).toFixed(1)}%</span>
-    ),
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{formatScore(row.original.naive_score)}</span>,
   },
   {
-    header: 'Games',
-    accessorKey: 'n_games',
-    align: 'right' as const,
+    header: 'Trailing 3',
+    hideOnPhone: true,
+    accessorKey: 'trailing3_score',
+    align: 'right',
     mono: true,
-    cell: ({ row }: { row: LegacyRow<SeasonMetrics> }) => <span className="text-fg-muted">{row.original.n_games}</span>,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{formatScore(row.original.trailing3_score)}</span>,
+  },
+  {
+    header: 'Marcel',
+    hideOnPhone: true,
+    accessorKey: 'marcel_score',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{formatScore(row.original.marcel_score)}</span>,
+  },
+  {
+    header: 'Better than simple method',
+    accessorKey: 'improvement_vs_naive_pct',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <ImprovementCell pct={row.original.improvement_vs_naive_pct} />,
+  },
+  {
+    header: 'Player-games',
+    hideOnPhone: true,
+    accessorKey: 'n',
+    align: 'right',
+    mono: true,
+    cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <span className="text-fg-muted">{row.original.n.toLocaleString()}</span>,
   },
 ]
 
+function Skeleton() {
+  return (
+    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading results" role="status">
+      <div className="skeleton h-32 rounded-xl" />
+      <div className="skeleton h-16 rounded-xl" />
+      <div className="skeleton h-80 rounded-xl" />
+    </div>
+  )
+}
+
 export function BacktestExplorer() {
   const [stat, setStat] = useState('receiving_yards')
-  const [positions, setPositions] = useState<string[]>([...POSITIONS])
+  const [chosen, setChosen] = useState<string[]>([...POSITIONS])
 
-  const { data, isLoading, isError, error, refetch } = useBacktest({ stat, positions })
+  const { data, isLoading, isError, error, refetch } = useBacktest({ stat })
 
-  const seasonBarData = useMemo(() => {
-    if (!data) return []
-    const map = new Map<number, { stackSum: number; naiveSum: number; count: number }>()
-    for (const s of data.by_season) {
-      const ex = map.get(s.season) ?? { stackSum: 0, naiveSum: 0, count: 0 }
-      map.set(s.season, { stackSum: ex.stackSum + s.stack_mae, naiveSum: ex.naiveSum + s.naive_mae, count: ex.count + 1 })
-    }
-    return [...map.entries()].sort(([a], [b]) => a - b).map(([season, { stackSum, naiveSum, count }]) => ({
-      season,
-      stack_mae: parseFloat((stackSum / count).toFixed(2)),
-      naive_mae: parseFloat((naiveSum / count).toFixed(2)),
-    }))
-  }, [data])
+  const stats = useMemo(() => (data ? statsIn(data.available) : [stat]), [data, stat])
+  const statItems = useMemo(() => stats.map((s) => ({ value: s, label: statLabel(s) })), [stats])
+  const hasRows = useMemo(() => (data ? positionsWithRows(data.available, stat) : new Set<string>()), [data, stat])
 
-  const calibDiagonal = [{ x: 0, y: 0 }, { x: 1, y: 1 }]
-  const calibPoints   = data?.calibration.map((c) => ({ x: c.predicted_prob, y: c.observed_freq, z: c.n_samples })) ?? []
-  const metricNotes = data ? Object.entries(data.metric_notes).filter(([, note]) => note.length > 0) : []
+  // Chips the stat has no rows for are disabled; if nothing chosen is left, show all that exist.
+  const positions = useMemo(() => {
+    const kept = chosen.filter((p) => hasRows.has(p))
+    return kept.length > 0 ? kept : POSITIONS.filter((p) => hasRows.has(p))
+  }, [chosen, hasRows])
+
+  const rows = useMemo(
+    () => (data ? data.rows.filter((r) => positions.includes(r.position)).sort((a, b) => b.season - a.season || a.position.localeCompare(b.position)) : []),
+    [data, positions],
+  )
+
+  const chart = useMemo(() => {
+    const seasons = [...new Set(rows.map((r) => r.season))].sort((a, b) => a - b)
+    const points = seasons.map((season) => {
+      const point: Record<string, number | null> = { season }
+      for (const r of rows) if (r.season === season) point[r.position] = r.improvement_vs_naive_pct === null ? null : Number(r.improvement_vs_naive_pct.toFixed(1))
+      return point
+    })
+    const series = POSITIONS.filter((p) => positions.includes(p))
+    const summary = points
+      .map((pt) => `${pt.season}: ${series.filter((p) => pt[p] != null).map((p) => `${p} ${(pt[p] as number) >= 0 ? '+' : ''}${pt[p]}%`).join(', ')}`)
+      .join('; ')
+    return { points, series, summary }
+  }, [rows, positions])
+
+  const metricLabel = rows[0]?.metric_label
+  const selectionVerdict = useMemo(() => verdictOf(rows), [rows])
+
+  const seasonsText = data && data.seasons.length > 0 ? `${data.seasons[0]} to ${data.seasons[data.seasons.length - 1]}` : ''
 
   return (
     <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-1 border-b border-line/60 pb-5">
+        <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Backtest</h1>
+        <p className="text-sm text-fg-muted">
+          How our projections did on past seasons, compared with simple methods. Each prediction uses only what was known before the game.
+        </p>
+      </header>
 
-      {/* Header */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-3">
-          <h1 className="font-display text-5xl tracking-widest bg-gradient-to-br from-highlight to-info bg-clip-text text-transparent">
-            BACKTEST
-          </h1>
-        </div>
-        <p className="text-sm text-fg-muted">How the model did on past seasons</p>
-      </div>
+      {isLoading && <Skeleton />}
+      {isError && (isEvidenceUnavailable(error) ? <EvidenceUnavailable onRetry={() => void refetch()} /> : <ErrorBanner error={error} onRetry={() => void refetch()} />)}
 
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-3 p-4 rounded-xl bg-surface-raised border border-white/[0.06]">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
-          <Select
-            items={STAT_ITEMS}
-            value={stat}
-            onValueChange={(v) => { if (v) setStat(v) }}
-          >
-            <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STAT_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <ToggleGroup
-          multiple
-          aria-label="Positions"
-          value={positions}
-          onValueChange={setPositions}
-        >
-          {POSITIONS.map((pos) => (
-            <ToggleGroupItem key={pos} value={pos} tone={positionTone(pos)}>
-              {pos}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      {isLoading && <div className="flex justify-center py-16"><LoadingSpinner size="lg" /></div>}
-      {isError && error && <ErrorBanner error={error} onRetry={() => void refetch()} />}
-
-      {data && !isLoading && (
+      {data && (
         <>
-          <DataStalenessWarning dataFreshness={data.data_freshness} />
+          <EvidenceVerdict
+            verdict={data.release_verdict}
+            noun="season tests"
+            tableUrl={data.table_url}
+            lead={seasonsText ? `All stats and positions, ${seasonsText}` : undefined}
+          />
 
-          <div className="flex flex-col gap-2 rounded-xl p-4 bg-surface-raised border border-white/[0.06]">
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08] text-fg-muted">
-                Source: {data.data_source}
-              </span>
-              <span className="text-fg-muted">
-                {data.brier_score === null || data.simulated_pnl === null
-                  ? 'Some metrics are intentionally blank because the current dataset cannot support a real calculation.'
-                  : 'All headline metrics are populated from the current backtest dataset.'}
-              </span>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-surface-raised p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-fg-muted" id="stat-label">Stat:</span>
+              <Select items={statItems} value={stat} onValueChange={(v) => { if (v) setStat(v) }}>
+                <SelectTrigger aria-labelledby="stat-label" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {statItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            {metricNotes.length > 0 && (
-              <div className="flex flex-col gap-1 text-[11px] text-fg-muted">
-                {metricNotes.map(([metric, note]) => (
-                  <p key={metric}>
-                    <span className="text-fg">{metric.replaceAll('_', ' ')}:</span> {note}
-                  </p>
+            <PositionFilter hasRows={hasRows} value={positions} onChange={setChosen} />
+          </div>
+
+          <p className="text-sm text-fg" aria-live="polite">
+            <span className="font-semibold">{statLabel(stat)}: </span>
+            {verdictSentence(selectionVerdict, 'season tests')}
+          </p>
+
+          <Panel title={`How much better than the simple method, by season: ${statLabel(stat)}`}>
+            <ChartFrame
+              height={280}
+              label={`Bar chart of the percent our projections beat the simple method by, per season, for ${statLabel(stat)}. ${chart.summary}`}
+            >
+              <BarChart data={chart.points} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                <ChartGrid />
+                <ChartXAxis
+                  dataKey="season"
+                  label={{ value: 'Season', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 11 }}
+                />
+                <ChartYAxis
+                  tickFormatter={(v: number) => `${v}%`}
+                  label={{ value: '% better than simple method', angle: -90, position: 'insideLeft', offset: 0, fill: chartTheme.axisText, fontSize: 11, style: { textAnchor: 'middle' } }}
+                />
+                <ChartTooltip
+                  formatter={(value, name) => {
+                    const v = Number(value)
+                    return [`${Math.abs(v).toFixed(1)}% ${v >= 0 ? 'better' : 'worse'} than the simple method`, name]
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: '11px', color: chartTheme.axisText, paddingTop: 8 }} verticalAlign="top" />
+                <ReferenceLine y={0} stroke={chartTheme.axisLine} />
+                {chart.series.map((pos) => (
+                  <Bar key={pos} dataKey={pos} name={pos} fill={seriesColor(pos)} radius={[4, 4, 0, 0]} />
                 ))}
+              </BarChart>
+            </ChartFrame>
+            <p className="mt-2 text-xs text-fg-muted">Above zero means our projections were closer than the simple method.</p>
+          </Panel>
+
+          <Panel title={`The numbers: ${statLabel(stat)}`}>
+            {rows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-fg-muted">There are no results for this selection. Pick another position or stat.</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {metricLabel && <p className="text-xs text-fg-muted">Scores shown: {metricLabel}</p>}
+                <div className="relative -mx-5 overflow-x-auto">
+                  <DataTable columns={COLUMNS} data={rows} />
+                </div>
               </div>
             )}
-          </div>
-
-          <BacktestPanel data={data} />
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Season MAE */}
-            <Panel title="Average miss by season: us vs the simple method">
-              <ChartFrame height={280}>
-                <BarChart data={seasonBarData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-                  <ChartGrid />
-                  <ChartXAxis dataKey="season" />
-                  <ChartYAxis />
-                  <ChartTooltip />
-                  <Legend wrapperStyle={{ fontSize: '11px', color: chartTheme.axisText }} />
-                  <Bar dataKey="stack_mae" name="Our average miss" fill={token('info', 0.8)}  radius={[4,4,0,0]} />
-                  <Bar dataKey="naive_mae" name="Simple method"    fill={token('fg-muted', 0.5)} radius={[4,4,0,0]} />
-                </BarChart>
-              </ChartFrame>
-            </Panel>
-
-            {/* Calibration */}
-            <Panel title="Do our probabilities match reality?">
-              <ChartFrame height={280}>
-                <ComposedChart margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
-                  <ChartGrid />
-                  <ChartXAxis
-                    type="number" dataKey="x" domain={[0, 1]}
-                    label={{ value: 'Predicted chance', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 11 }}
-                  />
-                  <ChartYAxis
-                    type="number" dataKey="y" domain={[0, 1]}
-                    label={{ value: 'Actually happened', angle: -90, position: 'insideLeft', offset: 10, fill: chartTheme.axisText, fontSize: 11 }}
-                  />
-                  <ChartTooltip />
-                  <Line
-                    data={calibDiagonal} type="linear" dataKey="y"
-                    stroke={token('fg-muted', 0.6)} strokeDasharray="5 5" dot={false}
-                    name="Perfect match" legendType="line"
-                  />
-                  <ZAxis range={[40, 200]} />
-                  <Scatter data={calibPoints} fill={token('info', 0.8)} name="Our model"
-                    style={{ filter: `drop-shadow(0 0 4px ${token('info', 0.4)})` }}
-                  />
-                </ComposedChart>
-              </ChartFrame>
-            </Panel>
-          </div>
-
-          {/* Coverage table */}
-          <Panel title="In-range rate by season and position">
-            <div className="overflow-x-auto -m-5">
-              {data.by_season.length === 0 ? (
-                <p className="px-5 py-8 text-center text-fg-muted text-sm">
-                  No backtest data available for the selected filters.
-                </p>
-              ) : (
-                <DataTable columns={COVERAGE_COLUMNS} data={data.by_season} />
-              )}
-            </div>
           </Panel>
+
+          <Panel title="How to read this">
+            <BaselineGuide cohortRules={data.cohort_rules} />
+          </Panel>
+
+          {(data.not_measured.coverage || data.not_measured.pnl) && (
+            <p className="text-sm text-fg-muted">
+              {[data.not_measured.coverage, data.not_measured.pnl].filter(Boolean).join(' ')}
+            </p>
+          )}
         </>
       )}
     </div>

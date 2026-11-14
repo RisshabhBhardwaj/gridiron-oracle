@@ -114,6 +114,10 @@ class ManifestEntryMissing(ManifestError):
     """The manifest does not pin an artifact for the requested cell."""
 
 
+class GroupNotPinned(ManifestEntryMissing):
+    """The manifest has no (or an empty) pinned group under the requested ``artifacts`` key."""
+
+
 class ArtifactIntegrityError(ManifestError):
     """An artifact's SHA-256 does not match the digest the manifest pins."""
 
@@ -478,6 +482,40 @@ class ArtifactManifest:
             raise ManifestEntryMissing(
                 f"{self.path} pins no base model for {learner}/{stat}/{position}."
             ) from None
+
+    def resolve_group(self, key: str, *, verify: bool = True) -> dict[str, Path]:
+        """
+        Every pinned file under ``artifacts[key]``, as ``{repo-relative path: absolute path}``.
+
+        Used for groups that are read as a set (the causal evals). The group must
+        exist and be non-empty, every file must be on disk, and every file must
+        match its pinned digest. Nothing is globbed from the directory.
+
+        Raises:
+            GroupNotPinned:          the key is absent or empty.
+            ManifestEntryMissing:    a pinned path has no digest.
+            FileNotFoundError:       a pinned path is absent on disk.
+            ArtifactIntegrityError:  content does not match the pinned digest.
+        """
+        artifacts = self.raw.get("artifacts")
+        group = artifacts.get(key) if isinstance(artifacts, Mapping) else None
+        relpaths = sorted(set(_iter_artifact_relpaths(group))) if group else []
+        if not relpaths:
+            raise GroupNotPinned(
+                f"{self.path} has no '{key}' pin under 'artifacts'. The release "
+                "must be re-frozen with that group before it can be read."
+            )
+        resolved: dict[str, Path] = {}
+        for relpath in relpaths:
+            absolute = self.root / relpath
+            if not absolute.is_file():
+                raise FileNotFoundError(
+                    f"Manifest pins {relpath} under '{key}', but the file is missing."
+                )
+            if verify:
+                self.require_digest(relpath, absolute)
+            resolved[relpath] = absolute
+        return resolved
 
     # ── protection ────────────────────────────────────────────────────────
 

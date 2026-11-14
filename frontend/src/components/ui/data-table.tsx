@@ -24,7 +24,11 @@ import { cn } from '@/lib/utils'
 export type TableColumn<TData extends RowData> = LegacyColumnDef<TData> & {
   align?: 'left' | 'right' | 'center'
   mono?: boolean
+  /** Hide this column on phones so the key columns fit without sideways scrolling. */
+  hideOnPhone?: boolean
 }
+
+const PHONE_HIDDEN = 'hidden sm:table-cell'
 
 function alignClass(align?: TableColumn<RowData>['align']): string {
   if (align === 'right') return 'text-right'
@@ -60,6 +64,7 @@ export function DataTable<TData extends RowData>({
                   className={cn(
                     'px-4 py-3 text-[10px] font-semibold uppercase tracking-widest',
                     alignClass(def.align),
+                    def.hideOnPhone && PHONE_HIDDEN,
                   )}
                 >
                   {flexRender(header.column.columnDef.header, header.getContext())}
@@ -77,7 +82,7 @@ export function DataTable<TData extends RowData>({
               return (
                 <td
                   key={cell.id}
-                  className={cn('px-4 py-3', alignClass(def.align), def.mono && 'font-mono')}
+                  className={cn('px-4 py-3', alignClass(def.align), def.mono && 'font-mono', def.hideOnPhone && PHONE_HIDDEN)}
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>

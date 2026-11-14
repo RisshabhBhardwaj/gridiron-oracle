@@ -10,6 +10,8 @@ import { useSearch } from '@/context/SearchContext'
 import { SkeletonCard } from '@/components/shared/LoadingSpinner'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
+import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
+import { isForecastRow, needsSimulationNotice, noticeLabel, provenanceLabel, toSearchablePlayers, weekFigureLabel } from '@/lib/forecast-provenance'
 import { CURRENT_SEASON, POSITIONS, SEASON_SIM_STATS, STAT_LABELS, type SeasonSimStat } from '@/lib/constants'
 import type { SeasonPlayerProjection } from '@/types/api'
 import { PositionBadge } from '@/components/PositionBadge'
@@ -34,9 +36,13 @@ interface PlayerCardProps {
   row: SeasonPlayerProjection
   onClick: () => void
   statKey: SeasonSimStat
+  /** Set for the Weekly tab. The Season-Long tab leaves it out: its numbers are season totals. */
+  week?: number
 }
 
-function PlayerCard({ row, onClick, statKey }: PlayerCardProps) {
+function PlayerCard({ row, onClick, statKey, week }: PlayerCardProps) {
+  // On the Weekly tab, a row that is not a real forecast says what it is on the card itself.
+  const simulated = week != null && !isForecastRow(row)
   const statData = row[statKey]
   const projection = statData?.mean ?? 0
   const floor = statData?.p10 ?? null
@@ -73,15 +79,24 @@ function PlayerCard({ row, onClick, statKey }: PlayerCardProps) {
           <p className="text-sm font-semibold text-fg truncate leading-tight">{row.player_name}</p>
           <p className="text-[11px] text-fg-muted mt-0.5">{row.team ?? 'UNK'}</p>
         </div>
-        <PositionBadge position={row.position} />
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {/* Slot: the availability chip (Questionable / Doubtful, decision 0012 D3) goes
+              here once the API sends a status. Nothing is built until that field exists. */}
+          <PositionBadge position={row.position} />
+        </div>
       </div>
 
       <div className="flex items-baseline gap-1.5 mt-1">
         <span className="glow-text font-display text-4xl leading-none text-tone">
           {projection.toFixed(1)}
         </span>
-        <span className="text-xs text-fg-muted">{STAT_LABELS[statKey] || statKey}</span>
+        <span className="text-xs text-fg-muted">
+          {week != null && !simulated ? weekFigureLabel(week, statKey) : STAT_LABELS[statKey] || statKey}
+        </span>
       </div>
+      {simulated && (
+        <p className="-mt-1 text-[11px] leading-snug text-fg-muted">{provenanceLabel(row.interval_method)}</p>
+      )}
 
       <div className="flex flex-col gap-1 mt-1">
         <div className="h-1.5 rounded-full overflow-hidden bg-surface-overlay/80">
@@ -123,6 +138,8 @@ export function CurrentSeason() {
   const [startWeek, setStartWeek] = useState<number>(1)
   const [statKey, setStatKey] = useState<SeasonSimStat>('fantasy_ppr')
   const [selectedPositions, setSelectedPositions] = useState<string[]>(['WR', 'RB', 'TE', 'QB'])
+  // Simulated numbers are hidden on the Weekly tab until the visitor asks for it.
+  const [showSimulation, setShowSimulation] = useState(false)
 
   // Projections queries
   const weeklyQuery = useSeasonWeekProjections({
@@ -156,19 +173,13 @@ export function CurrentSeason() {
 
   // Feed search context
   useEffect(() => {
-    const activeList = activeTab === 'weekly' ? weeklyQuery.data?.projections : seasonQuery.data?.projections
-    if (!activeList) return
-    const searchable = activeList.map((p) => ({
-      player_id: p.player_id,
-      player_name: p.player_name,
-      position: p.position,
-      team: p.team,
-      stat: statKey,
-      projection: p[statKey]?.mean ?? 0,
-    }))
-    setPlayers(searchable)
+    // Search opens the player page, which is a weekly page. So search always shows
+    // the weekly figure (or none), whichever tab is open, never a season total.
+    const weeklyList = weeklyQuery.data?.projections
+    if (!weeklyList) return
+    setPlayers(toSearchablePlayers(weeklyList, statKey))
     setDefaults({ season, week: selectedWeek, stat: statKey })
-  }, [activeTab, weeklyQuery.data, seasonQuery.data, statKey, season, selectedWeek, setPlayers, setDefaults])
+  }, [weeklyQuery.data, statKey, season, selectedWeek, setPlayers, setDefaults])
 
   const playersList = useMemo(() => {
     const source = activeTab === 'weekly' ? weeklyQuery.data?.projections : seasonQuery.data?.projections
@@ -179,6 +190,15 @@ export function CurrentSeason() {
       return bVal - aVal
     })
   }, [activeTab, weeklyQuery.data, seasonQuery.data, statKey])
+
+  const weeklyRows = weeklyQuery.data?.projections
+  const weeklyNeedsNotice = activeTab === 'weekly' && needsSimulationNotice(weeklyRows ?? [])
+  // Rows shown on the Weekly tab: real forecasts always, simulated rows only on request.
+  const visibleList = useMemo(
+    () => (activeTab === 'weekly' && !showSimulation ? playersList.filter(isForecastRow) : playersList),
+    [activeTab, showSimulation, playersList],
+  )
+  const simulationShown = weeklyNeedsNotice && showSimulation
 
   const freshness = activeTab === 'weekly' ? weeklyQuery.data?.data_freshness : seasonQuery.data?.data_freshness
 
@@ -196,7 +216,7 @@ export function CurrentSeason() {
             </span>
           </div>
           <p className="text-xs text-fg-muted mt-1">
-            Simulated rest-of-season weekly & aggregate projections, team win totals, and matchup forecasts.
+            Rest-of-season projections, team win totals, and matchup forecasts.
           </p>
         </div>
 
@@ -340,7 +360,26 @@ export function CurrentSeason() {
                 ))}
               </div>
             ) : teamGamesQuery.error ? (
-              <ErrorBanner error={teamGamesQuery.error} />
+              <ErrorBanner error={teamGamesQuery.error} onRetry={() => void teamGamesQuery.refetch()} />
+            ) : teamGamesQuery.data === null ? (
+              <div
+                role="status"
+                className="tone-info flex flex-col items-start gap-3 rounded-xl border border-tone/[0.22] bg-tone/[0.05] p-5"
+              >
+                <p className="text-sm font-semibold text-tone">
+                  Matchup forecasts for Week {selectedWeek} aren&apos;t ready yet
+                </p>
+                <p className="text-xs leading-relaxed text-fg-muted">
+                  Season win totals are above. Season-long player projections are ready now.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('season')}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-tone/[0.35] bg-tone/15 px-3 py-1.5 text-xs font-semibold text-tone transition-all duration-150 hover:brightness-110 active:scale-[0.98]"
+                >
+                  See season-long projections
+                </button>
+              </div>
             ) : (teamGamesQuery.data || []).length === 0 ? (
               <div className="text-center p-8 text-fg-muted border border-dashed border-line rounded-xl">
                 No games scheduled or predicted for Week {selectedWeek}.
@@ -396,22 +435,48 @@ export function CurrentSeason() {
         </div>
       ) : (
         /* Player Projections Grid */
-        <div>
+        <div className="flex flex-col gap-4">
+          {weeklyNeedsNotice && (
+            <NoForecastBanner
+              scope="week"
+              season={season}
+              week={selectedWeek}
+              onOpenSeasonLong={() => setActiveTab('season')}
+            >
+              <button
+                type="button"
+                aria-expanded={showSimulation}
+                onClick={() => setShowSimulation((v) => !v)}
+                className="inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-white/10 text-fg-muted hover:text-fg hover:border-white/20"
+              >
+                {showSimulation ? 'Hide these numbers' : 'Show these numbers anyway'}
+              </button>
+            </NoForecastBanner>
+          )}
+          {simulationShown && (
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-muted">
+              {noticeLabel(weeklyRows ?? [])}
+            </h2>
+          )}
           {(activeTab === 'weekly' ? weeklyQuery.isLoading : seasonQuery.isLoading) ? (
             <SkeletonCard count={8} />
           ) : (activeTab === 'weekly' ? weeklyQuery.error : seasonQuery.error) ? (
             <ErrorBanner error={(activeTab === 'weekly' ? weeklyQuery.error : seasonQuery.error)!} />
-          ) : playersList.length === 0 ? (
-            <div className="text-center p-12 text-fg-muted border border-dashed border-line rounded-xl">
-              No player projections found matching the active filters.
-            </div>
+          ) : visibleList.length === 0 ? (
+            // On the Weekly tab with only simulated rows the banner above is the answer.
+            weeklyNeedsNotice ? null : (
+              <div className="text-center p-12 text-fg-muted border border-dashed border-line rounded-xl">
+                No player projections found matching the active filters.
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {playersList.map((player) => (
+              {visibleList.map((player) => (
                 <PlayerCard
                   key={player.player_id}
                   row={player}
                   statKey={statKey}
+                  week={activeTab === 'weekly' ? selectedWeek : undefined}
                   onClick={() => navigate(
                     // The player page needs the name, week, season and stat in its address;
                     // without them it shows "No player selected". Same address the search builds.
