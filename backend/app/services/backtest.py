@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from backend.app.core.runtime_mode import ArtifactRequiredError
-from ml.artifact_manifest import ArtifactManifest, ManifestError, get_manifest
+from ml.artifact_manifest import ArtifactManifest, GroupNotPinned, ManifestError, get_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,10 @@ UNAVAILABLE_MESSAGE = "Backtest results for the current release aren't available
 
 class EvalsUnavailable(ArtifactRequiredError):
     """The pinned evals cannot be read or do not verify. The API answers 503."""
+
+
+class EvalsNotPinned(EvalsUnavailable):
+    """The release manifest has no ``causal_evals`` pin yet (the release was not re-frozen with it)."""
 
 
 class UnknownStat(ValueError):
@@ -97,6 +101,14 @@ class Cell:
 
 
 @dataclass(frozen=True)
+class MetricImprovement:
+    """Mean percent below the simple method's score, over cells that share one metric."""
+
+    cell_seasons: int
+    mean_pct: float
+
+
+@dataclass(frozen=True)
 class Verdict:
     cell_seasons: int
     beat_naive: int
@@ -104,7 +116,9 @@ class Verdict:
     beat_marcel: int
     beat_both: int
     causal_check_passed: int
-    mean_improvement_vs_naive_pct: Optional[float]
+    #: Keyed by metric ("mae", "poisson_deviance"). Scores on different metrics are on
+    #: different scales, so a percent is never averaged across them.
+    improvement_by_metric: dict[str, MetricImprovement]
 
 
 @dataclass(frozen=True)
@@ -265,6 +279,9 @@ def load_release_evals(manifest: Optional[ArtifactManifest] = None) -> ReleaseEv
             cells=cells,
             cohort_rules=tuple(sorted({r.cohort_rule for r in rows})),
         )
+    except GroupNotPinned as exc:
+        logger.error("causal evals unavailable: %s", exc)
+        raise EvalsNotPinned(str(exc)) from exc
     except (ManifestError, OSError, ValueError, KeyError, TypeError) as exc:
         logger.error("causal evals unavailable: %s", exc)
         raise EvalsUnavailable(str(exc)) from exc
@@ -277,8 +294,16 @@ def load_release_evals(manifest: Optional[ArtifactManifest] = None) -> ReleaseEv
 # Service
 # ---------------------------------------------------------------------------
 
+def _improvement_by_metric(rows: list[EvalRow] | tuple[EvalRow, ...]) -> dict[str, MetricImprovement]:
+    gains: dict[str, list[float]] = {}
+    for r in rows:
+        g = r.improvement_vs_naive_pct
+        if g is not None:
+            gains.setdefault(r.metric, []).append(g)
+    return {m: MetricImprovement(len(v), sum(v) / len(v)) for m, v in sorted(gains.items())}
+
+
 def verdict_of(rows: list[EvalRow] | tuple[EvalRow, ...]) -> Verdict:
-    gains = [g for g in (r.improvement_vs_naive_pct for r in rows) if g is not None]
     return Verdict(
         cell_seasons=len(rows),
         beat_naive=sum(r.beats_naive for r in rows),
@@ -286,7 +311,7 @@ def verdict_of(rows: list[EvalRow] | tuple[EvalRow, ...]) -> Verdict:
         beat_marcel=sum(r.beats_marcel for r in rows),
         beat_both=sum(_both(r) for r in rows),
         causal_check_passed=sum(r.causal_ok for r in rows),
-        mean_improvement_vs_naive_pct=(sum(gains) / len(gains)) if gains else None,
+        improvement_by_metric=_improvement_by_metric(rows),
     )
 
 

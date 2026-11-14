@@ -138,6 +138,29 @@ def test_release_verdict_counts_cell_seasons(tmp_path):
     assert (v.cell_seasons, v.beat_naive, v.beat_trailing3, v.beat_marcel, v.beat_both) == (4, 3, 4, 3, 3)
 
 
+def test_verdict_percent_is_per_metric_and_never_blended(tmp_path):
+    """MAE cells and Poisson-deviance cells are different scales; they are never averaged together."""
+    v = _service(tmp_path).get_summary().release_verdict
+    assert not hasattr(v, "mean_improvement_vs_naive_pct")
+    assert set(v.improvement_by_metric) == {"mae", "poisson_deviance"}
+    mae = v.improvement_by_metric["mae"]
+    assert mae.cell_seasons == 2
+    assert mae.mean_pct == pytest.approx(((25 - 20) / 25 * 100 + (25.17 - 23.24) / 25.17 * 100) / 2)
+    dev = v.improvement_by_metric["poisson_deviance"]
+    assert dev.cell_seasons == 2
+    assert dev.mean_pct == pytest.approx(((0.9 - 1.0) / 0.9 * 100 + (1.3 - 1.0) / 1.3 * 100) / 2)
+
+
+def test_single_metric_selection_carries_only_that_metric(tmp_path):
+    v = _service(tmp_path).get_summary(stat="receiving_yards").verdict
+    assert set(v.improvement_by_metric) == {"mae"}
+
+
+def test_empty_selection_has_no_percent(tmp_path):
+    v = _service(tmp_path).get_summary(stat="receiving_yards", positions=["TE"]).verdict
+    assert v.cell_seasons == 0 and v.improvement_by_metric == {}
+
+
 def test_selection_verdict_follows_the_filter(tmp_path):
     s = _service(tmp_path).get_summary(stat="receptions", positions=["TE"])
     assert s.verdict.cell_seasons == 2 and s.verdict.beat_naive == 1
@@ -256,6 +279,15 @@ def test_api_returns_verdicts_rows_and_no_legacy_fields(client):
     assert body["table_url"].endswith("/backtest/table.csv")
 
 
+def test_api_verdict_percent_is_per_metric_with_no_blended_field(client):
+    body = client.get("/backtest").json()
+    for key in ("verdict", "release_verdict"):
+        assert "mean_improvement_vs_naive_pct" not in body[key]
+        assert set(body[key]["improvement_by_metric"]) == {"mae", "poisson_deviance"}
+    mae = body["release_verdict"]["improvement_by_metric"]["mae"]
+    assert mae["cell_seasons"] == 2 and mae["mean_pct"] > 0
+
+
 def test_api_unknown_stat_is_404(client):
     assert client.get("/backtest?stat=nope").status_code == 404
 
@@ -305,12 +337,36 @@ def test_integrity_check_ok_with_pinned_evals(tmp_path):
     assert r["observed"]["cell_seasons"] == 4
 
 
-@pytest.mark.parametrize("kw", [{"with_key": False}, {"tamper": True}, {"drop_file": True}])
-def test_integrity_check_errors_when_pin_is_missing_or_wrong(tmp_path, kw):
+@pytest.mark.parametrize(
+    "kw, reason",
+    [
+        ({"with_key": False}, "not pinned in the release manifest"),
+        ({"tamper": True}, "failed verification"),
+        ({"drop_file": True}, "failed verification"),
+    ],
+)
+def test_integrity_check_errors_when_pin_is_missing_or_wrong(tmp_path, kw, reason):
     manifest = load_manifest(_write_release(tmp_path, **kw), root=tmp_path)
     r = _status(manifest)
     assert r["status"] == "error"
+    assert r["detail"].endswith(reason)
     assert str(tmp_path) not in r["detail"]
+
+
+def test_unavailable_reason_comes_from_the_exception_type(tmp_path):
+    """The service decides by type, not by what the message happens to say."""
+    for kw, exc_type in (
+        ({"with_key": False}, bt.EvalsNotPinned),
+        ({"tamper": True}, bt.EvalsUnavailable),
+        ({"drop_file": True}, bt.EvalsUnavailable),
+    ):
+        clear_cache()
+        bt.clear_cache()
+        root = tmp_path / ("k" + "_".join(kw))
+        root.mkdir()
+        with pytest.raises(bt.EvalsUnavailable) as info:
+            _service(root, **kw).get_summary()
+        assert type(info.value) is exc_type
 
 
 # ── evidence verifier, post-freeze ────────────────────────────────────────────

@@ -114,6 +114,10 @@ class ManifestEntryMissing(ManifestError):
     """The manifest does not pin an artifact for the requested cell."""
 
 
+class GroupNotPinned(ManifestEntryMissing):
+    """The manifest has no (or an empty) pinned group under the requested ``artifacts`` key."""
+
+
 class ArtifactIntegrityError(ManifestError):
     """An artifact's SHA-256 does not match the digest the manifest pins."""
 
@@ -406,7 +410,8 @@ class ArtifactManifest:
         match its pinned digest. Nothing is globbed from the directory.
 
         Raises:
-            ManifestEntryMissing:    the key is absent/empty, or a path has no digest.
+            GroupNotPinned:          the key is absent or empty.
+            ManifestEntryMissing:    a pinned path has no digest.
             FileNotFoundError:       a pinned path is absent on disk.
             ArtifactIntegrityError:  content does not match the pinned digest.
         """
@@ -414,7 +419,7 @@ class ArtifactManifest:
         group = artifacts.get(key) if isinstance(artifacts, Mapping) else None
         relpaths = sorted(set(_iter_artifact_relpaths(group))) if group else []
         if not relpaths:
-            raise ManifestEntryMissing(
+            raise GroupNotPinned(
                 f"{self.path} has no '{key}' pin under 'artifacts'. The release "
                 "must be re-frozen with that group before it can be read."
             )

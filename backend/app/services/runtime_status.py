@@ -346,13 +346,17 @@ class RuntimeStatusService:
 
     def _check_backtest_assets(self, manifest=None) -> dict:
         """The release's pinned causal evals must load, verify and agree with each other."""
-        from backend.app.services.backtest import EvalsUnavailable, load_release_evals
+        from backend.app.services.backtest import EvalsNotPinned, EvalsUnavailable, load_release_evals
 
         try:
             evals = load_release_evals(manifest)
         except EvalsUnavailable as exc:
             # The cause is already logged by the loader; keep paths out of /health.
-            reason = "not pinned in the release manifest" if "pin" in str(exc) else "failed verification"
+            reason = (
+                "not pinned in the release manifest"
+                if isinstance(exc, EvalsNotPinned)
+                else "failed verification"
+            )
             return {
                 "status": "error",
                 "detail": f"Pinned causal evals unavailable: {reason}",

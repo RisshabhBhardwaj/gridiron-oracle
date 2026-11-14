@@ -26,10 +26,18 @@ from backend.app.services.backtest import (
     EvalRow,
     UnknownStat,
 )
+from backend.app.services.backtest import Verdict as BtVerdict
 
 router = APIRouter(prefix="", tags=["backtest"])
 
 TABLE_PATH = "/backtest/table.csv"
+
+
+class MetricImprovementOut(BaseModel):
+    cell_seasons: int = Field(description="Player-stat seasons scored on this metric")
+    mean_pct: float = Field(
+        description="Average percent the model score sits below the simple method's (positive = better)"
+    )
 
 
 class Verdict(BaseModel):
@@ -39,9 +47,11 @@ class Verdict(BaseModel):
     beat_marcel: int = Field(description="How many beat the Marcel baseline")
     beat_both: int = Field(description="How many beat both the simple method and trailing-3")
     causal_check_passed: int = Field(description="How many passed the no-future-data check")
-    mean_improvement_vs_naive_pct: Optional[float] = Field(
-        default=None,
-        description="Average percent the model score sits below the simple method's (positive = better)",
+    improvement_by_metric: dict[str, MetricImprovementOut] = Field(
+        description=(
+            "Average improvement over the simple method, per scoring metric (mae, poisson_deviance). "
+            "Scores on different metrics are never averaged together."
+        ),
     )
 
 
@@ -96,6 +106,14 @@ def _row_out(r: EvalRow) -> EvalRowOut:
     )
 
 
+def _verdict_out(v: BtVerdict) -> Verdict:
+    fields = {k: val for k, val in vars(v).items() if k != "improvement_by_metric"}
+    return Verdict(
+        **fields,
+        improvement_by_metric={m: MetricImprovementOut(**vars(i)) for m, i in v.improvement_by_metric.items()},
+    )
+
+
 def _unavailable() -> HTTPException:
     # The cause (path, digest) is logged by the service; callers get one safe line.
     return HTTPException(
@@ -125,8 +143,8 @@ def get_backtest(
         seasons=s.seasons,
         stat=s.stat,
         positions=s.positions,
-        verdict=Verdict(**vars(s.verdict)),
-        release_verdict=Verdict(**vars(s.release_verdict)),
+        verdict=_verdict_out(s.verdict),
+        release_verdict=_verdict_out(s.release_verdict),
         cohort_rules=s.cohort_rules,
         rows=[_row_out(r) for r in s.rows],
         available=[CellOut(**vars(c)) for c in s.available],
