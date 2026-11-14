@@ -21,6 +21,7 @@ _PATCHED_STEPS = {
     "clear_leftovers": "scripts.weekly_refresh.clear_leftovers",
     "refresh_lock": "scripts.weekly_refresh.season_refresh_lock",
     "run_intact": "scripts.weekly_refresh.require_run_intact",
+    "week_lock": "scripts.weekly_refresh.lock_week_with_retry",
     "upsert_playerids": "scripts.weekly_refresh.upsert_playerids",
     "stack": "scripts.materialize_stack_projections.main",
     "availability": "pipeline.availability_store.capture_snapshot",
@@ -62,6 +63,9 @@ def _weekly_refresh_with_orchestrator(summary: OrchestratorSummary):
         mocks = {name: stack.enter_context(patch(target)) for name, target in _PATCHED_STEPS.items()}
         mocks["orchestrator_run"] = orchestrator_run
         mocks["cursor"] = cur
+        mocks["week_lock"].return_value = True
+        mocks["run_intact"].return_value = 1  # the producer's recorded projection_rows
+        cur.rowcount = 1  # every relabel UPDATE touches one row
         mocks["upsert_playerids"].return_value = 5
         mocks["stack"].return_value = 0
         mocks["availability"].return_value = {"snapshot_id": "avail_x"}
@@ -98,10 +102,16 @@ def test_resolve_season_and_week_none():
 def test_promote_run_id_only_relabels_pending_rows():
     """Promotion is a relabel: no DELETE, one UPDATE per season table, projections and team games."""
     cur = MagicMock()
-    promote_run_id(cur, 2026, 5, "pending_id", "approved_id")
+    cur.rowcount = 4
+    counts = promote_run_id(cur, 2026, 5, "pending_id", "approved_id")
     statements = [call.args[0] for call in cur.execute.call_args_list]
     assert not any("DELETE" in sql for sql in statements)
-    assert len(statements) == 5  # 3 season tables + projections + team_game_predictions
+    # 3 season tables + the target week's projections + the season's other projections + team_game_predictions
+    assert len(statements) == 6
+    assert counts == {
+        "season_simulation_weeks": 4, "season_simulations": 4, "season_team_wins": 4,
+        "projections": 4, "projections_other_weeks": 4, "team_game_predictions": 4,
+    }
     assert all("UPDATE" in sql for sql in statements)
     assert all(call.args[1][0] == "approved_id" for call in cur.execute.call_args_list)
 

@@ -153,6 +153,28 @@ def require_run_producer(cur, season: int, week: int, pending_id: str) -> None:
         )
 
 
+def require_promotion_complete(relabelled: dict[str, int], recorded_projection_rows: int) -> None:
+    """Check the relabel touched what the producer wrote, before the promotion commits (review N12).
+
+    ``require_run_intact`` looks at the rows just before the relabel; a cleanup that commits in between would
+    leave a zero or partial promotion. The relabel's own row counts are the last word: the week's projection
+    rows must equal what the producer recorded, and every season table and ``team_game_predictions`` must have
+    relabelled something. Raises ``RunNotProducedError`` so the transaction rolls back and the archive stays.
+    """
+    got = relabelled.get("projections", 0)
+    if got != recorded_projection_rows:
+        raise RunNotProducedError(
+            f"the promotion relabelled {got} projection rows for the week, but the producer recorded "
+            f"{recorded_projection_rows}; rolled back, nothing is promoted and the archived week, if any, is kept."
+        )
+    for table, _column, _week_column in _PROMOTED_TABLES:
+        if relabelled.get(table, 0) == 0:
+            raise RunNotProducedError(
+                f"the promotion relabelled no rows of {table}; rolled back, nothing is promoted and the "
+                "archived week, if any, is kept."
+            )
+
+
 def require_run_intact(cur, season: int, week: int, pending_id: str) -> int:
     """Promotion guard: the producer wrote for this run, and every row it wrote is still there.
 
@@ -200,5 +222,5 @@ def require_run_intact(cur, season: int, week: int, pending_id: str) -> int:
 
 __all__ = [
     "LeftoverRunsError", "RunNotProducedError", "clear_leftovers", "new_pending_run_id", "pending_prefix",
-    "require_run_intact", "require_run_producer",
+    "require_promotion_complete", "require_run_intact", "require_run_producer",
 ]

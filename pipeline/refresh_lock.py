@@ -32,8 +32,36 @@ class RefreshAlreadyRunning(RuntimeError):
     """Another weekly refresh of this season holds the lock; this one changed nothing."""
 
 
+class RefreshLockLost(RuntimeError):
+    """The connection that holds the season lock no longer answers, so the lock may be gone."""
+
+
+class HeldRefreshLock:
+    """The held lock. ``ensure_alive`` proves its connection still answers (review N12)."""
+
+    def __init__(self, conn, season: int) -> None:
+        self._conn, self.season = conn, season
+
+    def ensure_alive(self) -> None:
+        """Run ``SELECT 1`` on the lock connection; raise ``RefreshLockLost`` if it fails.
+
+        Keepalives find a dead link only after about a minute and only when something reads the socket. A
+        refresh calls this right before it promotes, so a lock that silently went away (a cleanup by another
+        run could then have deleted the pending rows) stops the promotion instead of racing it.
+        """
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        except Exception as exc:
+            raise RefreshLockLost(
+                f"the lock connection for season {self.season} no longer answers ({exc}); another refresh may "
+                "have started. Nothing was promoted."
+            ) from exc
+
+
 @contextmanager
-def season_refresh_lock(dsn: str, season: int) -> Iterator[None]:
+def season_refresh_lock(dsn: str, season: int) -> Iterator[HeldRefreshLock]:
     """Hold the season's refresh lock for the whole ``with`` block, or raise ``RefreshAlreadyRunning``."""
     conn = psycopg2.connect(dsn, **KEEPALIVES)
     try:
@@ -47,7 +75,7 @@ def season_refresh_lock(dsn: str, season: int) -> Iterator[None]:
                 "Nothing was changed. Wait for it to finish, or stop it, and run again."
             )
         try:
-            yield
+            yield HeldRefreshLock(conn, season)
         finally:
             try:
                 with conn.cursor() as cur:

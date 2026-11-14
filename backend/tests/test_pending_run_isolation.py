@@ -21,6 +21,7 @@ from backend.tests.test_weekly_refresh import (
 )
 from pipeline.pending_runs import clear_leftovers, require_run_intact
 from pipeline.refresh_lock import REFRESH_LOCK_NAMESPACE, season_refresh_lock
+from pipeline.week_lock import lock_week_with_retry
 from scripts.weekly_refresh import run_weekly_refresh
 
 APPROVED = "weekly_auto_2026"
@@ -79,6 +80,7 @@ def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bo
         stack_.enter_context(patch("psycopg2.connect", return_value=db))
         # The harness stubs these two; here the real ones run against the table.
         m["run_intact"].side_effect = require_run_intact
+        m["week_lock"].side_effect = lock_week_with_retry  # step 8's week lock, on the same table
         if cleanup:
             m["clear_leftovers"].side_effect = clear_leftovers
         stack_.enter_context(patch("pipeline.refresh_lock.psycopg2.connect", return_value=db))
@@ -92,11 +94,14 @@ def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bo
         m["simulation"].side_effect = simulation
         m["team_game"].side_effect = team_game
         for key, how in (breakage or {}).items():  # make one step fail: an exception, or a return value
-            if isinstance(how, BaseException):
+            if isinstance(how, BaseException) or callable(how):
                 m[key].side_effect = how
             else:
                 m[key].side_effect, m[key].return_value = None, how
-        return run_weekly_refresh("postgres://dummy", season=2026, replace_week=replace_week)
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=replace_week)
+        # _write_dead_letter(dsn, source, error, season) is patched in the harness; keep what it was given.
+        db.dead_letters = [(c.args[1], c.args[2]) for c in m["dead_letter"].call_args_list]
+        return rc
 
 
 def _ids(db: SqlitePg) -> set[str]:
@@ -207,6 +212,95 @@ def test_step_8_refuses_when_the_team_game_rows_vanished_after_step_7():
         db.run("DELETE FROM team_game_predictions WHERE starts_with(model_run_id, 'weekly_auto_2026_pending')")
 
     assert _run(db, "A", after_gate=lost) == 1
+    assert db.served() == {"OLD-SERVED"}
+
+
+# ── the relabel itself is checked, under the week lock (review N12) ───────────────────────
+def test_step_8_rolls_back_when_the_relabel_touches_fewer_week_rows_than_the_producer_recorded():
+    """A cleanup that commits between the count check and the relabel leaves a partial promotion: refuse it."""
+    db = _db()
+
+    def one_row_lost(cur, season, week, pending_id):  # passes the real check, then loses a row before the relabel
+        n = require_run_intact(cur, season, week, pending_id)
+        db.raw.execute("DELETE FROM projections WHERE pipeline_run_id = ? AND player_id LIKE '%-fwd' "
+                       "AND player_id = (SELECT min(player_id) FROM projections WHERE pipeline_run_id = ? "
+                       "AND player_id LIKE '%-fwd')", (pending_id, pending_id))
+        return n
+
+    assert _run(db, "A", replace_week=True, breakage={"run_intact": one_row_lost}) == 1
+
+    dead = [r for r in db.dead_letters if r[0] == "weekly_refresh/atomic_promote"]
+    assert dead and "relabelled 1" in dead[0][1] and "recorded 2" in dead[0][1]
+    assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]  # discard_week never ran
+    assert db.served() == {"OLD-SERVED"}  # nothing promoted: the transaction rolled back
+
+
+@pytest.mark.parametrize("table,column", [
+    ("season_simulations", "pipeline_run_id"), ("season_simulation_weeks", "pipeline_run_id"),
+    ("season_team_wins", "pipeline_run_id"), ("team_game_predictions", "model_run_id"),
+])
+def test_step_8_rolls_back_when_a_season_table_relabel_touches_no_rows(table, column):
+    db = _db()
+
+    def lost_after_check(cur, season, week, pending_id):
+        n = require_run_intact(cur, season, week, pending_id)
+        db.raw.execute(f"DELETE FROM {table} WHERE {column} = ?", (pending_id,))
+        return n
+
+    assert _run(db, "A", replace_week=True, breakage={"run_intact": lost_after_check}) == 1
+    dead = [r for r in db.dead_letters if r[0] == "weekly_refresh/atomic_promote"]
+    assert dead and table in dead[0][1]
+    assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]
+    assert db.served() == {"OLD-SERVED"}
+
+
+def test_step_8_takes_the_week_lock_before_it_checks_or_relabels():
+    from pipeline.week_lock import week_lock_key
+
+    db = _db()
+    order: list[str] = []
+
+    def spy(cur, season, week, pending_id):
+        order.append(list(db.lock_attempts))  # the week locks asked for when the check runs
+        return require_run_intact(cur, season, week, pending_id)
+
+    assert _run(db, "A", breakage={"run_intact": spy}) == 0
+    assert order == [[week_lock_key(2026, 3)]]  # the lock was taken before the check, once
+
+
+def test_step_8_refuses_while_another_holder_has_the_week_lock_and_keeps_the_archive():
+    from pipeline.week_lock import week_lock_key
+
+    db = _db()
+
+    def a_friday_write_starts() -> None:  # between step 7 and step 8 another writer takes the week
+        db.held_elsewhere.add(week_lock_key(2026, 3))
+
+    with patch("scripts.weekly_refresh.time.sleep") as slept:
+        assert _run(db, "A", after_gate=a_friday_write_starts, replace_week=True) == 1
+    dead = [r for r in db.dead_letters if r[0] == "weekly_refresh/atomic_promote"]
+    assert dead and "week lock" in dead[0][1]
+    assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]
+    assert db.served() == {"OLD-SERVED"}
+    assert slept.call_count == 2  # the bounded retry (3 attempts), then it gives up
+
+
+def test_a_dead_season_lock_connection_refuses_before_the_relabel():
+    db = _db()
+    seen: dict = {}
+
+    def connection_dies() -> None:  # the keepalive connection holding the season lock goes away after step 7
+        db.session_locks.clear()
+        seen["dead"] = True
+
+    def ping_fails(self):  # the check is a SELECT 1 on that connection
+        raise RuntimeError("server closed the connection unexpectedly")
+
+    with patch("pipeline.refresh_lock.HeldRefreshLock.ensure_alive", ping_fails):
+        assert _run(db, "A", after_gate=connection_dies, replace_week=True) == 1
+    dead = [r for r in db.dead_letters if r[0] == "weekly_refresh/atomic_promote"]
+    assert dead and "server closed the connection" in dead[0][1]
+    assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]
     assert db.served() == {"OLD-SERVED"}
 
 

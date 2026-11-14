@@ -237,3 +237,32 @@ def test_the_intact_guard_counts_the_season_tables_for_this_run_and_start_week_o
     db.run("INSERT INTO season_simulations VALUES (2026, 3, ?, 'other run')", (OLD,))
     with pytest.raises(RunNotProducedError, match="season_simulations"):
         require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+# ── the relabel's own counts are checked before the promotion commits (review N12) ────────
+_OK = {"projections": 2, "projections_other_weeks": 9, "season_simulation_weeks": 1, "season_simulations": 1,
+       "season_team_wins": 1, "team_game_predictions": 2}
+
+
+def test_a_complete_relabel_passes():
+    from pipeline.pending_runs import require_promotion_complete
+
+    require_promotion_complete(_OK, 2)  # other weeks may relabel any number, including none
+    require_promotion_complete({**_OK, "projections_other_weeks": 0}, 2)
+
+
+@pytest.mark.parametrize("got", [0, 1, 3])
+def test_a_projection_count_that_differs_from_the_recorded_one_refuses(got):
+    from pipeline.pending_runs import RunNotProducedError, require_promotion_complete
+
+    with pytest.raises(RunNotProducedError, match=f"relabelled {got} projection rows.*recorded 2"):
+        require_promotion_complete({**_OK, "projections": got}, 2)
+
+
+@pytest.mark.parametrize("table", ["season_simulation_weeks", "season_simulations", "season_team_wins",
+                                   "team_game_predictions"])
+def test_a_table_that_relabelled_nothing_refuses_and_names_it(table):
+    from pipeline.pending_runs import RunNotProducedError, require_promotion_complete
+
+    with pytest.raises(RunNotProducedError, match=table):
+        require_promotion_complete({**_OK, table: 0}, 2)

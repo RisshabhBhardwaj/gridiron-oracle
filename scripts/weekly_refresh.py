@@ -34,10 +34,13 @@ from ml import season_constants
 from pipeline.db_defaults import DEFAULT_HOST_DATABASE_URL
 from pipeline.availability_refresh import default_run_ids, reapply_latest_availability
 from pipeline.orchestrator import Orchestrator, OrchestratorSummary, _write_dead_letter
-from pipeline.pending_runs import clear_leftovers, new_pending_run_id, require_run_intact
+from pipeline.pending_runs import (
+    clear_leftovers, new_pending_run_id, require_promotion_complete, require_run_intact,
+)
 from pipeline.refresh_lock import season_refresh_lock
 from pipeline.schema import normalize_dsn
 from pipeline.week_archive import discard_week, restore_week
+from pipeline.week_lock import lock_week_with_retry
 from pipeline.staging_retention import purge_processed_staging, purge_stale_staging
 from scraper.adapters.ff_playerids import upsert_playerids
 from scripts.prune_stale_pipeline_runs import (
@@ -139,9 +142,13 @@ def promote_run_id(
     start_week: int,
     pending_run_id: str,
     approved_run_id: str,
-) -> None:
+) -> dict[str, int]:
     """
     Relabel pending_run_id rows as approved_run_id. Relabel only: this deletes nothing.
+
+    Returns the rows each UPDATE relabelled, so the caller can check them before it commits (review N12). The
+    projections relabel is split: ``projections`` counts the target week's rows (what the producer recorded),
+    ``projections_other_weeks`` the rest of the season (the stack rows).
 
     pending_run_id is the run's own id (``new_pending_run_id``), so a failed or killed earlier run's rows,
     which carry another id, are never relabelled. The caller promotes only after that run's step 7 passed.
@@ -161,6 +168,7 @@ def promote_run_id(
         season,
         start_week,
     )
+    relabelled: dict[str, int] = {}
     for table in SEASON_START_WEEK_TABLES:
         cur.execute(
             f"""
@@ -171,7 +179,19 @@ def promote_run_id(
             """,
             (approved_run_id, season, start_week, pending_run_id),
         )
+        relabelled[table] = cur.rowcount
 
+    # The target week first, on its own, so its count can be compared to what the producer recorded.
+    cur.execute(
+        """
+        UPDATE projections
+        SET pipeline_run_id = %s
+        WHERE season = %s AND week = %s
+          AND pipeline_run_id = %s
+        """,
+        (approved_run_id, season, start_week, pending_run_id),
+    )
+    relabelled["projections"] = cur.rowcount
     cur.execute(
         """
         UPDATE projections
@@ -181,6 +201,7 @@ def promote_run_id(
         """,
         (approved_run_id, season, pending_run_id),
     )
+    relabelled["projections_other_weeks"] = cur.rowcount
     cur.execute(
         """
         UPDATE team_game_predictions
@@ -190,6 +211,8 @@ def promote_run_id(
         """,
         (approved_run_id, season, start_week, pending_run_id),
     )
+    relabelled["team_game_predictions"] = cur.rowcount
+    return relabelled
 
 
 def _restore_after_failure(dsn: str, season: int, week: int, replace_week: bool) -> None:
@@ -352,19 +375,21 @@ def run_weekly_refresh(
     step_name = "refresh_lock"
     with ExitStack() as held:
         try:
-            held.enter_context(season_refresh_lock(dsn, season))
+            season_lock = held.enter_context(season_refresh_lock(dsn, season))
         except (Exception, SystemExit) as exc:
             logger.error("[%s] FAILED: %s", step_name, exc)
             _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
             return 1
-        return _refresh_steps(dsn, season, start_week, replace_week, pending_run_id, approved_run_id, t_start)
+        return _refresh_steps(
+            dsn, season, start_week, replace_week, pending_run_id, approved_run_id, t_start, season_lock,
+        )
 
 
 def _refresh_steps(
     dsn: str, season: int, start_week: int, replace_week: bool, pending_run_id: str, approved_run_id: str,
-    t_start: float,
+    t_start: float, season_lock,
 ) -> int:
-    """Steps 2-10 of the weekly refresh, run while the season's refresh lock is held."""
+    """Steps 2-10 of the weekly refresh, run while the season's refresh lock is held (``season_lock``)."""
     # Clear what earlier runs left (review N1): restore an archived week or stop, then delete leftover
     # pending rows so a failed or killed run's unchecked rows can never be served.
     step_name = "clear_leftovers"
@@ -556,17 +581,29 @@ def _refresh_steps(
     step_name = "atomic_promote"
     try:
         logger.info("Step 8: Performing atomic promotion...")
+        # The season lock is only as good as its connection: prove it still answers before relabelling.
+        season_lock.ensure_alive()
         with psycopg2.connect(dsn) as conn:
+            # Every cleanup and every Friday write takes the week lock, so holding it here serializes them
+            # against the relabel (review N12). It is released by the commit or rollback below.
+            if not lock_week_with_retry(conn, season, start_week, sleep=time.sleep):
+                raise RuntimeError(
+                    f"another writer holds the week lock for season={season} week={start_week}; the promotion "
+                    "did not start, nothing was promoted and the archived week, if any, is kept"
+                )
             with conn.cursor() as cur:
                 # Only a run whose producer wrote its forecast_runs row, and whose rows are all still there.
-                require_run_intact(cur, season, start_week, pending_run_id)
-                promote_run_id(
+                recorded = require_run_intact(cur, season, start_week, pending_run_id)
+                relabelled = promote_run_id(
                     cur,
                     season=season,
                     start_week=start_week,
                     pending_run_id=pending_run_id,
                     approved_run_id=approved_run_id,
                 )
+                # A cleanup that committed since the check would leave a zero or partial relabel: raise before
+                # the commit, so the transaction rolls back and discard_week never runs.
+                require_promotion_complete(relabelled, recorded)
                 # Same transaction: the archived old week is dropped only if the promotion commits.
                 discard_week(cur, season, start_week)
             conn.commit()
