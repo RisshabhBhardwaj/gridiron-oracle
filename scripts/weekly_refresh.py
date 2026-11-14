@@ -540,6 +540,20 @@ def _refresh_steps(
         _restore_after_failure(dsn, season, start_week, replace_week)
         return 1
 
+    # A Friday refresh that stored a snapshot between the producer and the promotion could not update the
+    # pending rows (it names the approved ids), so apply the newest snapshot to the rows now served (review
+    # N9). The promotion has committed and stays: a failure here is logged and dead-lettered, and the next
+    # Friday refresh catches up.
+    step_name = "reapply_after_promotion"
+    try:
+        with closing(psycopg2.connect(dsn)) as conn:
+            reapply_latest_availability(
+                conn, season, start_week, run_ids=default_run_ids(season), reason="after_promotion",
+            )
+    except (Exception, SystemExit) as exc:
+        logger.error("[%s] FAILED (the promotion stands): %s", step_name, exc, exc_info=True)
+        _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+
     # 9. Retention & pruning
     step_name = "retention_and_pruning"
     # Fail closed: the prune below deletes every row whose id is not kept. If the

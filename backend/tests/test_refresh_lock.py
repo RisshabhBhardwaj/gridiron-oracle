@@ -71,3 +71,13 @@ def test_the_lock_connection_is_closed_and_not_left_in_a_transaction():
     with _lock(db):
         assert db.autocommit is True  # no idle-in-transaction session for the whole run
     assert Conn.closed == 1
+
+
+def test_the_lock_connection_has_tcp_keepalives_so_a_dead_link_is_noticed():
+    db = SqlitePg()
+    with patch("pipeline.refresh_lock.psycopg2.connect", return_value=db) as connect:
+        with season_refresh_lock("postgres://x/y", 2026):
+            pass
+    kwargs = connect.call_args.kwargs
+    assert kwargs["keepalives"] == 1
+    assert kwargs["keepalives_idle"] > 0 and kwargs["keepalives_interval"] > 0 and kwargs["keepalives_count"] > 0

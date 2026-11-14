@@ -7,7 +7,8 @@ row of the season, including rows a failed or killed run left behind that no ste
 * ``clear_leftovers`` runs at the start of every refresh and removes what earlier runs left (and puts
   back a week a killed ``--replace-week`` run had archived);
 * ``require_run_intact`` refuses a promotion whose forward producer never wrote its ``forecast_runs`` row,
-  or whose rows are no longer the number the producer recorded (a second refresh cleared them).
+  or whose rows are no longer the number the producer recorded (a second refresh cleared them), or whose
+  simulation or team-game tables are empty.
 
 ``projections`` is unique on (player_id, game_id, stat) with no run id, so a run's upsert takes over a
 row with the same key. Rows a later run does not rewrite keep the older id until the cleanup removes them.
@@ -26,6 +27,15 @@ logger = logging.getLogger(__name__)
 
 # Tables whose run id column starts with the pending prefix while a refresh is in flight.
 _SEASON_TABLES = ("season_simulation_weeks", "season_simulations", "season_team_wins")
+
+
+# What step 8 relabels besides ``projections``: (table, run id column, week column).
+_PROMOTED_TABLES = (
+    ("season_simulation_weeks", "pipeline_run_id", "start_week"),
+    ("season_simulations", "pipeline_run_id", "start_week"),
+    ("season_team_wins", "pipeline_run_id", "start_week"),
+    ("team_game_predictions", "model_run_id", "week"),
+)
 
 
 class LeftoverRunsError(RuntimeError):
@@ -148,8 +158,9 @@ def require_run_intact(cur, season: int, week: int, pending_id: str) -> int:
 
     Runs inside the promotion transaction, before the relabel. Refuses when the week holds none of the run's
     rows, or a different number than the producer recorded (``projection_rows``): something deleted or
-    rewrote them after step 7 (review N8). Nothing is written, so the archive of a replaced week stays.
-    Returns the count.
+    rewrote them after step 7 (review N8). It also refuses when this run has no rows in the season tables
+    or ``team_game_predictions`` for the week (review N9): promoting would serve an empty simulation.
+    Nothing is written, so the archive of a replaced week stays. Returns the projection count.
     """
     recorded = _recorded_rows(cur, season, week, pending_id)
     if not recorded:
@@ -172,6 +183,18 @@ def require_run_intact(cur, season: int, week: int, pending_id: str) -> int:
             f"{want}; the rows changed after step 7 (another refresh's cleanup?). Nothing is promoted and the "
             "archived week, if any, is kept."
         )
+    # The simulation and team-game steps record no counts; each must at least have written something.
+    for table, column, week_column in _PROMOTED_TABLES:
+        cur.execute(
+            f"-- pr:count_{table}\nSELECT count(*) FROM {table} "
+            f"WHERE season = %s AND {week_column} = %s AND {column} = %s",
+            (season, week, pending_id),
+        )
+        if int(cur.fetchone()[0]) == 0:
+            raise RunNotProducedError(
+                f"{pending_id} has no rows in {table} for season={season} week={week}; they were deleted after "
+                "step 7 or never written. Nothing is promoted and the archived week, if any, is kept."
+            )
     return found
 
 

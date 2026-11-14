@@ -42,7 +42,7 @@ def _db() -> SqlitePg:
 
 
 def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bool = True,
-         after_gate=None, replace_week: bool = False) -> int:
+         after_gate=None, replace_week: bool = False, breakage: dict | None = None, with_reapply=None) -> int:
     """One weekly refresh whose heavy steps write the rows the real ones would. Returns the exit code."""
 
     def stack(*_a, **_k) -> int:
@@ -65,6 +65,8 @@ def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bo
         if die_in_simulation:
             raise KeyboardInterrupt  # the process is killed: nothing after this line runs, no rollback hooks
         db.run("INSERT INTO season_simulations VALUES (2026, 3, ?, ?)", (kw["pipeline_run_id"], tag))
+        db.run("INSERT INTO season_simulation_weeks VALUES (2026, 3, ?, ?)", (kw["pipeline_run_id"], tag))
+        db.run("INSERT INTO season_team_wins VALUES (2026, 3, ?, ?)", (kw["pipeline_run_id"], tag))
 
     def team_game(**kw) -> None:
         for team in (f"{tag}-team", "SHARED-team"):
@@ -82,11 +84,18 @@ def _run(db: SqlitePg, tag: str, *, die_in_simulation: bool = False, cleanup: bo
         stack_.enter_context(patch("pipeline.refresh_lock.psycopg2.connect", return_value=db))
         m["refresh_lock"].side_effect = season_refresh_lock  # the real lock, on the same table
         m["stack"].side_effect = stack
+        if with_reapply is not None:
+            m["reapply"].side_effect = with_reapply
         if after_gate is not None:
             m["acceptance"].side_effect = lambda *a, **k: (after_gate(), 0)[1]
         m["forward"].side_effect = forward
         m["simulation"].side_effect = simulation
         m["team_game"].side_effect = team_game
+        for key, how in (breakage or {}).items():  # make one step fail: an exception, or a return value
+            if isinstance(how, BaseException):
+                m[key].side_effect = how
+            else:
+                m[key].side_effect, m[key].return_value = None, how
         return run_weekly_refresh("postgres://dummy", season=2026, replace_week=replace_week)
 
 
@@ -178,3 +187,63 @@ def test_step_8_refuses_when_the_pending_rows_vanished_after_step_7_and_the_arch
 
     assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]  # not discarded
     assert db.served() == {"OLD-SERVED"}  # and nothing was promoted
+
+
+def test_step_8_refuses_when_the_simulation_rows_vanished_after_step_7_and_the_archive_survives():
+    db = _db()
+
+    def lost() -> None:
+        db.run("DELETE FROM season_simulations WHERE starts_with(pipeline_run_id, 'weekly_auto_2026_pending')")
+
+    assert _run(db, "A", after_gate=lost, replace_week=True) == 1
+    assert db.run("SELECT player_id FROM projections_replaced") == [("OLD-WEEK3",)]
+    assert db.served() == {"OLD-SERVED"}
+
+
+def test_step_8_refuses_when_the_team_game_rows_vanished_after_step_7():
+    db = _db()
+
+    def lost() -> None:
+        db.run("DELETE FROM team_game_predictions WHERE starts_with(model_run_id, 'weekly_auto_2026_pending')")
+
+    assert _run(db, "A", after_gate=lost) == 1
+    assert db.served() == {"OLD-SERVED"}
+
+
+# ── the season lock is released on every way out (review N9) ──────────────────────────────
+@pytest.mark.parametrize("step,how", [
+    ("clear_leftovers", RuntimeError("cleanup failed")),
+    ("orchestrator_run", RuntimeError("ingest failed")),
+    ("upsert_playerids", RuntimeError("bridge failed")),
+    ("stack", 1),
+    ("forward", RuntimeError("producer refused")),
+    ("simulation", RuntimeError("simulation failed")),
+    ("team_game", RuntimeError("team game failed")),
+    ("acceptance", 1),
+    ("run_intact", RuntimeError("rows changed")),
+], ids=lambda v: v if isinstance(v, str) else None)
+def test_every_failing_step_releases_the_season_lock(step, how):
+    db = _db()
+    assert _run(db, "A", breakage={step: how}) == 1
+    assert db.session_locks == set()
+    assert _run(db, "B") == 0  # and the next refresh is not locked out
+
+
+# ── statuses stored between the producer and the promotion reach the served rows (review N9) ──
+def test_a_snapshot_stored_between_the_producer_and_the_promotion_is_served_after_it():
+    db = _db()
+    stored: dict = {}  # the newest accepted snapshot's statuses, by player: what a Friday refresh stored
+
+    def apply_newest(conn, season, week, *, run_ids, reason="reapply", **_kw):
+        marks = ",".join("?" * len(run_ids))
+        for player, status in stored.items():
+            db.run(f"UPDATE projections SET availability_status = ? WHERE player_id = ? "
+                   f"AND pipeline_run_id IN ({marks})", (status, player, *run_ids))
+        return {"changed": len(stored)}
+
+    def friday_refresh_stored_a_snapshot() -> None:  # after step 4b, before step 8: the rows are pending
+        stored["A-fwd"] = "Out"
+
+    assert _run(db, "A", after_gate=friday_refresh_stored_a_snapshot, with_reapply=apply_newest) == 0
+    assert db.run("SELECT availability_status FROM projections WHERE player_id = 'A-fwd'") == [("Out",)]
+    assert "A-fwd" in db.served()  # served, now carrying the Out status the pending rows could not get

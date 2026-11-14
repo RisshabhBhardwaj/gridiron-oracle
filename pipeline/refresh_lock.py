@@ -4,7 +4,7 @@ A refresh's ``clear_leftovers`` deletes every pending row of the season, includi
 has written and is about to promote. Two refreshes of one season must therefore never overlap, and the weekly
 timer alone does not guarantee it: a manual run or a retry can start while a scheduled one is still going.
 
-The lock is a session-level Postgres advisory lock on a connection of its own. It lives as long as that
+The lock is a session-level Postgres advisory lock on a connection of its own (TCP keepalives on). It lives as long as that
 connection, so a process that dies frees it when the server drops the connection, and nothing has to be
 cleaned up by hand. The namespace differs from the week lock's (``pipeline/week_lock.py``), which guards single
 writes inside a transaction. The attempt does not wait: a second refresh refuses at once.
@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 REFRESH_LOCK_NAMESPACE = 0x47525246
 
 
+# The lock is only as good as its connection. Keepalives make a silently dropped link (a NAT, a firewall)
+# fail within about a minute instead of leaving a lock that looks held on one side and is gone on the other.
+KEEPALIVES = {"keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3}
+
+
 class RefreshAlreadyRunning(RuntimeError):
     """Another weekly refresh of this season holds the lock; this one changed nothing."""
 
@@ -30,7 +35,7 @@ class RefreshAlreadyRunning(RuntimeError):
 @contextmanager
 def season_refresh_lock(dsn: str, season: int) -> Iterator[None]:
     """Hold the season's refresh lock for the whole ``with`` block, or raise ``RefreshAlreadyRunning``."""
-    conn = psycopg2.connect(dsn)
+    conn = psycopg2.connect(dsn, **KEEPALIVES)
     try:
         conn.autocommit = True  # no transaction stays open for the length of the run
         with conn.cursor() as cur:

@@ -166,10 +166,15 @@ def test_the_guard_needs_the_forward_producer_row_for_this_season_and_week(seaso
 
 
 # ── the promotion guard also checks the rows are still there (review N8) ─────────────────
-def _produced(db: SqlitePg, *, recorded: int, present: int) -> None:
+def _produced(db: SqlitePg, *, recorded: int, present: int, skip: tuple[str, ...] = ()) -> None:
     db.add_forecast_run("forward_projections_2026_w03_x", NEW, rows=recorded)
     for i in range(present):
         db.add_projection(f"P{i}", NEW, week=3)
+    for table in ("season_simulation_weeks", "season_simulations", "season_team_wins"):
+        if table not in skip:
+            db.run(f"INSERT INTO {table} VALUES (2026, 3, ?, 'x')", (NEW,))
+    if "team_game_predictions" not in skip:
+        db.run("INSERT INTO team_game_predictions VALUES ('T', 2026, 3, ?)", (NEW,))
 
 
 def test_the_intact_guard_passes_when_the_rows_match_what_the_producer_recorded():
@@ -213,4 +218,22 @@ def test_the_intact_guard_still_needs_the_producer_row():
     db = SqlitePg()
     db.add_projection("P0", NEW, week=3)
     with pytest.raises(RunNotProducedError, match="forward_projections"):
+        require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+@pytest.mark.parametrize("table", ["season_simulation_weeks", "season_simulations", "season_team_wins",
+                                   "team_game_predictions"])
+def test_the_intact_guard_refuses_a_run_whose_table_of_this_run_is_empty(table):
+    db = SqlitePg()
+    _produced(db, recorded=3, present=3, skip=(table,))
+    with pytest.raises(RunNotProducedError, match=table):
+        require_run_intact(db.cursor(), 2026, 3, NEW)
+
+
+def test_the_intact_guard_counts_the_season_tables_for_this_run_and_start_week_only():
+    db = SqlitePg()
+    _produced(db, recorded=3, present=3, skip=("season_simulations",))
+    db.run("INSERT INTO season_simulations VALUES (2026, 4, ?, 'other week')", (NEW,))
+    db.run("INSERT INTO season_simulations VALUES (2026, 3, ?, 'other run')", (OLD,))
+    with pytest.raises(RunNotProducedError, match="season_simulations"):
         require_run_intact(db.cursor(), 2026, 3, NEW)

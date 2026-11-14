@@ -599,8 +599,10 @@ def test_the_newest_availability_is_reapplied_right_after_the_producer_wrote():
         m["cursor"].fetchone.side_effect = [(2,), (False,)]
         rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
     assert rc == 0
-    assert order == ["stack", "availability", "features", "forward", "reapply", "simulation", "team_game", "acceptance"]
-    call = m["reapply"].call_args
+    # the last "reapply" is the one after the promotion (review N9)
+    assert order == ["stack", "availability", "features", "forward", "reapply", "simulation", "team_game", "acceptance",
+                     "reapply"]
+    call = m["reapply"].call_args_list[0]
     assert call.args[1:3] == (2026, 3)
     pending = m["forward"].call_args.kwargs["pending_id"]
     assert pending in call.kwargs["run_ids"] and "weekly_auto_2026" in call.kwargs["run_ids"]
@@ -648,3 +650,43 @@ def test_a_refresh_that_cannot_take_the_season_lock_stops_before_any_write():
     m["orchestrator_run"].assert_not_called()
     m["restore"].assert_not_called()  # it changed nothing, so it has nothing to put back
     assert m["dead_letter"].call_args.args[1] == "weekly_refresh/refresh_lock"
+
+
+# ── a reapply after the promotion (review N9) ─────────────────────────────────────────────
+def test_the_newest_availability_is_reapplied_to_the_approved_rows_right_after_the_promotion():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["reapply"].side_effect = lambda *a, **k: order.append(("reapply", k["reason"]))
+        m["purge_processed"].side_effect = lambda *a, **k: (order.append("prune"), 0)[1]
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        assert run_weekly_refresh("postgres://dummy", season=2026) == 0
+    reasons = [o for o in order if isinstance(o, tuple)]
+    assert reasons == [("reapply", "after_producer"), ("reapply", "after_promotion")]
+    assert order.index(("reapply", "after_promotion")) < order.index("prune")
+    last = m["reapply"].call_args
+    assert last.args[1:3] == (2026, 3)
+    assert "weekly_auto_2026" in last.kwargs["run_ids"]
+    assert not any("_pending" in r for r in last.kwargs["run_ids"])  # the pending rows are gone by now
+
+
+def test_a_failed_reapply_after_the_promotion_is_logged_and_dead_lettered_but_not_undone(caplog):
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    calls = {"n": 0}
+
+    def reapply(*a, **k):
+        calls["n"] += 1
+        if k["reason"] == "after_promotion":
+            raise RuntimeError("week lock held")
+        return {}
+
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["reapply"].side_effect = reapply
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        with caplog.at_level("ERROR"):
+            rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0  # the promotion stands
+    m["restore"].assert_not_called()
+    m["purge_processed"].assert_called()  # and the run goes on to step 9
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/reapply_after_promotion"
+    assert any("week lock held" in r.getMessage() for r in caplog.records)

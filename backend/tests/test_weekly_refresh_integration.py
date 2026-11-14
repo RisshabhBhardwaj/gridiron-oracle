@@ -234,10 +234,35 @@ def _first_stack_row(season: int) -> dict:
     return {"player_id": str(row["player_id"]), "game_id": str(row["game_id"]), "week": int(row["week"])}
 
 
+def _write_sim_rows(*, season, start_week, pipeline_run_id, database_url, **_kw):
+    """What step 5 leaves for the run: one row in each season table, tagged with the run's pending id.
+
+    Step 8 refuses a run whose season tables are empty, so the stand-in must write them.
+    """
+    _execute(
+        database_url,
+        "INSERT INTO season_simulations (season, start_week, player_id, stat, mean, interval_method, "
+        "pipeline_run_id) VALUES (%s, %s, 'STANDIN-SIM', 'fantasy_ppr', 10, 'season_simulator_mc', %s)",
+        (season, start_week, pipeline_run_id),
+    )
+    _execute(
+        database_url,
+        "INSERT INTO season_simulation_weeks (season, start_week, week, player_id, stat, mean, pipeline_run_id) "
+        "VALUES (%s, %s, %s, 'STANDIN-SIM', 'fantasy_ppr', 10, %s)",
+        (season, start_week, start_week, pipeline_run_id),
+    )
+    _execute(
+        database_url,
+        "INSERT INTO season_team_wins (season, start_week, team, wins_mean, pipeline_run_id) "
+        "VALUES (%s, %s, 'AAA', 9.5, %s)",
+        (season, start_week, pipeline_run_id),
+    )
+
+
 @contextmanager
 def _season_sim_pass():
     """Step 5 succeeds without fitting models, so the run can reach step 8."""
-    with patch("scripts.materialize_season_simulation.materialize") as sim:
+    with patch("scripts.materialize_season_simulation.materialize", side_effect=_write_sim_rows) as sim:
         yield sim
 
 
