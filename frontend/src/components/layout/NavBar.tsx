@@ -4,13 +4,15 @@ import clsx from 'clsx'
 import { Menu, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSearch } from '@/context/SearchContext'
+import { PAGE_NAMES } from '@/lib/page-names'
+import { ApiStatusBadge } from './ApiStatusBadge'
 
 const NAV_LINKS = [
-  { to: '/projections', label: 'Current Season', exact: false },
-  { to: '/season', label: 'Season Review', exact: false },
-  { to: '/draft', label: 'Draft', exact: false },
-  { to: '/backtest', label: 'Backtesting', exact: false },
-  { to: '/settings', label: 'Settings', exact: false },
+  { to: '/projections', label: PAGE_NAMES.projections, exact: false },
+  { to: '/season', label: PAGE_NAMES.season, exact: false },
+  { to: '/draft', label: PAGE_NAMES.draft, exact: false },
+  { to: '/backtest', label: PAGE_NAMES.backtest, exact: false },
+  { to: '/settings', label: PAGE_NAMES.settings, exact: false },
 ]
 
 export function NavBar() {
@@ -32,7 +34,7 @@ export function NavBar() {
             </span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-1 flex-1">
+          <div className="hidden lg:flex items-center gap-1 flex-1">
             <NavLink
               to="/"
               end
@@ -68,26 +70,20 @@ export function NavBar() {
               id="nav-search-btn"
               className="hidden sm:flex items-center gap-2 rounded-md border border-line bg-surface-raised px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent/40 hover:text-accent"
               title="Search players (Cmd+K)"
-              aria-label="Search players"
+              aria-keyshortcuts="Meta+K Control+K"
             >
               <Search className="size-3.5" aria-hidden="true" />
-              <span>Search</span>
-              <kbd className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[9px]">
+              <span>Search players</span>
+              <kbd aria-hidden="true" className="rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-xs">
                 ⌘K
               </kbd>
             </button>
 
-            <div className="hidden lg:flex items-center gap-2 px-2 py-1">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping-slow rounded-full bg-accent opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
-              </span>
-              <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-fg-muted">Live</span>
-            </div>
+            <ApiStatusBadge />
 
             {/* Mobile hamburger: opens the menu dialog (focus trap, Escape) */}
             <button
-              className="md:hidden text-fg-muted hover:text-fg p-2 rounded-md border border-line transition-colors"
+              className="lg:hidden text-fg-muted hover:text-fg p-2 rounded-md border border-line transition-colors"
               onClick={() => setMenuOpen(true)}
               aria-label="Open navigation menu"
               aria-haspopup="dialog"

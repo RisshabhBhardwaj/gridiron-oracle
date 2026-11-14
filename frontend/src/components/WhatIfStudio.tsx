@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { FlaskConical, House, ShieldCheck, Thermometer, Wind, Zap, type LucideIcon } from 'lucide-react'
 import { useScenario } from '@/hooks/useScenario'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import type { ScenarioOverrides } from '@/types/api'
@@ -13,7 +14,6 @@ interface WhatIfStudioProps {
   week: number
   season: number
   stat: string
-  baseProjection: number
 }
 
 interface SliderConfig {
@@ -71,9 +71,10 @@ const INITIAL_OVERRIDES: ScenarioOverrides = {
   dome_override: false,
 }
 
-export function WhatIfStudio({ playerId, week, season, stat, baseProjection }: WhatIfStudioProps) {
+export function WhatIfStudio({ playerId, week, season, stat }: WhatIfStudioProps) {
   const [overrides, setOverrides] = useState<ScenarioOverrides>(INITIAL_OVERRIDES)
-  const { runScenario, data: scenarioData, isPending } = useScenario()
+  const { runScenario, cancel, reset, data: scenarioData, isPending, isError, error } = useScenario()
+  const touched = JSON.stringify(overrides) !== JSON.stringify(INITIAL_OVERRIDES)
 
   function applyOverrides(updated: ScenarioOverrides) {
     setOverrides(updated)
@@ -88,90 +89,76 @@ export function WhatIfStudio({ playerId, week, season, stat, baseProjection }: W
     applyOverrides({ ...overrides, dome_override: checked })
   }
 
-  const scenarioProjection = scenarioData?.scenario_projection ?? null
-  const delta              = scenarioData?.delta ?? null
-  const deltaPct           = scenarioData?.delta_pct ?? null
-  const domeActive         = overrides.dome_override === true
-  const deltaPositive      = delta !== null && delta >= 0
-  const statFamily = stat.includes('receiving')
-    ? 'coverage and defender strength'
-    : stat.includes('passing')
-      ? 'weather, volume, and coverage quality'
-      : 'snap share and game environment'
-
   function handleReset() {
-    applyOverrides(INITIAL_OVERRIDES)
+    cancel()
+    reset()
+    setOverrides(INITIAL_OVERRIDES)
   }
 
+  const domeActive = overrides.dome_override === true
+  const statLabel = stat.replaceAll('_', ' ')
+  const hasResult = scenarioData != null && !isError
+  const delta = scenarioData?.delta ?? 0
+  const deltaTone: Tone = delta >= 0 ? 'positive' : 'negative'
+  const sign = delta >= 0 ? '+' : ''
+
   return (
-    <div className={clsx(toneClass('highlight'), 'rounded-xl overflow-hidden border border-tone/20 bg-panel-gradient shadow-card')}>
-      {/* Header */}
-      <div className="px-5 py-4 flex items-center justify-between border-b border-white/[0.06]">
+    <div className={clsx(toneClass('highlight'), 'overflow-hidden rounded-xl border border-tone/20 bg-panel-gradient shadow-card')}>
+      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-tone/15 border border-tone/30">
+          <div className="flex size-8 items-center justify-center rounded-lg border border-tone/30 bg-tone/15">
             <FlaskConical className="size-4 text-tone" aria-hidden="true" />
           </div>
           <div>
             <h3 className="text-sm font-semibold text-fg">What-If Studio</h3>
-            <p className="text-[10px] text-fg-muted">Adjust conditions to see projection impact</p>
+            <p className="text-xs text-fg-muted">Change the game conditions and see what happens to {statLabel}</p>
           </div>
         </div>
-        {isPending && <LoadingSpinner size="sm" />}
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={!touched && !hasResult}
+          className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:text-fg disabled:opacity-40"
+        >
+          Reset
+        </button>
       </div>
 
-      <div className="p-5 flex flex-col gap-5">
-        {/* Live result banner */}
-        <div
-          className={clsx(
-            'rounded-xl p-4 flex items-center gap-4 border',
-            scenarioProjection === null
-              ? 'bg-surface-overlay/50 border-white/5'
-              : clsx(toneClass(deltaPositive ? 'positive' : 'negative'), 'bg-tone/[0.06] border-tone/20'),
-          )}
-        >
-          {scenarioProjection !== null && delta !== null && deltaPct !== null ? (
-            <>
-              <div className="flex-1 grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <p className="section-label mb-1">Base</p>
-                  <p className="font-display text-2xl text-fg">{baseProjection.toFixed(1)}</p>
-                </div>
-                <div>
-                  <p className="section-label mb-1">Scenario</p>
-                  <p className={clsx(toneClass('info'), 'glow-text font-display text-2xl text-tone')}>
-                    {scenarioProjection.toFixed(1)}
+      <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_16rem]">
+        {/* Result sits beside the sliders on desktop and above them on a phone. */}
+        <div className="lg:order-2">
+          <div className="flex flex-col gap-3 lg:sticky lg:top-4">
+            <div
+              aria-live="polite"
+              className={clsx(
+                'flex min-h-28 flex-col justify-center gap-1 rounded-xl border p-4',
+                hasResult ? clsx(toneClass(deltaTone), 'border-tone/25 bg-tone/[0.06]') : 'border-white/5 bg-surface-overlay/50',
+              )}
+            >
+              {isError ? (
+                <ErrorBanner error={error} onRetry={() => applyOverrides(overrides)} />
+              ) : hasResult ? (
+                <>
+                  <p className="section-label">Change from projection</p>
+                  <p className="glow-text font-display text-4xl leading-none text-tone">
+                    {sign}{delta.toFixed(1)}
                   </p>
-                </div>
-                <div>
-                  <p className="section-label mb-1">Delta</p>
-                  <p className={clsx(toneClass(deltaPositive ? 'positive' : 'negative'), 'glow-text font-display text-2xl text-tone')}>
-                    {deltaPositive ? '+' : ''}{delta.toFixed(1)}
+                  <p className="text-xs text-fg-muted">
+                    {sign}{scenarioData.delta_pct.toFixed(1)}%, from {scenarioData.base_projection.toFixed(1)} to{' '}
+                    <span className="font-semibold text-fg">{scenarioData.scenario_projection.toFixed(1)}</span>
                   </p>
-                  <p className="text-[10px] text-fg-muted mt-0.5">
-                    ({deltaPositive ? '+' : ''}{deltaPct.toFixed(1)}%)
-                  </p>
-                </div>
-              </div>
-            </>
-          ) : (
-            <p className="text-xs text-fg-muted text-center w-full">
-              Adjust sliders below to simulate different game conditions
-            </p>
-          )}
+                </>
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  {isPending ? 'Working it out…' : 'Move a slider to see how the projection changes.'}
+                </p>
+              )}
+              {isPending && hasResult && <LoadingSpinner size="sm" />}
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 text-[11px]">
-          <p className="text-fg-muted">
-            This scenario primarily shifts {statFamily} for <span className="text-fg">{stat.replaceAll('_', ' ')}</span>.
-          </p>
-          <button
-            onClick={handleReset}
-            className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors bg-white/[0.04] border border-white/[0.08] text-fg-muted hover:text-fg"
-          >
-            Reset
-          </button>
-        </div>
-
+        <div className="flex flex-col gap-5 lg:order-1">
         {/* Dome toggle */}
         <div
           className={clsx(
@@ -183,7 +170,7 @@ export function WhatIfStudio({ playerId, week, season, stat, baseProjection }: W
             <House className="size-5 text-fg-muted" aria-hidden="true" />
             <div>
               <p className="text-sm font-medium text-fg" id="dome-label">Indoor / Dome Game</p>
-              <p className="text-[10px] text-fg-muted">Removes all weather penalties</p>
+              <p className="text-xs text-fg-muted">Removes all weather penalties</p>
             </div>
           </div>
           <Switch
@@ -229,8 +216,9 @@ export function WhatIfStudio({ playerId, week, season, stat, baseProjection }: W
           })}
         </div>
 
-        <div className="rounded-xl px-4 py-3 text-[11px] text-fg-muted bg-white/[0.03] border border-white/[0.06]">
+        <div className="rounded-xl px-4 py-3 text-xs text-fg-muted bg-white/[0.03] border border-white/[0.06]">
           <span className="text-fg font-medium">Assumptions:</span> snap share scales opportunity, wind and temperature apply passing/receiving penalties, defender grade uses 70 as neutral, and dome mode removes weather effects.
+        </div>
         </div>
       </div>
     </div>

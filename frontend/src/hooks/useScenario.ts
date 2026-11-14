@@ -22,5 +22,13 @@ export function useScenario() {
     }, DEBOUNCE_MS)
   }
 
-  return { runScenario, ...mutation }
+  /** Drop a queued run, so a Reset cannot be followed by a stale request. */
+  function cancel(): void {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  return { runScenario, cancel, ...mutation }
 }

@@ -34,6 +34,17 @@ describe('ErrorBanner', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
+  it('announces itself once as an alert, so callers never wrap it', () => {
+    render(<ErrorBanner error={new ApiError(500, 'boom')} onRetry={() => {}} />)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert')).toContainElement(screen.getByRole('button', { name: 'Retry' }))
+  })
+
+  it('offers no Retry button when the caller cannot retry', () => {
+    render(<ErrorBanner error={new ApiError(500, 'boom')} />)
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
   it('shows a caller-supplied message and fires retry', async () => {
     const user = userEvent.setup()
     const onRetry = vi.fn()

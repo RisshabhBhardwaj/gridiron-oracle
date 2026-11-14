@@ -38,13 +38,28 @@ export function SHAPChart({ factors, height = 280 }: SHAPChartProps) {
     .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))
     .map((f) => ({ label: f.label, feature: f.feature, impact: f.impact, value: f.value }))
 
+  const signed = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(3)}`
+  const top = sorted[0]
+  const label = top
+    ? `Bar chart of the factors behind this projection. The biggest is ${top.label}, which ${top.impact >= 0 ? 'raises' : 'lowers'} it (${signed(top.impact)}). ` +
+      sorted.map((d) => `${d.label} ${signed(d.impact)}`).join('; ')
+    : 'Bar chart of the factors behind this projection (none available)'
+
   return (
-    <ChartFrame height={height}>
+    <ChartFrame
+      height={height}
+      label={label}
+      table={{
+        caption: 'Factors behind this projection, biggest first',
+        head: ['Factor', 'Feature value', 'Impact'],
+        rows: sorted.map((d) => [d.label, d.value.toFixed(3), signed(d.impact)]),
+      }}
+    >
       <BarChart data={sorted} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
         <ChartGrid horizontal={false} />
         <ChartXAxis
           type="number"
-          tick={{ fontSize: 10, fill: token('fg-muted') }}
+          tick={{ fontSize: 12, fill: token('fg-muted') }}
           tickLine={false}
           axisLine={false}
         />
@@ -53,7 +68,7 @@ export function SHAPChart({ factors, height = 280 }: SHAPChartProps) {
           dataKey="label"
           width={150}
           stroke="transparent"
-          tick={{ fontSize: 10, fill: token('fg-muted') }}
+          tick={{ fontSize: 12, fill: token('fg-muted') }}
           tickLine={false}
         />
         <Tooltip content={<CustomTooltip />} cursor={{ fill: token('fg', 0.03) }} />

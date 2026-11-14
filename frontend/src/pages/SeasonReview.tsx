@@ -16,6 +16,9 @@ import { POSITIONS } from '@/lib/constants'
 import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf } from '@/lib/evidence'
 import { positionTone, toneClass } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
+import { LoadingRegion, Skeleton, TableSkeleton } from '@/components/shared/Skeletons'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
 
 function PositionCard({ row }: { row: BacktestRow }) {
   return (
@@ -35,6 +38,22 @@ function PositionCard({ row }: { row: BacktestRow }) {
         </div>
       </dl>
     </div>
+  )
+}
+
+/** Same blocks, in the same order, as the loaded page: verdict, controls, position cards, table. */
+function SeasonReviewSkeleton() {
+  return (
+    <LoadingRegion label="Loading results" className="flex flex-col gap-6">
+      <Skeleton className="h-32 rounded-xl" />
+      <Skeleton className="h-[4.5rem] rounded-xl" />
+      <div aria-hidden="true" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[7.5rem] rounded-xl" />
+        ))}
+      </div>
+      <TableSkeleton rows={4} columns={5} />
+    </LoadingRegion>
   )
 }
 
@@ -101,7 +120,8 @@ export function SeasonReview() {
   const { data: currentSeasonMeta } = useCurrentSeason()
   const currentSeason = currentSeasonMeta?.season
 
-  const { data, isLoading, isError, error, refetch } = useBacktest({ stat: selectedStat })
+  const { data, isPending, isError, error, refetch } = useBacktest({ stat: selectedStat })
+  usePageTitle(PAGE_NAMES.season)
 
   const seasons = useMemo(() => (data ? [...data.seasons].sort((a, b) => b - a) : []), [data])
   const season = selectedSeason !== null && seasons.includes(selectedSeason) ? selectedSeason : (seasons[0] ?? null)
@@ -132,7 +152,7 @@ export function SeasonReview() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col justify-between gap-4 border-b border-line/60 pb-5 md:flex-row md:items-center">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Season Review</h1>
+          <h1 className="font-display text-2xl font-bold tracking-wider text-fg">{PAGE_NAMES.season}</h1>
           <p className="mt-1 text-sm text-fg-muted">How our past projections compared with what actually happened.</p>
         </div>
         {seasonItems.length > 0 && season !== null && (
@@ -155,16 +175,12 @@ export function SeasonReview() {
       <p className="text-sm text-fg-muted">
         <span className="font-semibold text-fg">Past results only{data && data.seasons.length > 0 ? ` (${data.seasons[0]}–${data.seasons[data.seasons.length - 1]})` : ''}. </span>
         {currentSeason ? `This season (${currentSeason}) is on the ` : 'This season is on the '}
-        <Link to="/projections" className="text-accent underline-offset-4 hover:underline">Current Season</Link> page.
+        <Link to="/projections" className="text-accent underline underline-offset-4 hover:text-fg">Current Season</Link> page.
       </p>
 
-      {isLoading && (
-        <div className="flex flex-col gap-6" role="status" aria-busy="true" aria-label="Loading results">
-          <div className="skeleton h-32 rounded-xl" />
-          <div className="skeleton h-14 rounded-xl" />
-          <div className="skeleton h-64 rounded-xl" />
-        </div>
-      )}
+      {isPending && <SeasonReviewSkeleton />}
+      {/* Nothing published (a 404, or the evidence not mounted): not an error. */}
+      {data === null && <EvidenceUnavailable onRetry={() => void refetch()} />}
       {isError && (isEvidenceUnavailable(error) ? <EvidenceUnavailable onRetry={() => void refetch()} /> : <ErrorBanner error={error} onRetry={() => void refetch()} />)}
 
       {data && season !== null && (
@@ -210,7 +226,7 @@ export function SeasonReview() {
                   <h2 className="text-sm font-bold text-fg">By position ({season})</h2>
                   {metricLabel && <span className="text-xs text-fg-muted">Scores shown: {metricLabel}</span>}
                 </div>
-                <div className="relative overflow-x-auto">
+                <div role="region" aria-label="Results by position; scrolls sideways on small screens" tabIndex={0} className="relative overflow-x-auto">
                   <DataTable columns={COLUMNS} data={rows} className="text-xs" />
                 </div>
               </section>

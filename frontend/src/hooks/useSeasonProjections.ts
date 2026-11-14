@@ -14,12 +14,13 @@ async function fetchSeasonProjections({
   season,
   startWeek,
   positions = ['WR', 'RB', 'TE', 'QB'],
-}: UseSeasonProjectionsParams): Promise<SeasonProjectionsResponse> {
+}: UseSeasonProjectionsParams): Promise<SeasonProjectionsResponse | null> {
   const params = new URLSearchParams()
   params.append('start_week', startWeek.toString())
   positions.forEach((p) => params.append('positions', p))
 
-  return apiClient.get<SeasonProjectionsResponse>(`/projections/season/${season}?${params.toString()}`)
+  // 404 = nothing published for this season: null (not ready), never a thrown error.
+  return apiClient.getOrNull<SeasonProjectionsResponse>(`/projections/season/${season}?${params.toString()}`)
 }
 
 export function useSeasonProjections(params: UseSeasonProjectionsParams) {

@@ -111,6 +111,14 @@
     @apply border-line;
   }
 
+  /* The one keyboard-focus rule. Links, buttons and every button-like control get the same
+     accent outline; mouse clicks never show it. Containers focused by script (tabindex=-1)
+     are left out so skipping to the main content does not outline the whole page. */
+  :where(a[href], button, summary, [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='combobox'], [tabindex]:not([tabindex='-1'])):focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar         { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track   { background: rgb(var(--surface)); }
@@ -120,6 +128,25 @@
 
 /* ── Component utilities ───────────────────────────────────────────────────── */
 @layer components {
+
+  /* Skip link: off-screen until keyboard focus reaches it, then the first thing on the page */
+  .skip-link {
+    position: fixed;
+    left: 0.75rem;
+    top: 0.75rem;
+    z-index: 100;
+    transform: translateY(-200%);
+    border-radius: 0.5rem;
+    background: rgb(var(--accent));
+    color: rgb(var(--accent-fg));
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+  }
+  .skip-link:focus-visible {
+    transform: none;
+    outline-color: rgb(var(--fg));
+  }
 
   /* Position badge: give the element a tone-* class too (see POSITION_TONE) */
   .pos-badge {

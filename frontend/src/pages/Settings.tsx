@@ -3,6 +3,9 @@ import clsx from 'clsx'
 import { Check, CalendarDays, CloudSun, HeartPulse, Lock, Swords, TrendingUp, Users, ChartColumn, type LucideIcon } from 'lucide-react'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { LoadingRegion, Skeleton } from '@/components/shared/Skeletons'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { Panel } from '@/components/shared/Panel'
 import { Slider } from '@/components/ui/slider'
@@ -48,7 +51,8 @@ function saveFailureMessage(error: Error): string {
 }
 
 export function Settings() {
-  const { data, isLoading, isError, error } = useSettings()
+  const { data, isPending, isError, error, refetch } = useSettings()
+  usePageTitle(PAGE_NAMES.settings)
   const updateSettings = useUpdateSettings()
   // The public site cannot save settings. Say so up front and turn the controls
   // off, instead of letting someone change values and hit a refusal.
@@ -85,17 +89,40 @@ export function Settings() {
     setExposureCap(0.25)
   }
 
-  if (isLoading) return <div className="flex justify-center py-16"><LoadingSpinner size="lg" /></div>
-  if (isError && error) return <ErrorBanner error={error} />
+  const heading = (
+    <h1 className="font-display text-5xl uppercase tracking-widest bg-gradient-to-br from-warning to-info bg-clip-text text-transparent">
+      {PAGE_NAMES.settings}
+    </h1>
+  )
+
+  if (isPending) {
+    return (
+      <LoadingRegion label="Loading settings" className="flex max-w-2xl flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          {heading}
+          <Skeleton className="h-4 w-72 max-w-full" />
+        </div>
+        <Skeleton className="h-[34rem] rounded-xl" />
+        <Skeleton className="h-36 rounded-xl" />
+        <Skeleton className="h-32 rounded-xl" />
+      </LoadingRegion>
+    )
+  }
+  if (isError && error) {
+    return (
+      <div className="flex max-w-2xl flex-col gap-6">
+        {heading}
+        <ErrorBanner error={error} onRetry={() => void refetch()} />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
 
       {/* Header */}
       <div>
-        <h1 className="font-display text-5xl tracking-widest bg-gradient-to-br from-warning to-info bg-clip-text text-transparent">
-          SETTINGS
-        </h1>
+        {heading}
         <p className="text-sm text-fg-muted mt-1">
           {editable ? 'Model weights and the bet-size limit' : 'The model weights and bet-size limit saved for this site'}
         </p>
@@ -211,7 +238,7 @@ export function Settings() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-fg font-medium">Largest slice of the bankroll allowed on one bet</p>
-              <p className="text-[10px] text-fg-muted mt-0.5">
+              <p className="text-xs text-fg-muted mt-0.5">
                 Lower is safer. The default is 25%.
               </p>
             </div>

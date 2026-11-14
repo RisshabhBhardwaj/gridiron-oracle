@@ -22,7 +22,8 @@ export function useSeasonWeekProjections(params: Params) {
       if (positions && positions.length > 0) {
         positions.forEach((pos) => qs.append('positions', pos))
       }
-      return apiClient.get<SeasonWeekProjectionsResponse>(
+      // 404 = no weekly projections published: null (not ready), never a thrown error.
+      return apiClient.getOrNull<SeasonWeekProjectionsResponse>(
         `/projections/season/${season}/weeks/${week}?${qs.toString()}`,
       )
     },

@@ -12,7 +12,7 @@ export function EvidenceUnavailable({ onRetry }: { onRetry?: () => void }) {
         <p className="text-base font-semibold text-fg">Past results aren't available right now</p>
         <p className="text-sm text-fg-muted">
           We're refreshing the numbers for the current model. Please check back soon, or look at{' '}
-          <Link to="/projections" className="text-accent underline-offset-4 hover:underline">
+          <Link to="/projections" className="text-accent underline underline-offset-4 hover:text-fg">
             this season's projections
           </Link>{' '}
           in the meantime.

@@ -3,7 +3,10 @@ import { useParams, Link } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Dices } from 'lucide-react'
 import { useGameDriveSim } from '@/hooks/useDriveSim'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
-import { SkeletonCard } from '@/components/shared/LoadingSpinner'
+import { LoadingRegion, PageHeaderSkeleton, Skeleton, TableSkeleton } from '@/components/shared/Skeletons'
+import { NotReady, NOT_READY_PRIMARY } from '@/components/shared/NotReady'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { FOCUS_RING } from '@/lib/utils'
 import type { SimulatedDriveDTO, SimulatedPlayDTO } from '@/types/api'
 
 const OUTCOME_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -33,7 +36,8 @@ export function GameDetail() {
   const [seed, setSeed] = useState<number | undefined>(undefined)
   const [expandedDrives, setExpandedDrives] = useState<Set<number>>(new Set([1]))
 
-  const { data, isLoading, error, refetch, isFetching } = useGameDriveSim(gameId, seed)
+  const { data, isPending, error, refetch, isFetching } = useGameDriveSim(gameId, seed)
+  usePageTitle(data ? `${data.away_team} @ ${data.home_team}` : 'Game')
 
   const toggleDriveExpand = (driveNum: number) => {
     setExpandedDrives((prev) => {
@@ -58,27 +62,47 @@ export function GameDetail() {
       <div className="flex items-center justify-between">
         <Link
           to="/projections"
-          className="inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors"
+          className={`inline-flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors ${FOCUS_RING}`}
         >
           ← Back to Current Season
         </Link>
       </div>
 
+      {/* The page's one h1 before the data arrives (the matchup takes over once loaded). */}
+      {!data && <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Game simulation</h1>}
+
       {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
 
-      {isLoading && (
-        <div>
-          <SkeletonCard count={3} />
-        </div>
+      {isPending && !error && (
+        <LoadingRegion label="Loading the game simulation" className="flex flex-col gap-6">
+          <PageHeaderSkeleton />
+          <Skeleton className="h-44 w-full rounded-2xl" />
+          <TableSkeleton rows={5} columns={4} />
+        </LoadingRegion>
       )}
 
-      {!isLoading && data && (
+      {data === null && (
+        <NotReady
+          title="This game's simulation isn't ready yet"
+          actions={
+            <>
+              <Link to="/projections" className={NOT_READY_PRIMARY}>
+                Back to Current Season
+              </Link>
+            </>
+          }
+        >
+          Drive-by-drive simulations appear once the game forecast is published.
+        </NotReady>
+      )}
+
+      {data && (
         <>
           {/* Header Banner: Matchup & Simulated vs Anchor Score */}
           <div className="p-6 rounded-2xl flex flex-col gap-5 border border-line/60 bg-panel-gradient shadow-[0_8px_32px_rgb(var(--shadow)/0.3)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/40 pb-4">
               <div>
-                <span className="text-[11px] uppercase tracking-wider font-bold text-accent">
+                <span className="text-xs uppercase tracking-wider font-bold text-accent">
                   {data.season} Week {data.week} · Drive-by-drive simulation
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-fg mt-0.5">
@@ -182,7 +206,7 @@ export function GameDetail() {
                         <span className="font-mono text-xs font-bold text-fg-muted w-14">
                           Drive {drive.drive_number}
                         </span>
-                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-surface-overlay border border-line text-fg-muted">
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded bg-surface-overlay border border-line text-fg-muted">
                           Q{drive.quarter}
                         </span>
                         <span
@@ -219,7 +243,7 @@ export function GameDetail() {
                     {isExpanded && drive.plays.length > 0 && (
                       <div className="border-t border-line/40 bg-surface/50 p-3 overflow-x-auto">
                         <table className="min-w-full text-left text-xs">
-                          <thead className="text-[10px] uppercase text-fg-muted tracking-wider border-b border-line/40">
+                          <thead className="text-xs uppercase text-fg-muted tracking-wider border-b border-line/40">
                             <tr>
                               <th className="pb-1.5 px-2">Play</th>
                               <th className="pb-1.5 px-2">Down & Dist</th>

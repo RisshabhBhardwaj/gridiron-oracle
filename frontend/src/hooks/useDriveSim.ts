@@ -10,7 +10,8 @@ export function useGameDriveSim(gameId: string | undefined, seed?: number) {
       const url = seed != null
         ? `/games/${encodeURIComponent(gameId)}/drive-sim?seed=${seed}`
         : `/games/${encodeURIComponent(gameId)}/drive-sim`
-      return apiClient.get<GameDriveSimResponse>(url)
+      // 404 = no simulation for this game: null (not ready), never a thrown error.
+      return apiClient.getOrNull<GameDriveSimResponse>(url)
     },
     enabled: Boolean(gameId),
     staleTime: 1000 * 60 * 5,

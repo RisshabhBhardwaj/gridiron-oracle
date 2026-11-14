@@ -114,6 +114,18 @@ describe('Settings (editable build)', () => {
   })
 })
 
+describe('Settings: loading, error and title', () => {
+  it('shows a skeleton while loading, an error with Retry for a 500, and sets the tab title', async () => {
+    server.use(http.get('/api/settings', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })))
+    renderSettings()
+    expect(screen.getByText('Loading settings')).toBeInTheDocument()
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(document.title).toBe('Settings · Gridiron Oracle')
+  })
+})
+
 describe('Settings (public site, view-only)', () => {
   it('shows the saved weights but explains that they cannot be changed', async () => {
     renderSettings()

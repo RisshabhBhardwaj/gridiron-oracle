@@ -83,7 +83,20 @@ def explain(
     try:
         explanation = shap_svc.explain(features, stat=stat, position=position, top_n=top_n)
     except ArtifactRequiredError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # No SHAP model is published for this stat/position in the served release.
+        # That is a property of the release, not an outage, so it is a 404 (retrying
+        # cannot help), in the same structured style as /predict's forecast_available.
+        # The exception text is internal and is not sent to the client.
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "explanation_available": False,
+                "message": (
+                    f"No breakdown of what drives this projection is published for "
+                    f"stat='{stat}' and position='{position}' in the current release."
+                ),
+            },
+        ) from exc
 
     # Base value: the mean projection (Kalman estimate as proxy)
     kalman_est, _ = svc._load_kalman(player_id, week, season, stat)  # noqa: SLF001

@@ -79,6 +79,16 @@ export function provenanceLabel(intervalMethod: string | null | undefined): stri
 }
 
 /**
+ * The same three labels, short enough for a table cell (one per row). The full
+ * sentence sits in the table's caption; the short form says the same thing.
+ */
+export function provenanceShort(intervalMethod: string | null | undefined): string {
+  const kind = classifyProvenance(intervalMethod)
+  if (kind === 'unknown') return 'Not verified'
+  return intervalMethod?.trim() === PRESEASON_SIMULATOR ? 'Preseason simulation' : 'Simulation'
+}
+
+/**
  * One label for a list of rows: the shared label when every non-forecast row has
  * the same one, otherwise the neutral not-a-forecast label.
  */

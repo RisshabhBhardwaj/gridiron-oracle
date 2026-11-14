@@ -17,7 +17,8 @@ export function useTeamWins(params: Params) {
     queryFn: async () => {
       const qs = new URLSearchParams()
       qs.set('start_week', String(startWeek))
-      return apiClient.get<SeasonTeamWinsResponse>(
+      // 404 = no win totals published: null (not ready), never a thrown error.
+      return apiClient.getOrNull<SeasonTeamWinsResponse>(
         `/projections/season/${season}/team-wins?${qs.toString()}`,
       )
     },

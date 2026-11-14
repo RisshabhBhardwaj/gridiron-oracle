@@ -17,6 +17,9 @@ import { POSITIONS } from '@/lib/constants'
 import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf, verdictSentence } from '@/lib/evidence'
 import { positionTone, toneClass, token } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
+import { ChartFrameSkeleton, LoadingRegion, Skeleton, TableSkeleton } from '@/components/shared/Skeletons'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import { PAGE_NAMES } from '@/lib/page-names'
 
 function seriesColor(position: string): string {
   const tone = positionTone(position)
@@ -83,13 +86,15 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
   },
 ]
 
-function Skeleton() {
+/** Same blocks, in the same order, as the loaded page: verdict, controls, chart, table. */
+function BacktestSkeleton() {
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading results" role="status">
-      <div className="skeleton h-32 rounded-xl" />
-      <div className="skeleton h-16 rounded-xl" />
-      <div className="skeleton h-80 rounded-xl" />
-    </div>
+    <LoadingRegion label="Loading results" className="flex flex-col gap-6">
+      <Skeleton className="h-32 rounded-xl" />
+      <Skeleton className="h-[4.5rem] rounded-xl" />
+      <ChartFrameSkeleton height={280} />
+      <TableSkeleton rows={6} columns={5} />
+    </LoadingRegion>
   )
 }
 
@@ -97,7 +102,8 @@ export function BacktestExplorer() {
   const [stat, setStat] = useState('receiving_yards')
   const [chosen, setChosen] = useState<string[]>([...POSITIONS])
 
-  const { data, isLoading, isError, error, refetch } = useBacktest({ stat })
+  const { data, isPending, isError, error, refetch } = useBacktest({ stat })
+  usePageTitle(PAGE_NAMES.backtest)
 
   const stats = useMemo(() => (data ? statsIn(data.available) : [stat]), [data, stat])
   const statItems = useMemo(() => stats.map((s) => ({ value: s, label: statLabel(s) })), [stats])
@@ -136,13 +142,15 @@ export function BacktestExplorer() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1 border-b border-line/60 pb-5">
-        <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Backtest</h1>
+        <h1 className="font-display text-2xl font-bold tracking-wider text-fg">{PAGE_NAMES.backtest}</h1>
         <p className="text-sm text-fg-muted">
           How our projections did on past seasons, compared with simple methods. Each prediction uses only what was known before the game.
         </p>
       </header>
 
-      {isLoading && <Skeleton />}
+      {isPending && <BacktestSkeleton />}
+      {/* Nothing published for this stat yet (a 404, or the evidence not mounted): not an error. */}
+      {data === null && <EvidenceUnavailable onRetry={() => void refetch()} />}
       {isError && (isEvidenceUnavailable(error) ? <EvidenceUnavailable onRetry={() => void refetch()} /> : <ErrorBanner error={error} onRetry={() => void refetch()} />)}
 
       {data && (
@@ -179,17 +187,25 @@ export function BacktestExplorer() {
           <Panel title={`How much better than the simple method, by season: ${statLabel(stat)}`}>
             <ChartFrame
               height={280}
-              label={`Bar chart of the percent our projections beat the simple method by, per season, for ${statLabel(stat)}. ${chart.summary}`}
+              label={`${statLabel(stat)}: ${verdictSentence(selectionVerdict, 'season tests')} Bar chart of the percent our projections beat the simple method by, per season. ${chart.summary}`}
+              table={{
+                caption: `Percent better than the simple method, by season: ${statLabel(stat)}`,
+                head: ['Season', ...chart.series],
+                rows: chart.points.map((pt) => [
+                  String(pt.season),
+                  ...chart.series.map((p) => (pt[p] == null ? '—' : `${(pt[p] as number) >= 0 ? '+' : ''}${pt[p]}%`)),
+                ]),
+              }}
             >
               <BarChart data={chart.points} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
                 <ChartGrid />
                 <ChartXAxis
                   dataKey="season"
-                  label={{ value: 'Season', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 11 }}
+                  label={{ value: 'Season', position: 'insideBottom', offset: -12, fill: chartTheme.axisText, fontSize: 12 }}
                 />
                 <ChartYAxis
                   tickFormatter={(v: number) => `${v}%`}
-                  label={{ value: '% better than simple method', angle: -90, position: 'insideLeft', offset: 0, fill: chartTheme.axisText, fontSize: 11, style: { textAnchor: 'middle' } }}
+                  label={{ value: '% better than simple method', angle: -90, position: 'insideLeft', offset: 0, fill: chartTheme.axisText, fontSize: 12, style: { textAnchor: 'middle' } }}
                 />
                 <ChartTooltip
                   formatter={(value, name) => {
@@ -197,7 +213,7 @@ export function BacktestExplorer() {
                     return [`${Math.abs(v).toFixed(1)}% ${v >= 0 ? 'better' : 'worse'} than the simple method`, name]
                   }}
                 />
-                <Legend wrapperStyle={{ fontSize: '11px', color: chartTheme.axisText, paddingTop: 8 }} verticalAlign="top" />
+                <Legend wrapperStyle={{ fontSize: '12px', color: chartTheme.axisText, paddingTop: 8 }} verticalAlign="top" />
                 <ReferenceLine y={0} stroke={chartTheme.axisLine} />
                 {chart.series.map((pos) => (
                   <Bar key={pos} dataKey={pos} name={pos} fill={seriesColor(pos)} radius={[4, 4, 0, 0]} />
@@ -213,7 +229,7 @@ export function BacktestExplorer() {
             ) : (
               <div className="flex flex-col gap-3">
                 {metricLabel && <p className="text-xs text-fg-muted">Scores shown: {metricLabel}</p>}
-                <div className="relative -mx-5 overflow-x-auto">
+                <div role="region" aria-label="Backtest results table; scrolls sideways on small screens" tabIndex={0} className="relative -mx-5 overflow-x-auto">
                   <DataTable columns={COLUMNS} data={rows} />
                 </div>
               </div>
