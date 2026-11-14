@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+from backend.tests.fail_on_skip import pytest_runtest_makereport  # noqa: F401  (hook; see module)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_user_settings_file(tmp_path, monkeypatch):

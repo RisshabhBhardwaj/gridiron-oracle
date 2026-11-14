@@ -196,6 +196,85 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
+  # Runs the `-m integration` tests against a real Postgres. Nothing else does:
+  # `schema-migrations` only proves the migrations round-trip, and the offline
+  # `python` job skips these tests when no database is reachable. Mark this job
+  # as a required check on `main` (repository setting, not part of this file).
+  #
+  # No skips allowed. A skip here means the database was not reached, so
+  # FAIL_ON_SKIP=1 turns every skip into a failure (backend/tests/fail_on_skip.py).
+  # The variable is explicit because GitHub sets CI=true on every job, including
+  # the offline one that relies on skips.
+  #
+  # Actions in this job are pinned by commit SHA (the repo is public). The tag is
+  # in the comment. The older jobs above still use tags.
+  integration:
+    name: Postgres integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: oracle
+          POSTGRES_PASSWORD: oracle
+          POSTGRES_DB: oracle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oracle -d oracle"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Throwaway credentials for the service container above. No repository secrets.
+      DATABASE_URL: postgresql://oracle:oracle@localhost:5432/oracle
+      FAIL_ON_SKIP: "1"
+      KMP_DUPLICATE_LIB_OK: "TRUE"
+      OMP_NUM_THREADS: "1"
+      OTEL_TRACES_EXPORTER: "none"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      # Same install as the `python` job, for the same reasons (CPU-only torch at
+      # the version pinned in requirements.txt; --no-cache-dir against disk limits).
+      - name: Install CPU-only torch (version pinned in requirements.txt)
+        run: |
+          set -euo pipefail
+          pin=$(grep -E '^torch==' backend/requirements.txt | sed -E 's/[[:space:]]*#.*$//')
+          test -n "$pin"
+          echo "Installing CPU build of $pin"
+          pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "$pin"
+
+      - name: Install backend deps
+        run: pip install --no-cache-dir -r backend/requirements-test.txt
+
+      - name: Fail if torch is not the CPU build
+        run: |
+          python -c "import sys, torch; sys.exit(0 if '+cpu' in torch.__version__ else 'torch is not the CPU build: ' + torch.__version__)"
+
+      - name: Migrate the empty database to head
+        run: alembic upgrade head
+
+      # Explicit files, not a directory sweep, so a new integration file is a
+      # deliberate addition here. Not listed: backend/tests/test_integration.py.
+      # Its tests need trained 2026 projections, materialized team_game_predictions
+      # and the built C++ engine, none of which an empty CI database has, so they
+      # would all skip (and fail this job). It still runs locally and in `make ci`.
+      - name: Integration tests (a skip fails the job)
+        run: |
+          python -m pytest \
+            backend/tests/test_feature_engineer.py \
+            backend/tests/test_normalize.py \
+            backend/tests/test_orchestrator.py \
+            backend/tests/test_schema_database.py \
+            backend/tests/test_weekly_refresh_integration.py \
+            -m integration -v -rs
+
   cpp:
     name: C++ build + ctest
     runs-on: ubuntu-latest
