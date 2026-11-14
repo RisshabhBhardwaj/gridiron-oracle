@@ -89,6 +89,7 @@ from ml.utils import (
 )
 from ml.cohort_guards import validate_training_cohort
 from ml.season_constants import assert_not_fitting_incomplete_season
+from ml.model_params import write_params
 from ml.reliability import build_training_manifest, write_manifest
 
 logging.basicConfig(
@@ -146,6 +147,20 @@ class LGBMTrainResult:
 
 
 # ── Optuna hyperparameter search (LightGBM-specific search space) ─────────────
+
+# Fixed parameters added to whatever Optuna tunes. Shared with
+# scripts/recover_optuna_params.py so a recovered params file equals what the
+# trainer used.
+_FIXED_AFTER_TUNING: dict = {
+    "objective": "regression_l2", "metric": "rmse",
+    "random_state": 42, "verbosity": -1, "n_jobs": -1,
+}
+
+
+def complete_optuna_params(best_params: dict) -> dict:
+    """Optuna's best params plus the fixed ones the trainer always uses."""
+    return {**best_params, **_FIXED_AFTER_TUNING}
+
 
 def _run_optuna(
     train_df: pd.DataFrame,
@@ -205,12 +220,7 @@ def _run_optuna(
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
     logger.info("Optuna best RMSE=%.3f  params=%s", study.best_value, study.best_params)
 
-    best = study.best_params.copy()
-    best.update({
-        "objective": "regression_l2", "metric": "rmse",
-        "random_state": 42, "verbosity": -1, "n_jobs": -1,
-    })
-    return best
+    return complete_optuna_params(study.best_params)
 
 
 # ── Single-fold training ──────────────────────────────────────────────────────
@@ -465,6 +475,11 @@ def train(
     else:
         logger.info("Optuna disabled (n_trials=0). Using DEFAULT_LGBM_PARAMS.")
         best_params = DEFAULT_LGBM_PARAMS.copy()
+
+    write_params(
+        out_dir, "lgbm", target, position_filter, best_params,
+        source="trainer" if n_optuna_trials > 0 else "trainer_defaults",
+    )
 
     # ── Walk-forward CV with best params ──────────────────────────────────────
     logger.info("Running walk-forward CV with best params…")
