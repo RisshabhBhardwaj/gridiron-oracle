@@ -14,13 +14,14 @@ import pandas as pd
 import psycopg2
 
 from ml.feature_contract import assert_no_same_game_postgame_equality, assert_model_input_columns
+from ml.season_constants import train_seasons
 from ml.utils import FEATURE_COLS
 from scraper.adapters.nflreadpy_adapter import _psycopg2_dsn
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seasons", nargs="+", type=int, default=[2021, 2022, 2023, 2024, 2025])
+    parser.add_argument("--seasons", nargs="+", type=int, default=train_seasons())
     parser.add_argument("--database-url", default=os.environ.get("DATABASE_URL"))
     args = parser.parse_args()
     if not args.database_url:

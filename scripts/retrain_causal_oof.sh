@@ -16,7 +16,8 @@
 #   ONLY_CELLS     space-separated "stat:POS" list, e.g. "receiving_yards:WR targets:TE".
 #                  Default: all 32.
 #   SEASONS        training range, default ml.season_constants.train_seasons_arg().
-#   CONTRACT_SEASONS  seasons the feature contract is checked on (space-separated).
+#   CONTRACT_SEASONS  seasons the feature contract is checked on (space-separated),
+#                  default: every training season (2019-LAST_COMPLETE_SEASON).
 #   N_TRIALS       Optuna trials per base learner, default 20.
 #   TRAIN_OUT_ROOT persistent output root (the box's `train_out` volume). When set,
 #                  OUT_DIR defaults to $TRAIN_OUT_ROOT/oof/rebuild_<STAMP> and
@@ -52,7 +53,9 @@ else
 fi
 N_TRIALS="${N_TRIALS:-20}"
 SEASONS="${SEASONS:-$("$PY" -c 'from ml.season_constants import train_seasons_arg; print(train_seasons_arg())')}"
-CONTRACT_SEASONS="${CONTRACT_SEASONS:-2021 2022 2023 2024 2025}"
+# The contract is checked on every season the trainers read (ml.season_constants.train_seasons),
+# so a leak in the backfilled 2019-2023 rows cannot hide behind a shorter check.
+CONTRACT_SEASONS="${CONTRACT_SEASONS:-$("$PY" -c 'from ml.season_constants import train_seasons; print(" ".join(map(str, train_seasons())))')}"
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
 # Prove the source matrix is causal before spending hours training. This also

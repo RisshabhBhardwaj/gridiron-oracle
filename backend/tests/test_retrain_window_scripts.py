@@ -139,3 +139,11 @@ def test_train_window_finishes_a_rebuild_that_was_started_as_a_subset(env):
     assert result.returncode == 0, result.stderr
     assert (out_root / "last_full_stamp").read_text().strip() == stamp
     assert _stacks(rebuild) == 32
+
+
+def test_feature_contract_defaults_cover_every_training_season():
+    from ml.season_constants import train_seasons
+
+    assert train_seasons()[0] == 2019
+    assert "train_seasons()" in (REPO / "scripts" / "verify_feature_contract.py").read_text()
+    assert "train_seasons()" in (REPO / "scripts" / "retrain_causal_oof.sh").read_text()
