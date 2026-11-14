@@ -21,9 +21,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 # Install the CPU-only torch build first. The default PyPI wheel for linux/amd64
-# drags in ~2.5 GB of nvidia-* CUDA runtime packages that a Railway container can
-# never use; pinning the cpu index keeps the image inside Railway's size budget.
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
+# drags in several GB of nvidia-* CUDA runtime packages a CPU box never uses.
+# The version MUST be the one pinned in requirements.txt: an unpinned install
+# takes the newest CPU wheel, the next step sees the `torch==` pin unsatisfied
+# and replaces it with the CUDA wheel from PyPI (same bug CI had). With the
+# pinned version here, pip treats the pin as satisfied (X+cpu matches ==X).
+RUN set -eu; \
+    pin=$(grep -E '^torch==' /app/requirements.txt | sed -E 's/[[:space:]]*#.*$//'); \
+    test -n "$pin"; \
+    pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "$pin"
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy project packages — layout matches import paths in source code
