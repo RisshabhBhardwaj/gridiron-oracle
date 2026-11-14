@@ -197,6 +197,14 @@ class PipelineMetadata:
 # PipelineRunner
 # ---------------------------------------------------------------------------
 
+ARTIFACT_BACKED_RUNNER_MESSAGE = (
+    "PRODUCT_MODE=artifact_backed does not use PipelineRunner's MLflow/ONNX inference. "
+    "Forward projections come from ml.forward_serving (CLI: scripts/materialize_forward_projections.py), "
+    "which runs the base models pinned in releases/current_baseline.json (decision 0012). "
+    "The legacy path runs only under the explicit legacy PRODUCT_MODE (see ml/product_mode.py)."
+)
+
+
 class PipelineRunner:
     """
     Weekly projection pipeline orchestrator.
@@ -342,6 +350,8 @@ class PipelineRunner:
           3. _run_bayesian_step — once per (stat, position)
           4. _run_mc_step       — once per (stat, position)
         """
+        if not dry_run_mode and resolve_product_mode() == ARTIFACT_BACKED:
+            raise RuntimeError(ARTIFACT_BACKED_RUNNER_MESSAGE)
         self._degraded_cells = {}
         self._pipeline_run_id = (
             None if dry_run_mode else f"pipeline_{uuid.uuid4().hex}"
@@ -819,14 +829,11 @@ class PipelineRunner:
                 return kalman_df[col].fillna(0.0).values.astype(float)
             return np.zeros(len(kalman_df), dtype=float)
 
-        # Fast path: no MLflow configured. Artifact-backed serving must not
-        # silently turn this into Kalman/zero projections.
+        # Artifact-backed serving is ml.forward_serving, not MLflow or ONNX.
+        if artifact_backed:
+            raise RuntimeError(ARTIFACT_BACKED_RUNNER_MESSAGE)
+
         if not self.mlflow_tracking_uri:
-            if artifact_backed:
-                raise RuntimeError(
-                    "PRODUCT_MODE=artifact_backed requires MLFLOW_TRACKING_URI; "
-                    "refusing Kalman fallback."
-                )
             return fallback("MLFLOW_TRACKING_URI is not configured")
 
         # One-time connectivity check — avoids 7 retries × N lookups when MLflow is down.
@@ -846,11 +853,6 @@ class PipelineRunner:
                 )
 
         if not self._mlflow_reachable:
-            if artifact_backed:
-                raise RuntimeError(
-                    "MLflow is unreachable while PRODUCT_MODE=artifact_backed; "
-                    "refusing Kalman fallback."
-                )
             return fallback("MLflow is unreachable")
 
         try:
@@ -869,11 +871,6 @@ class PipelineRunner:
                     season=season, week=week, dry_run_mode=dry_run_mode,
                 )
         except Exception as exc:
-            if artifact_backed:
-                raise RuntimeError(
-                    f"Artifact-backed stacking failed for stat={stat} position={position}; "
-                    "refusing Kalman fallback."
-                ) from exc
             logger.warning(
                 "Stacking inference failed for stat=%s (%s) — "
                 "falling back to kalman_est_%s proxy.",

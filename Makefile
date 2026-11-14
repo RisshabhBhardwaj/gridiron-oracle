@@ -238,7 +238,7 @@ smoke:
 # Usage and warnings for each target: docs/runbooks/scripts.md
 
 .PHONY: materialize-forward-projections
-materialize-forward-projections: ## WRITES projections and forecast_runs; needs PRODUCT_MODE=artifact_backed. Guards run after the write.
+materialize-forward-projections: ## WRITES projections and forecast_runs; needs PRODUCT_MODE=artifact_backed. Guards G1-G5 run before the write.
 	@test -n "$(SEASON)" -a -n "$(WEEK)" -a -n "$(FEATURE_RUN_ID)" -a -n "$$DATABASE_URL" || (echo "Usage: make materialize-forward-projections SEASON=2026 WEEK=1 FEATURE_RUN_ID=forward_features_... (DATABASE_URL must be set)"; exit 2)
 	$(PYTHON) scripts/materialize_forward_projections.py --season $(SEASON) --week $(WEEK) --feature-run-id $(FEATURE_RUN_ID) --database-url "$$DATABASE_URL"
 

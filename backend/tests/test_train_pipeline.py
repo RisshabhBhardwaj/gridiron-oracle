@@ -694,20 +694,22 @@ class TestStackingInferenceHelpers:
             result = runner._run_stacking_step(df, "rushing_yards", "RB")
         assert list(result) == [15.0, 25.0]
 
-    def test_stacking_artifact_backed_exception_never_falls_back(self, monkeypatch):
-        """C-04: artifact-backed serving propagates every stack failure."""
+    def test_stacking_artifact_backed_never_uses_mlflow(self, monkeypatch):
+        """Decision 0012: artifact-backed serving is ml.forward_serving; this path refuses."""
         from ml.train import PipelineRunner
 
         monkeypatch.setenv("PRODUCT_MODE", "artifact_backed")
         runner = PipelineRunner(mlflow_tracking_uri="http://fake:9999")
         runner._mlflow_reachable = True
         df = pd.DataFrame({"player_id": ["p1"], "kalman_est_rushing_yards": [15.0]})
-        with patch.object(runner, "_load_and_run_stacking", side_effect=ValueError("malformed coefs")):
-            with pytest.raises(RuntimeError, match="refusing Kalman fallback"):
+        with patch.object(runner, "_load_and_run_stacking", side_effect=ValueError("malformed coefs")) as stack:
+            with pytest.raises(RuntimeError, match="ml.forward_serving"):
                 runner._run_stacking_step(df, "rushing_yards", "RB")
+        stack.assert_not_called()
 
-    def test_stacking_mlflow_with_mock_models_uses_their_predictions(self):
-        """When real models are injected, their predictions flow through."""
+    def test_stacking_mlflow_with_mock_models_uses_their_predictions(self, monkeypatch):
+        """When real models are injected, their predictions flow through (legacy mode only)."""
+        monkeypatch.setenv("PRODUCT_MODE", "graceful_fallback")  # explicit opt-in
         from unittest.mock import MagicMock, patch
         from ml.train import PipelineRunner
 

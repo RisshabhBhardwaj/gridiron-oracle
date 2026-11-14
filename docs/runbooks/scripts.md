@@ -13,10 +13,10 @@ Run from the repo root with `.venv_311/bin/python`. Scripts that take a database
 ## Wired
 
 ### materialize-forward-projections (WIRED)
-- Purpose: strict model inference for one forward feature snapshot (`scripts/materialize_forward_projections.py`).
-- Inputs: the `forecast_runs` row for `FEATURE_RUN_ID` (written by `build_forward_features.py`). Needs `PRODUCT_MODE=artifact_backed`.
-- Outputs: `projections` rows and a `forecast_runs` row. Served only if the run id is in `approved_pipeline_run_ids` (`backend/app/services/projection.py:78-101`).
-- WARNING: writes `projections`. Its degraded-row and run-id checks run after that write, so a bad run is stored before it is refused. Owner decision.
+- Purpose: forward projections for one feature snapshot from the base models pinned in `releases/current_baseline.json`. A thin CLI over `ml/forward_serving.py` (decision 0012, built 2026-11-14).
+- Inputs: the `forecast_runs` snapshot row (written by `build_forward_features.py`) and an availability snapshot fetched at or before its `as_of`. Needs `PRODUCT_MODE=artifact_backed`.
+- Outputs: `projections` rows under `weekly_auto_<season>_pending` (one row per rostered depth-chart player and stat; `availability_status` stored) and a `forecast_runs` row keyed `forward_projections_<season>_w<WW>_<UTC stamp>`. Served only after promotion to an approved run id.
+- WARNING: writes `projections`. Guards G1-G5 all run before the single write; a refusal exits 1 and writes nothing. `--dry-run` runs everything except the write.
 - Run: `make materialize-forward-projections SEASON=2026 WEEK=1 FEATURE_RUN_ID=<id>`
 
 ### materialize-preseason-draft (WIRED)
