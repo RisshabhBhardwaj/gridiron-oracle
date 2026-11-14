@@ -219,7 +219,7 @@ export function PlayerSearch() {
                       {player.projection != null && (
                         <div className="flex-shrink-0 text-right">
                           <p className="glow-text font-display text-xl text-tone">{player.projection.toFixed(1)}</p>
-                          <p className="text-[10px] text-fg-muted">{weekFigureLabel(defaultWeek, player.stat)}</p>
+                          <p className="text-xs text-fg-muted">{weekFigureLabel(defaultWeek, player.stat)}</p>
                         </div>
                       )}
 
