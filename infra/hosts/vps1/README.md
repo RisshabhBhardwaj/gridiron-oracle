@@ -94,8 +94,8 @@ Measured verdicts: one lgbm fold peaks ~0.35 GB — FITS the 10 GB training cap
 (~3.5%); full tree-OOF retrain projects to ~8–10 h on 5 capped vCores (fits
 the weekend window). ETL real RSS unmeasured (snapshot was down) — `etl`
 stays capped at 1.5 GB until the Docker rehearsal measures it.
-`TRAIN_SMALL_CMD`/`TRAIN_FULL_CMD` stay unset until the rehearsal pins the
-recipes; full TFT/GNN retrains wait for their own fold profile.
+`TRAIN_SMALL_CMD`/`TRAIN_FULL_CMD` are pinned (see "Training slice"); full
+TFT/GNN retrains wait for their own fold profile.
 
 ## Training slice
 
@@ -109,15 +109,27 @@ recipes; full TFT/GNN retrains wait for their own fold profile.
   hierarchy. The real container enforcement is in compose.yml (`training`:
   `mem_limit: 10g`, `cpus: 5.0`, `cpu_shares: 128`). The slice is the
   host-level envelope and accounting; both layers carry the same numbers.
-- **Recipes are provisional, not invented:** `scripts/train_small.sh` and
-  `scripts/train_full.sh` take `TRAIN_SMALL_CMD` / `TRAIN_FULL_CMD` from the
-  environment and fail loud when unset. The measurement handoff pins the
-  exact invocations (candidates: `train_volume_oof.sh`,
-  `train_yardage_oof.sh`, `train_passing_yards_qb.sh`,
-  `train_fantasy_ppr_collapsed.sh` for small; `retrain_causal_oof.sh` +
-  SHAP for full). A full retrain that cannot fit Fri-night-through-weekend
-  on 5 capped vCores is an envelope question for the owner, not a reason to
-  overrun into the ETL.
+- **Recipes (pinned 2026-11-14, not yet run on the box):**
+  `scripts/train_small.sh` and `scripts/train_full.sh` take `TRAIN_SMALL_CMD`
+  / `TRAIN_FULL_CMD` from `.env` (values in `.env.example`) and fail loud when
+  unset. Both call `scripts/train_window.sh` inside the container:
+  - `full`: the 32-cell causal OOF rebuild with per-row bucket attributions
+    (`scripts/retrain_causal_oof.sh`, 20 trials). Resumable: a window killed
+    at `RuntimeMaxSec` continues the same rebuild next time (pointer file
+    `full_stamp` on the volume).
+  - `small`: nightly canary, 3 cells, 5 trials, last 3 kept. Never promoted.
+  - Output lives on the `train_out` volume (`/train_out`, owned by
+    `appuser`): `oof/rebuild_<STAMP>/`, `logs/`, `last_full_stamp`. Without
+    the volume `run --rm` would discard a weekend of training.
+  - One trainer at a time (`flock`): the small timer fires nightly, including
+    Sat-Mon while the full job runs, and skips (exit 75, no ping).
+  - Promotion is manual: `docs/runbooks/vps4-causal-rerun.md`.
+  A full rebuild that cannot fit Fri-night-through-weekend on 5 capped vCores
+  is an envelope question for the owner, not a reason to overrun into the ETL.
+  The runbook has a wall-time estimate, labeled as one.
+- **Release provenance:** `/srv/gridiron` has no `.git`, so set
+  `GIT_COMMIT_SHA` in `.env` (`api` and `training` read it through
+  `env_file`) to the commit the deployed code was built from.
 - Every training run pings its dead-man URL on success only
   (`HEALTHCHECKS_TRAIN_SMALL_URL` / `HEALTHCHECKS_TRAIN_FULL_URL`).
 

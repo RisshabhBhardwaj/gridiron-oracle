@@ -3,13 +3,11 @@
 # gridiron-train-small.timer). Host-side: runs the full-image `training`
 # service, then pings the dead-man URL on success ONLY.
 #
-# RECIPE IS PROVISIONAL (set by the measurement handoff, not invented here):
-# export TRAIN_SMALL_CMD with the exact small-retrain invocation, e.g. one of
-#   scripts/train_volume_oof.sh | scripts/train_yardage_oof.sh |
-#   scripts/train_passing_yards_qb.sh | scripts/train_fantasy_ppr_collapsed.sh
-# plus SHAP/backfill steps, as confirmed by the one-fold profile. The command
-# runs inside /app (repo root layout, same as the etl service). Unset =
-# fail loud before touching anything; the missing ping is the alert.
+# Recipe (pinned 2026-11-14): TRAIN_SMALL_CMD="bash scripts/train_window.sh small"
+# in .env. It runs inside /app: a 3-cell canary rebuild (5 trials) written to
+# the `train_out` volume, never promoted. Exit 75 means another trainer held
+# the lock (no ping). Unset = fail loud before touching anything; the missing
+# ping is the alert.
 set -eu
 
 COMPOSE_DIR="${COMPOSE_DIR:-/srv/gridiron/infra/hosts/vps1}"

@@ -3,11 +3,12 @@
 # gridiron-train-full.timer). Host-side: runs the full-image `training`
 # service, then pings the dead-man URL on success ONLY.
 #
-# RECIPE IS PROVISIONAL (set by the measurement handoff, not invented here):
-# export TRAIN_FULL_CMD with the exact full-retrain invocation (full TFT/GNN
-# torch-CPU retrains, e.g. around scripts/retrain_causal_oof.sh, plus SHAP),
-# as confirmed by the one-fold profile projecting onto 5 capped vCores over
-# the 56-hour window. Unset = fail loud; the missing ping is the alert.
+# Recipe (pinned 2026-11-14): TRAIN_FULL_CMD="bash scripts/train_window.sh full"
+# in .env. It runs inside /app: the resumable 32-cell causal OOF rebuild with
+# bucket attributions (scripts/retrain_causal_oof.sh) into the `train_out`
+# volume. A window killed at RuntimeMaxSec resumes the same rebuild next time.
+# Promotion is a manager step (docs/runbooks/vps4-causal-rerun.md). Unset =
+# fail loud; the missing ping is the alert.
 set -eu
 
 COMPOSE_DIR="${COMPOSE_DIR:-/srv/gridiron/infra/hosts/vps1}"

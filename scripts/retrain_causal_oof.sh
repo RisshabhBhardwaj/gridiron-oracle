@@ -18,7 +18,11 @@
 #   SEASONS        training range, default ml.season_constants.train_seasons_arg().
 #   CONTRACT_SEASONS  seasons the feature contract is checked on (space-separated).
 #   N_TRIALS       Optuna trials per base learner, default 20.
+#   TRAIN_OUT_ROOT persistent output root (the box's `train_out` volume). When set,
+#                  OUT_DIR defaults to $TRAIN_OUT_ROOT/oof/rebuild_<STAMP> and
+#                  LOG_DIR to $TRAIN_OUT_ROOT/logs/rebuild_<STAMP>.
 #   OUT_DIR        output directory, default ml/oof/rebuild_<STAMP>.
+#   LOG_DIR        log directory, default ml/logs/rebuild_<STAMP>.
 #   PY             python, default .venv_311/bin/python.
 #   DATABASE_URL   required unless the default local URL is right.
 #   SKIP_CONTRACT  set to 1 to skip the feature-contract check (dry runs only).
@@ -34,8 +38,13 @@ export KMP_DUPLICATE_LIB_OK=TRUE
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 
 STAMP="${STAMP:-$(date +%Y%m%dT%H%M%S)}"
-OUT_DIR="${OUT_DIR:-ml/oof/rebuild_${STAMP}}"
-LOG_DIR="${LOG_DIR:-ml/logs/rebuild_${STAMP}}"
+if [[ -n "${TRAIN_OUT_ROOT:-}" ]]; then
+  OUT_DIR="${OUT_DIR:-$TRAIN_OUT_ROOT/oof/rebuild_${STAMP}}"
+  LOG_DIR="${LOG_DIR:-$TRAIN_OUT_ROOT/logs/rebuild_${STAMP}}"
+else
+  OUT_DIR="${OUT_DIR:-ml/oof/rebuild_${STAMP}}"
+  LOG_DIR="${LOG_DIR:-ml/logs/rebuild_${STAMP}}"
+fi
 N_TRIALS="${N_TRIALS:-20}"
 SEASONS="${SEASONS:-$("$PY" -c 'from ml.season_constants import train_seasons_arg; print(train_seasons_arg())')}"
 CONTRACT_SEASONS="${CONTRACT_SEASONS:-2021 2022 2023 2024 2025}"
