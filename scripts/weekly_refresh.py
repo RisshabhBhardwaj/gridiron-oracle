@@ -262,6 +262,40 @@ def produce_forward_week(
     return report
 
 
+
+class _Tee:
+    """Write to the real stdout and keep a copy."""
+
+    def __init__(self, stream):
+        self.stream, self.parts = stream, []
+
+    def write(self, text):
+        self.parts.append(text)
+        return self.stream.write(text)
+
+    def flush(self):
+        self.stream.flush()
+
+
+def _run_gate(gate) -> tuple[int, str]:
+    """Run the acceptance gate; return (exit code, the reason it printed).
+
+    The gate prints a JSON report whose ``diagnosis`` says why it failed. Step 7 used to keep only the
+    exit code, so a dead letter read "returned non-zero exit code: 1" and the operator had to rerun the
+    gate to learn why. The output still reaches stdout; the reason is empty when it is not readable JSON.
+    """
+    import contextlib
+    import json
+
+    tee = _Tee(sys.stdout)
+    with contextlib.redirect_stdout(tee):
+        rc = gate()
+    try:
+        reason = str(json.loads("".join(tee.parts)).get("diagnosis") or "")
+    except (ValueError, AttributeError):
+        reason = ""
+    return rc, reason
+
 def run_weekly_refresh(
     database_url: str,
     season: int | None = None,
@@ -504,9 +538,12 @@ def _refresh_steps(
                 dsn,
             ]
         try:
-            rc = verify_main()
+            rc, gate_reason = _run_gate(verify_main)
             if rc != 0:
-                raise RuntimeError(f"verify_season_acceptance returned non-zero exit code: {rc}")
+                raise RuntimeError(
+                    f"verify_season_acceptance returned non-zero exit code: {rc}"
+                    + (f" ({gate_reason})" if gate_reason else "")
+                )
         finally:
             sys.argv = old_argv
     except (Exception, SystemExit) as exc:

@@ -49,8 +49,25 @@ APPROVED = "weekly_auto_2026"
 PENDING_PREFIX = "weekly_auto_2026_pending"
 # A refresh writes under its own id (PENDING_PREFIX + "_" + uuid); tests that seed or promote by hand use this one.
 PENDING = PENDING_PREFIX + "_integration-test"
-# Approved in releases/current_baseline.json; present in the real keep set.
-STACK_APPROVED = "stack_materialize_20260822T144443Z"
+
+
+def _approved_stack_id() -> str:
+    """The stack run id the manifest approves, read from the one place the app defines it.
+
+    A re-freeze changes this id, so it is never written into a test. Fails loudly (at collection) if the
+    manifest no longer approves exactly one stack id, instead of letting a test seed an id the guard does
+    not protect and then fail for an unrelated-looking reason.
+    """
+    from pipeline.run_guard import approved_pipeline_run_ids
+
+    approved = approved_pipeline_run_ids()
+    stack_ids = sorted(i for i in approved if i.startswith("stack_materialize_"))
+    assert len(stack_ids) == 1, f"expected exactly one approved stack run id in the manifest, got {stack_ids}"
+    assert stack_ids[0] in approved
+    return stack_ids[0]
+
+
+STACK_APPROVED = _approved_stack_id()
 
 # Reports written by steps 4 and 7 that are pinned as evidence in
 # releases/artifacts/MANIFEST.json. Snapshot and restore them around each test.
@@ -213,7 +230,7 @@ def _ingest_mocked(summary: OrchestratorSummary):
         _execute(
             dsn,
             "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
-            "VALUES (%s, %s, %s, now(), 0, %s)",
+            "VALUES (%s, %s, %s, now(), 1, %s)",
             (f"forward_projections_{season}_w{week:02d}_{uuid.uuid4().hex[:8]}", season, week,
              json.dumps({"kind": "forward_projections", "pipeline_run_id": pending_id, "projection_rows": 1})),
         )
@@ -625,7 +642,7 @@ def test_failed_run_leaves_api_visible_team_game_rows_unchanged(db, monkeypatch)
     before = _served_team_games(db, monkeypatch)
     assert before == [("AAA", APPROVED, 24.0), ("BBB", APPROVED, 21.0)]
 
-    # Step 7 runs for real and fails on the unplayed week's depth-chart gate.
+    # Step 7 runs for real and fails on the unplayed week's structural gate (the stand-in writes one row).
     with _ingest_mocked(_clean_summary()), _season_sim_pass(), _team_game_step_runs():
         rc = run_weekly_refresh(db, season=2026)
 
@@ -660,7 +677,12 @@ def test_step7_reads_the_refresh_database_url_not_the_host_default(db, monkeypat
     assert rc == 1
     dead = _dead_letters(db)
     assert [source for source, _ in dead] == ["weekly_refresh/verify_acceptance"]
-    assert "Depth chart freshness gate failed for season=2026" in dead[0][1]
+    # A forward week runs the structural gate. Its diagnosis (counts of rows missing from the refresh
+    # database) can only be produced by a connection to the DSN the refresh was given; the unreachable
+    # host default would fail with a connection error instead.
+    assert "Week 3 under weekly_auto_2026_pending_" in dead[0][1]
+    assert "positions without rows" in dead[0][1]
+    assert "could not connect" not in dead[0][1] and "Connection refused" not in dead[0][1]
 
 
 def test_upgrade_head_explicit_url_wins_over_database_url_env(monkeypatch):

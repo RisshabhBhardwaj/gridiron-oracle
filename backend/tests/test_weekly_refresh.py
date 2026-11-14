@@ -308,6 +308,38 @@ def test_step7_failed_structural_gate_aborts_before_promotion():
     assert season == 2026
 
 
+def test_step7_dead_letter_carries_the_reason_the_gate_printed(capsys):
+    """The gate explains itself on stdout; the dead letter must not drop that and keep only the exit code."""
+    import json
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        def failing_gate():
+            print(json.dumps({"diagnosis": "Week 3 under X: surfaces without rows ['season_simulations']"}))
+            return 1
+
+        m["acceptance"].side_effect = failing_gate
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        assert run_weekly_refresh("postgres://dummy", season=2026) == 1
+    error = m["dead_letter"].call_args.args[2]
+    assert "non-zero exit code: 1" in error
+    assert "surfaces without rows ['season_simulations']" in error
+    assert "surfaces without rows" in capsys.readouterr().out  # still printed for the operator
+
+
+def test_step7_dead_letter_still_names_the_exit_code_when_the_gate_printed_nothing_readable():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        def failing_gate():
+            print("not json")
+            return 1
+
+        m["acceptance"].side_effect = failing_gate
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        assert run_weekly_refresh("postgres://dummy", season=2026) == 1
+    assert "non-zero exit code: 1" in m["dead_letter"].call_args.args[2]
+
+
 # ── Step 4b: the forward producer (decision 0012, commit 7) ───────────────────
 
 def _record_order(m):
