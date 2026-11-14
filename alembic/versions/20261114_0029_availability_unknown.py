@@ -3,7 +3,8 @@
 Coordinator answer 2 (2026-11-14): the manual ``--allow-no-availability`` override stores rows as
 "availability unknown" so the UI can say so, instead of NULL (which means "no report against the
 player"). Only the CHECK constraint changes. The downgrade first clears the marker, so it can
-tighten the constraint again.
+tighten the constraint again. Each direction commits the running transaction once, before the
+validation scan (see ``_validate_without_blocking``).
 
 Revision ID: 20261114_0029
 Revises: 20261114_0028
@@ -20,6 +21,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 _BASE = ("Questionable", "Doubtful", "Out", "Reserve", "Suspended", "Inactive")
+_CONSTRAINT = "ck_projections_availability_status"
+
+
+def _validate_without_blocking(constraint: str) -> None:
+    """VALIDATE CONSTRAINT in its own transaction, so ADD CONSTRAINT's lock is already gone.
+
+    alembic runs the whole upgrade inside one transaction, and ACCESS EXCLUSIVE is held until it ends,
+    so NOT VALID followed by VALIDATE in that same transaction scans the table under the strong lock.
+    ``autocommit_block`` commits first (releasing it); VALIDATE then needs only SHARE UPDATE EXCLUSIVE,
+    which lets reads and writes through. SET LOCAL would vanish with the commit, so the timeout is a
+    session setting and is reset straight after.
+    """
+    with op.get_context().autocommit_block():
+        op.execute("SET lock_timeout = '5s'")
+        op.execute(f"ALTER TABLE projections VALIDATE CONSTRAINT {constraint}")
+        op.execute("RESET lock_timeout")
 
 
 def _constraint(statuses: tuple[str, ...]) -> None:
@@ -31,8 +48,8 @@ def _constraint(statuses: tuple[str, ...]) -> None:
         "ALTER TABLE projections ADD CONSTRAINT ck_projections_availability_status "
         f"CHECK (availability_status IS NULL OR availability_status IN ({allowed})) NOT VALID"
     )
-    # The scan happens here, under a lock that lets reads and writes through.
-    op.execute("ALTER TABLE projections VALIDATE CONSTRAINT ck_projections_availability_status")
+    # The table scan runs in its own transaction (see _validate_without_blocking), after the lock above is released.
+    _validate_without_blocking(_CONSTRAINT)
 
 
 def upgrade() -> None:

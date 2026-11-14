@@ -13,6 +13,10 @@ excluded. History rows leave the column NULL.
 
 Additive only. The downgrade removes exactly what the upgrade added.
 
+The upgrade commits the transaction it is running in once, before validating the constraint, so a
+failure after that point leaves the earlier migrations of the same run applied. Re-running
+``alembic upgrade head`` resumes from there; every statement here is idempotent.
+
 Revision ID: 20261114_0028
 Revises: 20261114_0027
 """
@@ -28,6 +32,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 _STATUSES = ("Questionable", "Doubtful", "Out", "Reserve", "Suspended", "Inactive")
+_CONSTRAINT = "ck_projections_availability_status"
+
+
+def _validate_without_blocking(constraint: str) -> None:
+    """VALIDATE CONSTRAINT in its own transaction, so ADD CONSTRAINT's lock is already gone.
+
+    alembic runs the whole upgrade inside one transaction, and ACCESS EXCLUSIVE is held until it ends,
+    so NOT VALID followed by VALIDATE in that same transaction scans the table under the strong lock.
+    ``autocommit_block`` commits first (releasing it); VALIDATE then needs only SHARE UPDATE EXCLUSIVE,
+    which lets reads and writes through. SET LOCAL would vanish with the commit, so the timeout is a
+    session setting and is reset straight after.
+    """
+    with op.get_context().autocommit_block():
+        op.execute("SET lock_timeout = '5s'")
+        op.execute(f"ALTER TABLE projections VALIDATE CONSTRAINT {constraint}")
+        op.execute("RESET lock_timeout")
 
 
 def upgrade() -> None:
@@ -40,8 +60,8 @@ def upgrade() -> None:
         "ALTER TABLE projections ADD CONSTRAINT ck_projections_availability_status "
         f"CHECK (availability_status IS NULL OR availability_status IN ({allowed})) NOT VALID"
     )
-    # The scan happens here, under a lock that lets reads and writes through.
-    op.execute("ALTER TABLE projections VALIDATE CONSTRAINT ck_projections_availability_status")
+    # The table scan runs in its own transaction (see _validate_without_blocking), after the lock above is released.
+    _validate_without_blocking(_CONSTRAINT)
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS availability_snapshots (

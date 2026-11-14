@@ -126,3 +126,23 @@ def test_the_check_constraint_is_added_without_a_long_lock_on_projections(sql_fo
     assert "NOT VALID" in sql[add:sql.index(";", add)]  # no full-table scan under ACCESS EXCLUSIVE
     validate = sql.index("VALIDATE CONSTRAINT ck_projections_availability_status")
     assert validate > add  # validation scans under a lock that does not block reads or writes
+
+
+# ── N4: alembic wraps a run in one transaction, so NOT VALID alone gives no lock relief ────────
+@pytest.mark.parametrize("sql_for", [
+    lambda: _sql(command.upgrade, f"{PREV}:{REV}"),
+    lambda: _sql(command.upgrade, f"{REV}:{NEXT}"),
+    lambda: _sql(command.downgrade, f"{NEXT}:{REV}"),
+], ids=["0028-up", "0029-up", "0029-down"])
+def test_the_validate_runs_after_the_exclusive_lock_was_released_with_its_own_lock_timeout(sql_for) -> None:
+    sql = sql_for()
+    add = sql.index("ADD CONSTRAINT ck_projections_availability_status")
+    validate = sql.index("VALIDATE CONSTRAINT ck_projections_availability_status")
+    between = sql[add:validate]
+    # ADD CONSTRAINT holds ACCESS EXCLUSIVE until its transaction ends: that transaction must end first.
+    assert "COMMIT" in between, "VALIDATE runs in the same transaction as ADD CONSTRAINT: no lock relief"
+    after_commit = between[between.index("COMMIT"):]
+    # SET LOCAL would vanish with the commit; the validate needs a session-level timeout of its own.
+    assert "SET lock_timeout" in after_commit and "SET LOCAL" not in after_commit
+    # And the session setting must not leak into the migrations that follow.
+    assert "RESET lock_timeout" in sql[validate:]
