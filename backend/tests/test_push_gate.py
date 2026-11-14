@@ -185,6 +185,50 @@ def test_nested_dotenv_is_blocked(repo: Path) -> None:
     assert result.returncode != 0, result.stdout + result.stderr
 
 
+@pytest.mark.parametrize(
+    "path",
+    [".env.example", "infra/hosts/vps1/.env.example", "deploy/.env.production.example"],
+)
+def test_env_templates_are_allowed_at_any_depth(repo: Path, path: str) -> None:
+    """Names-only `.env.example` templates are public; nested ones were blocked."""
+    tip = _commit(repo, path, "DATABASE_URL=\nAPI_KEY=\n", "template")
+
+    result = _run_hook(repo, f"refs/heads/main {tip} refs/heads/main {ZERO}\n")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".env",
+        ".env.local",
+        ".env.production",
+        "infra/hosts/vps1/.env",
+        "infra/hosts/vps1/.env.production",
+        ".env.example.bak",
+        ".env.example/real.txt",
+    ],
+)
+def test_real_env_files_stay_blocked(repo: Path, path: str) -> None:
+    tip = _commit(repo, path, "SECRET=1\n", "env")
+
+    result = _run_hook(repo, f"refs/heads/main {tip} refs/heads/main {ZERO}\n")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "blocked path" in result.stderr
+
+
+def test_env_template_with_a_real_secret_value_is_still_blocked(repo: Path) -> None:
+    """Allowing the path must not exempt the content scan."""
+    tip = _commit(repo, "infra/.env.example", _FAKE_SECRETS[2], "bad template")
+
+    result = _run_hook(repo, f"refs/heads/main {tip} refs/heads/main {ZERO}\n")
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "possible secret" in result.stderr
+
+
 # ── C-07: object-size limit ──────────────────────────────────────────────────
 
 
