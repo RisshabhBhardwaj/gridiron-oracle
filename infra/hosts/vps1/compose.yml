@@ -222,9 +222,8 @@ services:
     image: gridiron-etl:full
     profiles: ["jobs"]
     command: ["/bin/sh", "-c", "flock -w ${AVAILABILITY_LOCK_WAIT_SECONDS:-900} -E 75 /train_out/.train.lock timeout -k 10 ${AVAILABILITY_RUN_SECONDS:-240} python3 /app/scripts/refresh_availability.py && if [ -n \"$$HEALTHCHECKS_AVAILABILITY_URL\" ]; then curl -fsS -m 10 --retry 3 \"$$HEALTHCHECKS_AVAILABILITY_URL\" -o /dev/null; fi"]
-    env_file:
-      - path: .env
-        required: true
+    # No env_file on purpose: .env holds the R2 keys and every other secret on the box. This job
+    # reads only the variables below (compose still interpolates them from .env on the host).
     environment:
       PYTHONPATH: /app
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}

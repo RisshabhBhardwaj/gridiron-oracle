@@ -284,3 +284,20 @@ def test_the_compose_command_escapes_the_shell_variable_for_compose_interpolatio
     command = yaml.safe_load((VPS1 / "compose.yml").read_text())["services"]["availability"]["command"][2]
     assert "$$HEALTHCHECKS_AVAILABILITY_URL" in command
     assert not re.search(r"(?<!\$)\$HEALTHCHECKS_AVAILABILITY_URL", command)
+
+
+# ── L4: the availability job gets only what it needs, not the whole .env ──────────────────
+def test_the_availability_service_does_not_load_the_env_file() -> None:
+    service = yaml.safe_load((VPS1 / "compose.yml").read_text())["services"]["availability"]
+    assert "env_file" not in service  # .env holds R2 keys and every other secret on the box
+
+
+def test_the_availability_service_passes_only_the_variables_the_job_reads() -> None:
+    service = yaml.safe_load((VPS1 / "compose.yml").read_text())["services"]["availability"]
+    assert set(service["environment"]) == {
+        "PYTHONPATH", "DATABASE_URL", "PRODUCT_MODE", "AVAILABILITY_LOCK_WAIT_SECONDS",
+        "AVAILABILITY_RUN_SECONDS", "HEALTHCHECKS_AVAILABILITY_URL",
+    }
+    assert service["environment"]["PRODUCT_MODE"] == "artifact_backed"
+    for name in service["environment"]:
+        assert not re.search(r"R2|SECRET|TOKEN|PASSWORD|KEY", name), name
