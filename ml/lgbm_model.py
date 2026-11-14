@@ -55,7 +55,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -142,6 +142,7 @@ class LGBMTrainResult:
     run_id: Optional[str]            # MLflow run ID (None if MLflow disabled)
     feature_importances: dict[str, float]  # normalised gain-based importances, sum=1.0
     oof_path: Optional[Path] = None
+    attr_path: Optional[Path] = None  # per-row bucket attributions (opt-in), see ml/bucket_attribution.py
 
 
 # ── Optuna hyperparameter search (LightGBM-specific search space) ─────────────
@@ -282,9 +283,14 @@ def _walk_forward_cv(
     features: list[str],
     target_col: str,
     params: dict,
+    on_fold: Optional[Callable[[lgb.LGBMRegressor, pd.DataFrame, pd.DataFrame], None]] = None,
 ) -> tuple[list[FoldResult], pd.DataFrame, lgb.LGBMRegressor]:
     """
     Run walk-forward CV over all folds with the given LightGBM params.
+
+    ``on_fold(model, val_df, oof_rows)`` is called once per fold, right after
+    the fold model predicts, so callers can read that fold's model (per-row
+    attributions) without the model being kept. It never alters the OOF.
 
     Enforces temporal ordering with hard AssertionErrors at EACH fold —
     identical constraint to xgb_model._walk_forward_cv:
@@ -329,12 +335,33 @@ def _walk_forward_cv(
         model, oof_rows, fold_result = _train_fold(
             fold_idx, train_df, val_df, features, target_col, params
         )
+        if on_fold is not None:
+            on_fold(model, val_df, oof_rows)
         all_oof.append(oof_rows)
         fold_results.append(fold_result)
         final_model = model
 
     oof_df = pd.concat(all_oof, ignore_index=True) if all_oof else pd.DataFrame()
     return fold_results, oof_df, final_model
+
+
+def _fold_attribution_collector(
+    features: list[str], sink: list[pd.DataFrame]
+) -> Callable[[lgb.LGBMRegressor, pd.DataFrame, pd.DataFrame], None]:
+    """Build an ``on_fold`` callback that appends this fold's bucket attributions.
+
+    Uses the same sentinel-filled frame the fold model predicted on, and checks
+    the contributions add up to the OOF prediction before keeping them.
+    """
+    from ml.bucket_attribution import assert_additive, lgbm_bucket_contributions, with_keys
+
+    def _collect(model: lgb.LGBMRegressor, val_df: pd.DataFrame, oof_rows: pd.DataFrame) -> None:
+        X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL).infer_objects(copy=False)
+        part = with_keys(lgbm_bucket_contributions(model, X_va), oof_rows)
+        assert_additive(part, context=f"lgbm fold {int(oof_rows['fold_idx'].iloc[0])}")
+        sink.append(part)
+
+    return _collect
 
 
 # ── Main train entry point ────────────────────────────────────────────────────
@@ -348,6 +375,7 @@ def train(
     mlflow_tracking_uri: Optional[str] = None,
     mlflow_experiment: Optional[str] = None,
     out_dir: Optional[Path] = None,
+    collect_attributions: bool = False,
 ) -> LGBMTrainResult:
     """
     Train LightGBM with walk-forward CV, Optuna tuning, and MLflow logging.
@@ -366,6 +394,8 @@ def train(
         mlflow_tracking_uri: Pass "" to disable MLflow entirely.
         mlflow_experiment:  Defaults to "lgbm_{target}".
         out_dir:            Defaults to ml/oof/.
+        collect_attributions: Also write per-row TreeSHAP bucket attributions
+                            next to the OOF (``attr_<oof stem>.parquet``).
 
     Returns:
         LGBMTrainResult (oof_df format identical to XGBTrainResult).
@@ -436,8 +466,10 @@ def train(
 
     # ── Walk-forward CV with best params ──────────────────────────────────────
     logger.info("Running walk-forward CV with best params…")
+    attr_parts: list[pd.DataFrame] = []
     fold_results, oof_df, final_model = _walk_forward_cv(
-        df, folds, features, target_col, best_params
+        df, folds, features, target_col, best_params,
+        on_fold=_fold_attribution_collector(features, attr_parts) if collect_attributions else None,
     )
 
     if not fold_results:
@@ -549,6 +581,12 @@ def train(
         pseudo_run_id = new_pseudo_run_id()
         oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="lgbm", position=position_filter or "all")
 
+    attr_path: Optional[Path] = None
+    if collect_attributions and oof_path is not None and attr_parts:
+        from ml.bucket_attribution import write_attribution_file
+
+        attr_path = write_attribution_file(pd.concat(attr_parts, ignore_index=True), oof_path)
+
     return LGBMTrainResult(
         fold_results=fold_results,
         oof_df=oof_df,
@@ -556,6 +594,7 @@ def train(
         run_id=run_id,
         feature_importances=feature_importances,
         oof_path=oof_path,
+        attr_path=attr_path,
     )
 
 
@@ -579,6 +618,10 @@ def main() -> None:
     parser.add_argument("--mlflow-uri", default=None, dest="mlflow_uri")
     parser.add_argument("--no-mlflow", action="store_true", dest="no_mlflow")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--attributions", action="store_true",
+        help="Also write per-row TreeSHAP bucket attributions next to the OOF.",
+    )
     parser.add_argument(
         "--no-cache", action="store_true", dest="no_cache",
         help="Skip Parquet cache and always query DB directly.",
@@ -625,6 +668,7 @@ def main() -> None:
         position_filter=position,
         mlflow_tracking_uri=mlflow_tracking_uri,
         out_dir=Path(args.out_dir),
+        collect_attributions=args.attributions,
     )
 
     print(f"\n{'═' * 60}")

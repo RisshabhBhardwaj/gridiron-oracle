@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -90,6 +90,7 @@ class CatBoostTrainResult:
     run_id: Optional[str]
     feature_importances: dict[str, float]
     oof_path: Optional[Path] = None
+    attr_path: Optional[Path] = None  # per-row bucket attributions (opt-in), see ml/bucket_attribution.py
 
 
 # ── Optuna hyperparameter search ──────────────────────────────────────────────
@@ -215,6 +216,7 @@ def _walk_forward_cv(
     features: list[str],
     target_col: str,
     params: dict,
+    on_fold: Optional[Callable[[cb.CatBoostRegressor, pd.DataFrame, pd.DataFrame], None]] = None,
 ) -> tuple[list[FoldResult], pd.DataFrame, cb.CatBoostRegressor]:
     all_oof: list[pd.DataFrame] = []
     fold_results: list[FoldResult] = []
@@ -235,12 +237,29 @@ def _walk_forward_cv(
         model, oof_rows, fold_result = _train_fold(
             fold_idx, train_df, val_df, features, target_col, params
         )
+        if on_fold is not None:
+            on_fold(model, val_df, oof_rows)
         all_oof.append(oof_rows)
         fold_results.append(fold_result)
         final_model = model
 
     oof_df = pd.concat(all_oof, ignore_index=True) if all_oof else pd.DataFrame()
     return fold_results, oof_df, final_model
+
+
+def _fold_attribution_collector(
+    features: list[str], sink: list[pd.DataFrame]
+) -> Callable[[cb.CatBoostRegressor, pd.DataFrame, pd.DataFrame], None]:
+    """Build an ``on_fold`` callback that appends this fold's bucket attributions."""
+    from ml.bucket_attribution import assert_additive, catboost_bucket_contributions, with_keys
+
+    def _collect(model: cb.CatBoostRegressor, val_df: pd.DataFrame, oof_rows: pd.DataFrame) -> None:
+        X_va = val_df[features].fillna(MISSING_VALUE_SENTINEL)
+        part = with_keys(catboost_bucket_contributions(model, X_va), oof_rows)
+        assert_additive(part, context=f"catboost fold {int(oof_rows['fold_idx'].iloc[0])}")
+        sink.append(part)
+
+    return _collect
 
 
 def _pseudo_run_id(now: Optional[float] = None) -> str:
@@ -268,6 +287,7 @@ def train(
     mlflow_tracking_uri: Optional[str] = None,
     mlflow_experiment: Optional[str] = None,
     out_dir: Optional[Path] = None,
+    collect_attributions: bool = False,
 ) -> CatBoostTrainResult:
     if target not in TARGET_COL_MAP:
         raise ValueError(f"Unknown target '{target}'")
@@ -325,8 +345,10 @@ def train(
         best_params["nan_mode"] = "Min"
 
     logger.info("Running CPU walk-forward CV...")
+    attr_parts: list[pd.DataFrame] = []
     fold_results, oof_df, final_model = _walk_forward_cv(
-        df, folds, features, target_col, best_params
+        df, folds, features, target_col, best_params,
+        on_fold=_fold_attribution_collector(features, attr_parts) if collect_attributions else None,
     )
 
     if not fold_results:
@@ -398,7 +420,15 @@ def train(
         pseudo_run_id = _pseudo_run_id()
         oof_path = save_oof(oof_df, target, pseudo_run_id, out_dir, prefix="catboost", position=position_filter or "all")
 
-    return CatBoostTrainResult(fold_results, oof_df, best_params, run_id, feature_importances, oof_path)
+    attr_path: Optional[Path] = None
+    if collect_attributions and oof_path is not None and attr_parts:
+        from ml.bucket_attribution import write_attribution_file
+
+        attr_path = write_attribution_file(pd.concat(attr_parts, ignore_index=True), oof_path)
+
+    return CatBoostTrainResult(
+        fold_results, oof_df, best_params, run_id, feature_importances, oof_path, attr_path
+    )
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train CatBoost base learner.")
@@ -409,6 +439,10 @@ def main() -> None:
     parser.add_argument("--out-dir", default="ml/oof", dest="out_dir")
     parser.add_argument("--no-mlflow", action="store_true", dest="no_mlflow")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--attributions", action="store_true",
+        help="Also write per-row TreeSHAP bucket attributions next to the OOF.",
+    )
     parser.add_argument(
         "--no-cache", action="store_true", dest="no_cache",
         help="Skip Parquet cache and always query DB directly.",
@@ -443,7 +477,8 @@ def main() -> None:
     result = train(
         df=df, seasons=seasons, target=args.target,
         n_optuna_trials=args.n_trials, position_filter=position,
-        mlflow_tracking_uri=mlflow_tracking_uri, out_dir=Path(args.out_dir)
+        mlflow_tracking_uri=mlflow_tracking_uri, out_dir=Path(args.out_dir),
+        collect_attributions=args.attributions,
     )
 
     agg_mae  = np.mean([fr.mae  for fr in result.fold_results])
