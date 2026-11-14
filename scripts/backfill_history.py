@@ -30,9 +30,12 @@ counts, and rolls back. The source is opened read-only.
 
     python scripts/backfill_history.py --source-url ... --target-url ...            # dry run
     python scripts/backfill_history.py --source-url ... --target-url ... --apply    # commit
-    python -m pipeline.enrich_elo_embeddings                                      # Elo over full history
+    python -c "from pipeline.enrich_elo_embeddings import run_elo_enrichment as r; r()"   # Elo over full history
     python scripts/backfill_history.py --source-url ... --target-url ... --verify   # compare features
     python scripts/verify_feature_contract.py --seasons 2019 2020 2021 2022 2023 2024 2025
+
+Do not use `python -m pipeline.enrich_elo_embeddings`: its main() also calls the player
+embedding step, which raises by design (see run_elo_enrichment).
 
 URLs may come from BACKFILL_SOURCE_URL and DATABASE_URL. They are never printed.
 Take a backup of the target before ``--apply``.
