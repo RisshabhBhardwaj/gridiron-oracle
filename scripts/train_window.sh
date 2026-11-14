@@ -30,10 +30,13 @@
 #   last_full_stamp        STAMP of the last COMPLETE rebuild.
 # Promotion (select -> promote -> freeze) is a manager step, never automatic.
 #
-# One trainer at a time: an flock on the volume makes a second window exit 75
-# (EX_TEMPFAIL) without pinging its dead-man URL. The Friday availability job takes the same
-# lock for a few seconds, so a trainer waits up to TRAIN_LOCK_WAIT_SECONDS (default 120) for it
-# instead of skipping its whole window.
+# One trainer at a time, one lock: $TRAIN_OUT_ROOT/.train.lock. The Friday availability job (Fri
+# 22:00 UTC, hard 20 minute limit) takes the same lock, and train-full starts at 23:30 UTC.
+#   full           waits up to TRAIN_FULL_LOCK_WAIT_SECONDS (default 1800). If it still has no lock it
+#                  logs why and exits 76; train_full.sh then pings the healthchecks /fail URL. It
+#                  never skips silently: a missed weekly rebuild must be seen.
+#   small/finalfit wait up to TRAIN_LOCK_WAIT_SECONDS (default 120), then exit 75 (EX_TEMPFAIL), a
+#                  quiet skip with no ping.
 # bash 3.2 compatible (no associative arrays).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -46,9 +49,17 @@ export PY="${PY:-python3}"
 mkdir -p "$TRAIN_OUT_ROOT/oof" "$TRAIN_OUT_ROOT/logs"
 
 exec 9>"$TRAIN_OUT_ROOT/.train.lock"
-if ! flock -w "${TRAIN_LOCK_WAIT_SECONDS:-120}" 9; then
-  echo "another training run holds $TRAIN_OUT_ROOT/.train.lock; skipping this window" >&2
-  exit 75
+if [[ "$MODE" == "full" ]]; then
+  LOCK_WAIT="${TRAIN_FULL_LOCK_WAIT_SECONDS:-1800}"
+  if ! flock -w "$LOCK_WAIT" 9; then
+    echo "full retrain could not get $TRAIN_OUT_ROOT/.train.lock within ${LOCK_WAIT}s (held by another job); failing, not skipping" >&2
+    exit 76
+  fi
+else
+  if ! flock -w "${TRAIN_LOCK_WAIT_SECONDS:-120}" 9; then
+    echo "another training run holds $TRAIN_OUT_ROOT/.train.lock; skipping this window" >&2
+    exit 75
+  fi
 fi
 
 if [[ "$MODE" == "finalfit" ]]; then

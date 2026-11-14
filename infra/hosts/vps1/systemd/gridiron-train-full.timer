@@ -1,11 +1,12 @@
-# Full window: Friday 22:00 UTC = Friday 17:00 EST (UTC-5, November).
-# Runs through the weekend; the .service's RuntimeMaxSec=56h ends it
-# Monday 06:00 UTC (Monday 01:00 EST), ahead of the Tuesday ETL.
+# Full window: Friday 23:30 UTC = Friday 18:30 EST (UTC-5, November).
+# 23:30 leaves the Friday 22:00 availability job (hard 20 minute limit) clear of the shared training
+# lock. Runs through the weekend; the .service's RuntimeMaxSec=54h 30min ends it Monday 06:00 UTC
+# (Monday 01:00 EST), ahead of the Tuesday ETL, so the window end did not move.
 [Unit]
-Description=Gridiron full retrain — Friday 22:00 UTC (17:00 EST)
+Description=Gridiron full retrain — Friday 23:30 UTC (18:30 EST)
 
 [Timer]
-OnCalendar=Fri *-*-* 22:00:00
+OnCalendar=Fri *-*-* 23:30:00
 Persistent=false
 Unit=gridiron-train-full.service
 

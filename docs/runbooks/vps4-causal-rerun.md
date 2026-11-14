@@ -57,7 +57,7 @@ Before promotion, with the new code and no pinned attributions, default weights 
 | 16 api build + restart | 5-10 min | | |
 | 20 `weekly_refresh.py` | 10-30 min | under 1.5 GB expected (ETL RSS is unmeasured; the `etl` limit is 1.5 GB, so this runbook runs it in training) | |
 
-Whole rerun: about 1.5 days elapsed, of which about 22 h is unattended training. The Fri 22:00 to Mon 06:00 window is 56 h, so it fits, but the timers are stopped for this run, so start it by hand.
+Whole rerun: about 1.5 days elapsed, of which about 22 h is unattended training. The Fri 23:30 to Mon 06:00 window is 54.5 h, so it fits, but the timers are stopped for this run, so start it by hand.
 
 ## Run log 2026-11-14 (measured)
 
@@ -489,7 +489,7 @@ docker compose --profile jobs run --rm availability
 echo "exit $?"
 ```
 
-Then `sudo cp systemd/gridiron-availability.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now gridiron-availability.timer`. Fri 22:00 UTC is also the full retrain's start. The unit declares no `Conflicts=` and never stops training: the compose service takes the same `flock` as `scripts/train_window.sh` (`/train_out/.train.lock`) and waits up to `AVAILABILITY_LOCK_WAIT_SECONDS` (default 900) for it. On timeout it exits 75, the unit fails and no `HEALTHCHECKS_AVAILABILITY_URL` ping is sent, so the missing ping is the alert. The trainers wait up to `TRAIN_LOCK_WAIT_SECONDS` (default 120) for the lock instead of skipping their window. A retrain holds the lock for up to 56 h, so on a retrain weekend the refresh will time out unless the timer is moved earlier than the retrain start (open decision). Record the job's peak RSS on the first run and set `mem_limit` from it (`512m` is a guess).
+Then `sudo cp systemd/gridiron-availability.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now gridiron-availability.timer`. The job runs Fri 22:00 UTC with a hard 20 minute limit (`TimeoutStartSec=20min`); train-full starts at 23:30 UTC, so on a normal Friday the job is done long before. The unit declares no `Conflicts=` and never stops training: the compose service takes the same `flock` as `scripts/train_window.sh` (`/train_out/.train.lock`), waits up to `AVAILABILITY_LOCK_WAIT_SECONDS` (default 900) and runs at most `AVAILABILITY_RUN_SECONDS` (default 240). On a lock timeout it exits 75, the unit fails and no `HEALTHCHECKS_AVAILABILITY_URL` ping is sent, so the missing ping is the alert. Train-full waits up to `TRAIN_FULL_LOCK_WAIT_SECONDS` (default 1800) for the lock; if it still cannot get it, it exits 76, `train_full.sh` pings `HEALTHCHECKS_TRAIN_FULL_URL/fail` and the unit fails (an alert, not a silent skip). Train-small keeps its 120 s wait and quiet exit 75. Record the job's peak RSS on the first run and set `mem_limit` from it (`512m` is a guess).
 
 #### `--replace-week` (manual only)
 

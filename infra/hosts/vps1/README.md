@@ -42,7 +42,8 @@ under EDT — the UTC column is authoritative.
 | Job | Timer (UTC) | UTC | EST |
 |---|---|---|---|
 | Small retrains / SHAP / backfills | daily 01:00, `RuntimeMaxSec=6h` kills at 07:00 | 01:00–07:00 | prev day 20:00 – 02:00 |
-| Full retrain (TFT/GNN torch CPU, SHAP) | Fri 22:00, `RuntimeMaxSec=56h` kills Mon 06:00 | Fri 22:00 → Mon 06:00 | Fri 17:00 → Mon 01:00 |
+| Full retrain (TFT/GNN torch CPU, SHAP) | Fri 23:30, `RuntimeMaxSec=54h 30min` kills Mon 06:00 | Fri 23:30 → Mon 06:00 | Fri 18:30 → Mon 01:00 |
+| Friday availability refresh (not enabled by default) | Fri 22:00, `TimeoutStartSec=20min` hard limit | Fri 22:00 → at most 22:20 | Fri 17:00 |
 | Weekly ETL | Tue 13:00 | 13:00 | Tue 08:00 |
 | Nightly R2 backup | daily 23:00 | 23:00 | 18:00 |
 
@@ -122,8 +123,14 @@ TFT/GNN retrains wait for their own fold profile.
   - Output lives on the `train_out` volume (`/train_out`, owned by
     `appuser`): `oof/rebuild_<STAMP>/`, `logs/`, `last_full_stamp`. Without
     the volume `run --rm` would discard a weekend of training.
-  - One trainer at a time (`flock`): the small timer fires nightly, including
-    Sat-Mon while the full job runs, and skips (exit 75, no ping).
+  - One trainer at a time (`flock` on `/train_out/.train.lock`, shared with the Friday
+    availability job): the small timer fires nightly, including Sat-Mon while the
+    full job runs, and waits 2 minutes then skips (exit 75, no ping). The full job
+    waits up to 30 minutes (`TRAIN_FULL_LOCK_WAIT_SECONDS`); if it still has no lock it
+    logs why, exits 76 and `train_full.sh` pings `HEALTHCHECKS_TRAIN_FULL_URL/fail`.
+    Availability holds the lock for seconds at Fri 22:00 and is killed at 20 minutes
+    (lock wait 900 s + run 240 s inside `TimeoutStartSec=20min`), so a retrain that
+    still holds the lock makes availability fail with no success ping, never the reverse.
   - Promotion is manual: `docs/runbooks/vps4-causal-rerun.md`.
   A full rebuild that cannot fit Fri-night-through-weekend on 5 capped vCores
   is an envelope question for the owner, not a reason to overrun into the ETL.
@@ -200,8 +207,9 @@ sudo systemctl enable --now gridiron-etl.timer gridiron-backup.timer \
   gridiron-train-small.timer gridiron-train-full.timer
 #    The Friday availability refresh is NOT in this list. Enable it by hand
 #    (`sudo systemctl enable --now gridiron-availability.timer`) only after the
-#    forward producer has run once and served a week. It has no Conflicts=:
-#    Fri 22:00 UTC is also the full retrain's start, and this job takes seconds.
+#    forward producer has run once and served a week. It has no Conflicts= and
+#    never stops training: it shares the training lock and has a hard 20 minute
+#    limit; train-full starts at 23:30 UTC and waits up to 30 minutes for the lock.
 #    Set TRAIN_SMALL_CMD / TRAIN_FULL_CMD (see "Training slice") and the
 #    four healthchecks.io URLs in .env; a missing ping after a scheduled
 #    run is the alert. Logs: journalctl -u gridiron-<name>.

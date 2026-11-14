@@ -42,7 +42,7 @@ Measure, then adjust WITHIN envelopes — never grow one envelope into another.
 | Job | Window | Notes |
 |---|---|---|
 | Small retrains / SHAP / backfills | daily 01:00–07:00 UTC | `RuntimeMaxSec=6h` kills at 07:00 |
-| Full retrain | Fri 22:00 UTC → Mon 06:00 UTC | `RuntimeMaxSec=56h`; TFT/GNN torch CPU |
+| Full retrain | Fri 23:30 UTC → Mon 06:00 UTC | `RuntimeMaxSec=54h 30min`; TFT/GNN torch CPU |
 | Weekly ETL | Tue 13:00 UTC (08:00 EST) | Keeps today's slot; provably outside training windows |
 | Nightly R2 backup | daily 23:00 UTC | Overlaps the full-retrain weekend by design (pg_dump is minutes-long) |
 
