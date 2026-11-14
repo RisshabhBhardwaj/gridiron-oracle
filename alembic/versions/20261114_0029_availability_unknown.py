@@ -23,12 +23,16 @@ _BASE = ("Questionable", "Doubtful", "Out", "Reserve", "Suspended", "Inactive")
 
 
 def _constraint(statuses: tuple[str, ...]) -> None:
+    # A waiting ALTER holds an ACCESS EXCLUSIVE request and queues every reader behind it: give up fast.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     allowed = ", ".join(f"'{s}'" for s in statuses)
     op.execute("ALTER TABLE projections DROP CONSTRAINT IF EXISTS ck_projections_availability_status")
     op.execute(
         "ALTER TABLE projections ADD CONSTRAINT ck_projections_availability_status "
-        f"CHECK (availability_status IS NULL OR availability_status IN ({allowed}))"
+        f"CHECK (availability_status IS NULL OR availability_status IN ({allowed})) NOT VALID"
     )
+    # The scan happens here, under a lock that lets reads and writes through.
+    op.execute("ALTER TABLE projections VALIDATE CONSTRAINT ck_projections_availability_status")
 
 
 def upgrade() -> None:

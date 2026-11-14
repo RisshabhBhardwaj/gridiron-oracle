@@ -109,3 +109,20 @@ def test_0029_downgrade_clears_unknown_rows_before_tightening_the_constraint() -
     add = sql.index("ADD CONSTRAINT ck_projections_availability_status")
     assert clear < add
     assert "'Unknown'" not in sql[add:]
+
+
+# ── L3: no long ACCESS EXCLUSIVE wait on the served table ─────────────────────────────────
+@pytest.mark.parametrize("sql_for", [
+    lambda: _sql(command.upgrade, f"{PREV}:{REV}"),
+    lambda: _sql(command.upgrade, f"{REV}:{NEXT}"),
+    lambda: _sql(command.downgrade, f"{NEXT}:{REV}"),
+], ids=["0028-up", "0029-up", "0029-down"])
+def test_the_check_constraint_is_added_without_a_long_lock_on_projections(sql_for) -> None:
+    sql = sql_for()
+    lock_at = sql.index("SET LOCAL lock_timeout = '5s'")
+    first_alter = sql.index("ALTER TABLE projections")
+    assert lock_at < first_alter  # a waiting ALTER gives up instead of queueing every reader behind it
+    add = sql.index("ADD CONSTRAINT ck_projections_availability_status")
+    assert "NOT VALID" in sql[add:sql.index(";", add)]  # no full-table scan under ACCESS EXCLUSIVE
+    validate = sql.index("VALIDATE CONSTRAINT ck_projections_availability_status")
+    assert validate > add  # validation scans under a lock that does not block reads or writes
