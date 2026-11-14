@@ -52,8 +52,8 @@ export const handlers = [
     HttpResponse.json(factories.scenarioResponse()),
   ),
 
-  http.get('/api/backtest', () =>
-    HttpResponse.json(factories.backtestResponse()),
+  http.get('/api/backtest', ({ request }) =>
+    HttpResponse.json(factories.backtestResponse(new URL(request.url).searchParams.get('stat'))),
   ),
 
   http.get('/api/draft/board', () =>

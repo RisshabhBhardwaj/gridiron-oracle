@@ -37,43 +37,63 @@ export const chartTheme = {
   tooltipLabelStyle: { color: token('fg'), fontWeight: '600' },
 }
 
-export function ChartFrame({ height, children }: { height: number; children: ReactElement }) {
+/**
+ * `label` is the chart's accessible name (role="img"): say what it shows and
+ * the main takeaway, since the SVG itself is not readable by a screen reader.
+ */
+export function ChartFrame({
+  height,
+  children,
+  label,
+}: {
+  height: number
+  children: ReactElement
+  label?: string
+}) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      {children}
-    </ResponsiveContainer>
+    <div role={label ? 'img' : undefined} aria-label={label}>
+      <ResponsiveContainer width="100%" height={height}>
+        {children}
+      </ResponsiveContainer>
+    </div>
   )
+}
+
+/*
+ * Recharts 2 finds axes, grid and tooltip by their type name and reads an axis's
+ * settings from the element's own props. A plain wrapper component is therefore
+ * ignored and draws nothing. The axes extend the real Recharts classes (so the
+ * name and static config are inherited) and carry the theme as default props;
+ * the grid and tooltip wrappers take Recharts' display names.
+ */
+export class ChartXAxis extends XAxis {
+  static defaultProps = {
+    ...XAxis.defaultProps,
+    stroke: chartTheme.axisLine,
+    tick: { fontSize: 11, fill: chartTheme.axisText },
+  }
+}
+
+export class ChartYAxis extends YAxis {
+  static defaultProps = {
+    ...YAxis.defaultProps,
+    stroke: chartTheme.axisLine,
+    tick: { fontSize: 11, fill: chartTheme.axisText },
+  }
 }
 
 export function ChartGrid(props: ComponentProps<typeof CartesianGrid>) {
   return <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} {...props} />
 }
+ChartGrid.displayName = 'CartesianGrid'
 
-export function ChartXAxis(props: ComponentProps<typeof XAxis>) {
-  return (
-    <XAxis
-      stroke={chartTheme.axisLine}
-      tick={{ fontSize: 11, fill: chartTheme.axisText }}
-      {...props}
-    />
-  )
-}
-
-export function ChartYAxis(props: ComponentProps<typeof YAxis>) {
-  return (
-    <YAxis
-      stroke={chartTheme.axisLine}
-      tick={{ fontSize: 11, fill: chartTheme.axisText }}
-      {...props}
-    />
-  )
-}
-
-export function ChartTooltip() {
+export function ChartTooltip(props: ComponentProps<typeof Tooltip>) {
   return (
     <Tooltip
       contentStyle={chartTheme.tooltipContentStyle}
       labelStyle={chartTheme.tooltipLabelStyle}
+      {...props}
     />
   )
 }
+ChartTooltip.displayName = 'Tooltip'

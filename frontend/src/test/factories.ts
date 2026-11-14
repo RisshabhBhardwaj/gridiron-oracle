@@ -6,7 +6,10 @@ import type {
   PredictResponse,
   ExplainResponse,
   ScenarioResponse,
+  BacktestCell,
   BacktestResponse,
+  BacktestRow,
+  BacktestVerdict,
   SettingsResponse,
   SeasonProjectionsResponse,
   SeasonWeekProjectionsResponse,
@@ -226,70 +229,66 @@ export const factories = {
     }
   },
 
-  backtestResponse(): BacktestResponse {
+  backtestResponse(stat: string | null = null): BacktestResponse {
+    const COHORT = 'player has at least this many completed games earlier in the same season (min_prior_games=1)'
+    const mk = (
+      s: string, position: string, season: number, model: number, naive: number,
+      t3: number, marcel: number, beatsMarcel = true,
+    ): BacktestRow => ({
+      stat: s, position, season, metric: 'mae',
+      metric_label: 'Average miss, in yards (lower is better)',
+      n: 500, cohort_rule: COHORT,
+      model_score: model, naive_score: naive, trailing3_score: t3, marcel_score: marcel,
+      beats_naive: model < naive, beats_trailing3: model < t3, beats_marcel: beatsMarcel,
+      improvement_vs_naive_pct: naive ? ((naive - model) / naive) * 100 : null,
+    })
+    const all: BacktestRow[] = [
+      mk('receiving_yards', 'WR', 2024, 22.9, 25.0, 24.0, 23.5),
+      mk('receiving_yards', 'WR', 2025, 23.24, 25.17, 24.1, 23.9),
+      mk('receiving_yards', 'TE', 2025, 15.1, 16.4, 15.9, 15.6),
+      mk('receiving_yards', 'RB', 2025, 12.2, 13.0, 12.7, 12.5, false),
+      mk('rushing_yards', 'RB', 2024, 20.1, 22.4, 21.5, 20.9),
+      mk('rushing_yards', 'RB', 2025, 19.6, 21.8, 21.0, 20.4),
+      mk('rushing_yards', 'QB', 2025, 9.4, 9.1, 9.8, 9.6),
+    ]
+    const verdictOf = (rows: BacktestRow[]): BacktestVerdict => {
+      const gains = rows.map((r) => r.improvement_vs_naive_pct).filter((g): g is number => g !== null)
+      return {
+        cell_seasons: rows.length,
+        beat_naive: rows.filter((r) => r.beats_naive).length,
+        beat_trailing3: rows.filter((r) => r.beats_trailing3).length,
+        beat_marcel: rows.filter((r) => r.beats_marcel).length,
+        beat_both: rows.filter((r) => r.beats_naive && r.beats_trailing3).length,
+        causal_check_passed: rows.length,
+        mean_improvement_vs_naive_pct: gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null,
+      }
+    }
+    const rows = stat ? all.filter((r) => r.stat === stat) : all
+    const seen = new Set<string>()
+    const available: BacktestCell[] = []
+    for (const r of all) {
+      const k = `${r.stat}:${r.position}`
+      if (!seen.has(k)) {
+        seen.add(k)
+        available.push({ stat: r.stat, position: r.position, metric: r.metric, metric_label: r.metric_label })
+      }
+    }
     return {
-      model_version: 'v1.0.0-test',
-      seasons: [2022, 2023, 2025],
-      positions: ['WR', 'RB', 'TE', 'QB'],
-      stat: 'receiving_yards',
-      overall_mae: 18.42,
-      overall_rmse: 24.11,
-      overall_crps: 0.312,
-      brier_score: 0.198,
-      calibration: [
-        { predicted_prob: 0.1, observed_freq: 0.09, n_samples: 120 },
-        { predicted_prob: 0.3, observed_freq: 0.28, n_samples: 210 },
-        { predicted_prob: 0.5, observed_freq: 0.51, n_samples: 340 },
-        { predicted_prob: 0.7, observed_freq: 0.69, n_samples: 280 },
-        { predicted_prob: 0.9, observed_freq: 0.88, n_samples: 150 },
-      ],
-      simulated_pnl: 14.72,
-      sharpe_ratio: 1.34,
-      max_drawdown: -8.20,
-      data_source: 'csv',
-      metric_notes: {},
-      by_season: [
-        {
-          season: 2022,
-          position: 'WR',
-          stat: 'receiving_yards',
-          n_games: 532,
-          stack_mae: 17.8,
-          stack_rmse: 23.4,
-          stack_crps: 0.301,
-          naive_mae: 24.2,
-          coverage_80: 0.79,
-          coverage_50: 0.51,
-          baseline_improvement_pct: 26.4,
-        },
-        {
-          season: 2023,
-          position: 'WR',
-          stat: 'receiving_yards',
-          n_games: 548,
-          stack_mae: 18.1,
-          stack_rmse: 24.0,
-          stack_crps: 0.315,
-          naive_mae: 23.9,
-          coverage_80: 0.81,
-          coverage_50: 0.49,
-          baseline_improvement_pct: 24.3,
-        },
-        {
-          season: 2025,
-          position: 'WR',
-          stat: 'receiving_yards',
-          n_games: 301,
-          stack_mae: 19.2,
-          stack_rmse: 25.0,
-          stack_crps: 0.322,
-          naive_mae: 25.1,
-          coverage_80: 0.77,
-          coverage_50: 0.52,
-          baseline_improvement_pct: 23.5,
-        },
-      ],
-      data_freshness: new Date().toISOString(),
+      release: 'causal_20261114',
+      generated_at: '2026-11-14T12:00:00Z',
+      seasons: [2024, 2025],
+      stat,
+      positions: ['QB', 'RB', 'TE', 'WR'],
+      verdict: verdictOf(rows),
+      release_verdict: verdictOf(all),
+      cohort_rules: [COHORT],
+      rows,
+      available,
+      not_measured: {
+        coverage: "We don't yet publish how often outcomes land inside our range.",
+        pnl: "We don't yet publish simulated betting results.",
+      },
+      table_url: '/backtest/table.csv',
     }
   },
 
