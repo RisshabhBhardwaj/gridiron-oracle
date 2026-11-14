@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+interceptions,poisson_deviance,417,493,417,493,player has at least this many completed games earlier in the same season,1,1.1238530093220886,2.1683058898391154,3.770233487808618,True,True,True,2.047378617701744,True,2021,QB
+interceptions,poisson_deviance,438,480,438,480,player has at least this many completed games earlier in the same season,1,1.1346640573721163,1.9980884510473003,3.8435878158804853,True,True,True,1.399996003986799,True,2022,QB
+interceptions,poisson_deviance,411,487,411,487,player has at least this many completed games earlier in the same season,1,1.0949220700954894,2.65669383781017,3.600805497931466,True,True,True,1.8194055606870938,True,2023,QB
+interceptions,poisson_deviance,430,499,430,499,player has at least this many completed games earlier in the same season,1,1.1741321830908271,2.3879773676117533,4.272373708860012,True,True,True,1.27186004661871,True,2024,QB
+interceptions,poisson_deviance,427,489,427,489,player has at least this many completed games earlier in the same season,1,1.0979753131286452,2.180346479705763,3.7266193511815984,True,True,True,1.2051615355560914,True,2025,QB

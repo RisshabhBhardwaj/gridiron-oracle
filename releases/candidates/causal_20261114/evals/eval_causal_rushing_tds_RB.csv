@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+rushing_tds,poisson_deviance,774,918,774,918,player has at least this many completed games earlier in the same season,1,0.8518777557295784,1.4699789341846548,3.209636287831556,True,True,True,1.131751353838871,True,2021,RB
+rushing_tds,poisson_deviance,763,948,763,948,player has at least this many completed games earlier in the same season,1,0.7821894816765042,1.5906897894031589,3.098534948818105,True,True,True,0.8850811405460067,True,2022,RB
+rushing_tds,poisson_deviance,789,898,789,898,player has at least this many completed games earlier in the same season,1,0.7702191456736448,1.6201432794364075,3.0187445561669803,True,True,True,1.477040703786207,True,2023,RB
+rushing_tds,poisson_deviance,888,984,888,984,player has at least this many completed games earlier in the same season,1,0.7954628536737991,1.438413651864017,2.677545483714037,True,True,True,1.2958682591553652,True,2024,RB
+rushing_tds,poisson_deviance,691,866,691,866,player has at least this many completed games earlier in the same season,1,0.9655036798673601,1.7056542952603473,3.5814013564964102,True,True,True,1.3113150876942223,True,2025,RB

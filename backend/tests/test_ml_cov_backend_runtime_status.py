@@ -182,42 +182,7 @@ class TestCheckMlflow:
         assert result["observed"]["uri"] == "http://mlflow.test:5000"
 
 
-# ── _check_backtest_assets ────────────────────────────────────────────────────
-
-class TestCheckBacktestAssets:
-    def test_latest_csv_by_filename_wins(self, db, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(rs, "_BACKTEST_RESULTS_DIR", tmp_path)
-        (tmp_path / "backtest_2024.csv").write_text("x")
-        (tmp_path / "backtest_2025.csv").write_text("x")
-        (tmp_path / "other.csv").write_text("x")
-        db["one"] = (0,)
-
-        result = _service()._check_backtest_assets()
-        assert result["status"] == "ok"
-        assert result["observed"]["latest_csv"].endswith("backtest_2025.csv")
-        assert "db_rows" in result["observed"] and result["observed"]["db_rows"] == 0
-
-    def test_database_rows_alone_are_enough(self, db, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(rs, "_BACKTEST_RESULTS_DIR", tmp_path)
-        db["one"] = (42,)
-        result = _service()._check_backtest_assets()
-        assert result["status"] == "ok"
-        assert result["observed"] == {"db_rows": 42}
-
-    def test_nothing_found_is_error(self, db, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(rs, "_BACKTEST_RESULTS_DIR", tmp_path / "absent")
-        db["one"] = (0,)
-        result = _service()._check_backtest_assets()
-        assert result == {"status": "error", "detail": "No backtest CSV artifacts or database rows found"}
-
-    def test_count_query_failure_is_tolerated(self, db, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(rs, "_BACKTEST_RESULTS_DIR", tmp_path)
-        (tmp_path / "backtest_2025.csv").write_text("x")
-        db["connect_error"] = OSError("no db")
-        result = _service()._check_backtest_assets()
-        assert result["status"] == "ok"
-        assert "db_rows" not in result["observed"]
-
+# ── _check_backtest_assets: covered in test_release_evals.py (pinned causal evals) ──
 
 # ── _check_tracing ────────────────────────────────────────────────────────────
 

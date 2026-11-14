@@ -18,7 +18,6 @@ from backend.app.core.tracing import describe_tracing
 
 logger = logging.getLogger(__name__)
 
-_BACKTEST_RESULTS_DIR = Path(__file__).parents[3] / "ml" / "backtest_results"
 _REPO_ROOT = Path(__file__).parents[3]
 
 #: Paths a release commit may touch, on top of the manifest's pinned source
@@ -345,49 +344,31 @@ class RuntimeStatusService:
             )
         return None
 
-    def _check_backtest_assets(self) -> dict:
-        latest_csv = None
-        if _BACKTEST_RESULTS_DIR.exists():
-            # By filename (which carries the run stamp), not st_mtime — readiness
-            # must not name a different "latest" artifact just because a file was
-            # touched or freshly checked out. Matches BacktestService._load_csv.
-            candidates = sorted(
-                _BACKTEST_RESULTS_DIR.glob("backtest_*.csv"),
-                key=lambda path: path.name,
-                reverse=True,
-            )
-            if candidates:
-                latest_csv = candidates[0]
+    def _check_backtest_assets(self, manifest=None) -> dict:
+        """The release's pinned causal evals must load, verify and agree with each other."""
+        from backend.app.services.backtest import EvalsNotPinned, EvalsUnavailable, load_release_evals
 
-        db_count = None
         try:
-            import psycopg2
-
-            conn = psycopg2.connect(self._db_url)
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT COUNT(*) FROM backtest_results")
-                db_count = int(cur.fetchone()[0])
-            finally:
-                conn.close()
-        except Exception as exc:
-            logger.debug("backtest_results count check failed: %s", exc)
-
-        if latest_csv or (db_count and db_count > 0):
-            observed = {}
-            if latest_csv is not None:
-                observed["latest_csv"] = str(latest_csv)
-            if db_count is not None:
-                observed["db_rows"] = db_count
+            evals = load_release_evals(manifest)
+        except EvalsUnavailable as exc:
+            # The cause is already logged by the loader; keep paths out of /health.
+            reason = (
+                "not pinned in the release manifest"
+                if isinstance(exc, EvalsNotPinned)
+                else "failed verification"
+            )
             return {
-                "status": "ok",
-                "detail": "Backtest assets available",
-                "observed": observed,
+                "status": "error",
+                "detail": f"Pinned causal evals unavailable: {reason}",
             }
-
         return {
-            "status": "error",
-            "detail": "No backtest CSV artifacts or database rows found",
+            "status": "ok",
+            "detail": "Pinned causal evals verified",
+            "observed": {
+                "release": evals.release,
+                "cells": len(evals.cells),
+                "cell_seasons": len(evals.rows),
+            },
         }
 
     def _check_tracing(self) -> dict:

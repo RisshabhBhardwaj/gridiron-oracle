@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+receptions,poisson_deviance,1506,1745,1506,1745,player has at least this many completed games earlier in the same season,1,1.338983145262755,3.133055235020323,1.7596732053531172,True,True,True,2.731960819443385,True,2021,WR
+receptions,poisson_deviance,1493,1727,1493,1727,player has at least this many completed games earlier in the same season,1,1.3761678174687726,2.36284866519029,1.9977201352892773,True,True,True,2.1350513698248905,True,2022,WR
+receptions,poisson_deviance,1434,1805,1434,1805,player has at least this many completed games earlier in the same season,1,1.2776198935414578,2.00512696968437,1.8573265438282023,True,True,True,1.7549845224378275,True,2023,WR
+receptions,poisson_deviance,1459,1758,1459,1758,player has at least this many completed games earlier in the same season,1,1.3257467376719683,2.1821696941072983,1.8593943613476462,True,True,True,2.0984300751797123,True,2024,WR
+receptions,poisson_deviance,1499,1776,1499,1776,player has at least this many completed games earlier in the same season,1,1.2922432312413326,1.7988899620544345,1.8142742463537076,True,True,True,1.8393655775599875,True,2025,WR
