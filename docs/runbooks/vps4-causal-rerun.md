@@ -452,6 +452,24 @@ vim .env     # confirm TRAIN_SMALL_CMD / TRAIN_FULL_CMD are the pinned recipes (
 
 Rollback: the refresh only writes pending rows until step 8; to undo a promoted refresh restore the step 2 dump.
 
+## Adding a pinned group to the served release (re-freeze)
+
+Used 2026-11-14 to pin `causal_evals` (C2 `a056891`, C3 `173cfe7`); decision 0012 will use it for `base_models`. A required runtime check that reads a group fails until the group has digests, and `freeze_baseline.py` refuses a blocked runtime, so pin first, then freeze.
+
+1. On the Mac, commit the files under `releases/candidates/<release>/`, then pin them and commit (this is C2):
+   `python scripts/pin_artifact_group.py --group <name> releases/candidates/<release>/<dir>/*`
+   It refuses an existing group, paths outside `releases/candidates/`, uncommitted files and Git LFS pointers. Add `--dry-run` to check first.
+2. Run the gate, secret-scan and push. Sync to the box (rule above: only descendants of the served C3).
+3. On the box: check `training` is idle; back up `.env`, `current_baseline.json` and tag the `etl` and `api` images `pre-refreeze-<STAMP>`.
+4. Set `.env` `GIT_COMMIT_SHA` to C2's full sha. `docker compose build etl`, then recreate `training`.
+5. Freeze inside `training` with the current approved ids (read them from `projection_policy.approved_pipeline_run_ids`):
+   `docker compose --profile training exec -T -e APPROVED_PIPELINE_RUN_IDS="<ids>" training python3 scripts/freeze_baseline.py`
+   Check `git_commit` = C2, `git_dirty` false, the new group listed, `DATABASE_URL` masked.
+6. `docker compose --profile training cp training:/app/releases/current_baseline.json /srv/gridiron/releases/current_baseline.json`; rsync it to the Mac, compare digests, commit (C3), gate, secret-scan, push.
+7. Sync C3, `docker compose build api`, `docker compose up -d --no-deps api`. Check `/health` (`artifact_mode_ready` true), `/integrity` (the new group's check `ok`) and the endpoint that reads it.
+
+The api image bakes the manifest, so the live frontend must already understand any new response shape before step 7; otherwise deploy the frontend in the same window. Rollback: restore the `.env` backup and retag the `pre-refreeze` images.
+
 ## Files that land
 
 | Path | Where | Committed |
