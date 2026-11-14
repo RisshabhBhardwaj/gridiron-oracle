@@ -9,7 +9,8 @@ const LABEL: Record<ApiStatus, string> = {
 
 /**
  * Nav status: a dot plus a word, so the state never rests on colour alone.
- * The healthy "Live" stays out of the way on narrow screens; a problem is always shown.
+ * "Live" and "Checking" stay out of the way on narrow screens (so the badge appearing or
+ * going away never moves the header); a problem is always shown.
  */
 export function ApiStatusBadge() {
   const status = useApiStatus()
@@ -19,7 +20,7 @@ export function ApiStatusBadge() {
       data-status={status}
       className={clsx(
         'items-center gap-2 px-2 py-1',
-        status === 'live' ? 'hidden lg:flex' : 'flex',
+        status === 'unavailable' ? 'flex' : 'hidden lg:flex',
       )}
     >
       <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
@@ -37,8 +38,9 @@ export function ApiStatusBadge() {
       </span>
       <span
         className={clsx(
-          'font-mono text-[10px] font-medium uppercase tracking-wider',
-          status === 'unavailable' ? 'text-negative' : 'text-fg-muted',
+          'font-mono text-xs font-medium uppercase tracking-wider',
+          // Mono font: 8ch holds "Checking" and "Live" alike, so the answer arriving moves nothing.
+          status === 'unavailable' ? 'text-negative' : 'min-w-[8ch] text-fg-muted',
         )}
       >
         {LABEL[status]}

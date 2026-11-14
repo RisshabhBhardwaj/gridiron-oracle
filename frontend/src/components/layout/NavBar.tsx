@@ -34,7 +34,7 @@ export function NavBar() {
             </span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-1 flex-1">
+          <div className="hidden lg:flex items-center gap-1 flex-1">
             <NavLink
               to="/"
               end
@@ -83,7 +83,7 @@ export function NavBar() {
 
             {/* Mobile hamburger: opens the menu dialog (focus trap, Escape) */}
             <button
-              className="md:hidden text-fg-muted hover:text-fg p-2 rounded-md border border-line transition-colors"
+              className="lg:hidden text-fg-muted hover:text-fg p-2 rounded-md border border-line transition-colors"
               onClick={() => setMenuOpen(true)}
               aria-label="Open navigation menu"
               aria-haspopup="dialog"
