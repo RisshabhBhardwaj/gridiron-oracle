@@ -1,9 +1,22 @@
 import { useMemo, useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Info, SlidersHorizontal } from 'lucide-react'
 import { useDraftBoard } from '@/hooks/useDraftBoard'
+import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { useMockDraftProfiles, useMockDraftPick } from '@/hooks/useMockDraft'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
-import { SkeletonCard } from '@/components/shared/LoadingSpinner'
+import { DraftBoardSkeleton } from '@/components/DraftBoardSkeleton'
+import {
+  agreementLine,
+  BOARD_LABELS,
+  draftWindowNotice,
+  draftWindowOver,
+  freshnessLine,
+  isPreseasonBoard,
+  marketSourceName,
+  VALUE_LEGEND,
+  valueView,
+} from '@/lib/draft-board'
+import { cn } from '@/lib/utils'
 import { POSITIONS } from '@/lib/constants'
 import { PositionBadge } from '@/components/PositionBadge'
 import { positionTone } from '@/lib/tokens'
@@ -26,24 +39,108 @@ const SLOT_ITEMS = Array.from({ length: 8 }, (_, i) => ({
   label: `Slot ${i + 1}`,
 }))
 const SORT_ITEMS: Array<{ value: SortKey; label: string }> = [
-  { value: 'adp', label: 'ADP' },
-  { value: 'model_rank', label: 'Model rank' },
-  { value: 'value_vs_adp', label: 'Value vs ADP' },
-  { value: 'model_fantasy_ppr', label: 'Model PPR' },
+  { value: 'adp', label: BOARD_LABELS.marketRank },
+  { value: 'model_rank', label: BOARD_LABELS.ourRank },
+  { value: 'value_vs_adp', label: BOARD_LABELS.value },
+  { value: 'model_fantasy_ppr', label: BOARD_LABELS.ourPoints },
 ]
+
+const FOCUS_RING =
+  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
+
+/** Signed value with an arrow, so colour is never the only cue. Screen readers get the full sentence. */
+function ValueCell({ value }: { value: number | null | undefined }) {
+  const v = valueView(value)
+  const tone = v.kind === 'up' ? 'text-positive' : v.kind === 'down' ? 'text-negative' : 'text-fg-muted'
+  return (
+    <span className={cn('inline-flex items-center justify-end gap-1 font-semibold', tone)} title={v.spoken}>
+      {v.kind === 'up' && <ArrowUp className="size-3.5" aria-hidden="true" />}
+      {v.kind === 'down' && <ArrowDown className="size-3.5" aria-hidden="true" />}
+      <span aria-hidden="true">{v.text}</span>
+      <span className="sr-only">{v.spoken}</span>
+    </span>
+  )
+}
+
+/** No board is published for this season: say so, and offer the nearest next step. */
+function BoardNotReady({
+  season,
+  onTryPrevious,
+  previousSeason,
+  onCheckAgain,
+}: {
+  season: number
+  previousSeason: number | null
+  onTryPrevious: () => void
+  onCheckAgain: () => void
+}) {
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-xl border border-line bg-surface-raised/40 p-5" role="status">
+      <h2 className="text-base font-semibold text-fg">The {season} draft board is not ready yet</h2>
+      <p className="max-w-xl text-sm text-fg-muted">
+        We have not published rankings for {season}. Check back soon
+        {previousSeason != null ? `, or look at the ${previousSeason} board in the meantime.` : '.'}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {previousSeason != null && (
+          <button
+            type="button"
+            onClick={onTryPrevious}
+            className={cn('rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg hover:brightness-110', FOCUS_RING)}
+          >
+            Show the {previousSeason} board
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onCheckAgain}
+          className={cn('rounded-lg border border-line px-3 py-1.5 text-sm text-fg-muted hover:text-fg', FOCUS_RING)}
+        >
+          Check again
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** The position filter matched no one (or the board is empty): say so and offer the way back. */
+function BoardEmpty({ position, onClear }: { position: string | null; onClear: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-xl border border-line bg-surface-raised/40 p-5" role="status">
+      <h2 className="text-base font-semibold text-fg">
+        {position ? `No ${position} players on this board` : 'No players on this board yet'}
+      </h2>
+      <p className="max-w-xl text-sm text-fg-muted">
+        {position ? 'Show every position to see the whole board.' : 'Pick another season above to see a board.'}
+      </p>
+      {position && (
+        <button
+          type="button"
+          onClick={onClear}
+          className={cn('rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg hover:brightness-110', FOCUS_RING)}
+        >
+          Clear filters
+        </button>
+      )}
+    </div>
+  )
+}
 
 export function DraftBoard() {
   const [mode, setMode] = useState<Mode>('board')
   const [season, setSeason] = useState(2026)
   const [position, setPosition] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('adp')
+  // Phones: season, position and sort sit behind one button so the board stays on the first screen.
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   // Board Query
-  const { data, isLoading, error, refetch, isFetching } = useDraftBoard({
+  const { data, isLoading, error, refetch } = useDraftBoard({
     season,
     source: null,
     position,
   })
+  const { data: currentSeason, isPlaceholderData: currentIsPlaceholder } = useCurrentSeason()
 
   // Mock Draft Query & Mutation
   const { data: profileData, isLoading: profilesLoading } = useMockDraftProfiles(season)
@@ -210,85 +307,166 @@ export function DraftBoard() {
     }
     cols.push(
       {
-        header: 'ADP#',
+        header: BOARD_LABELS.marketRank,
         accessorKey: 'adp_rank',
         mono: true,
+        align: 'right',
         cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
           <span className="text-fg-muted">{row.original.adp_rank ?? '—'}</span>
         ),
       },
       {
-        header: 'Player',
+        header: BOARD_LABELS.player,
         accessorKey: 'player_name',
-        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
-          <span className="font-medium text-fg">
-            {row.original.player_name}
-            {row.original.board_tail && (
-              <span className="ml-1.5 px-1.5 py-0.5 text-[9px] rounded bg-line text-fg-muted">
-                Tail
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => {
+          const p = row.original
+          return (
+            <div className="min-w-0">
+              <span className="font-medium text-fg">{p.player_name}</span>
+              {/* Phones hide the Pos, Team and Our points columns; the answer lives under the name instead. */}
+              <span className="mt-1 flex items-center gap-1.5 text-xs text-fg-muted sm:hidden">
+                <PositionBadge position={p.position} />
+                <span>{p.team ?? '—'}</span>
+                {p.model_fantasy_ppr != null && (
+                  <span className="whitespace-nowrap font-mono tabular-nums">{p.model_fantasy_ppr.toFixed(0)} pts</span>
+                )}
               </span>
-            )}
-          </span>
-        ),
+            </div>
+          )
+        },
       },
       {
-        header: 'Pos',
+        header: BOARD_LABELS.pos,
         accessorKey: 'position',
+        hideOnPhone: true,
         cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
           <PositionBadge position={row.original.position} />
         ),
       },
       {
-        header: 'Team',
+        header: BOARD_LABELS.team,
         accessorKey: 'team',
+        hideOnPhone: true,
         cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
           <span className="text-fg-muted">{row.original.team ?? '—'}</span>
         ),
       },
       {
-        header: 'ADP',
+        header: BOARD_LABELS.avgPick,
         accessorKey: 'adp',
         mono: true,
+        align: 'right',
+        hideOnPhone: true,
         cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
           <>{row.original.adp != null ? row.original.adp.toFixed(1) : '—'}</>
         ),
       },
       {
-        header: 'Model#',
+        header: BOARD_LABELS.ourRank,
         accessorKey: 'model_rank',
         mono: true,
+        align: 'right',
         cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
           <>{row.original.model_rank ?? '—'}</>
         ),
       },
       {
-        header: 'Model PPR',
+        header: BOARD_LABELS.ourPoints,
         accessorKey: 'model_fantasy_ppr',
         mono: true,
+        align: 'right',
+        hideOnPhone: true,
         cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => (
           <>{row.original.model_fantasy_ppr != null ? row.original.model_fantasy_ppr.toFixed(1) : '—'}</>
         ),
       },
       {
-        header: 'Value',
+        header: BOARD_LABELS.value,
         accessorKey: 'value_vs_adp',
         mono: true,
-        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => {
-          const v = row.original.value_vs_adp ?? 0
-          return (
-            <span className={v > 0 ? 'text-positive' : v < 0 ? 'text-negative' : 'text-fg-muted'}>
-              {row.original.value_vs_adp != null
-                ? `${row.original.value_vs_adp > 0 ? '+' : ''}${row.original.value_vs_adp.toFixed(0)}`
-                : '—'}
-            </span>
-          )
-        },
+        align: 'right',
+        cell: ({ row }: { row: LegacyRow<DraftBoardPlayer> }) => <ValueCell value={row.original.value_vs_adp} />,
       },
     )
     return cols
     // handleUserPick closes over the current draft state, so the action
     // column always drafts the row it sits on.
   }, [showDraftAction, isUserTurn])
+
+  const isBoard = mode === 'board'
+  const board = data ?? null
+  const notReady = !isLoading && !error && data === null
+  const windowOver =
+    isBoard &&
+    board != null &&
+    !currentIsPlaceholder &&
+    currentSeason != null &&
+    isPreseasonBoard(board.projection_source) &&
+    draftWindowOver(board.season, currentSeason)
+  const previousSeason = SEASON_ITEMS.some((i) => i.value === String(season - 1)) ? season - 1 : null
+  const marketName = marketSourceName(board?.source)
+  const agreement = agreementLine(board?.spearman_rho, board?.count ?? 0)
+  const sortLabel = SORT_ITEMS.find((i) => i.value === sortKey)?.label ?? ''
+  const filterSummary = `${position ?? 'All positions'} · by ${sortLabel.toLowerCase()}`
+
+  // Shared by board and mock mode: same controls, same behaviour.
+  const seasonSelect = (
+    <div className="flex items-center gap-2 text-xs text-fg-muted">
+      <span id="draft-season-label">Draft season</span>
+      <Select
+        items={SEASON_ITEMS}
+        value={String(season)}
+        onValueChange={(v) => { if (v) setSeason(Number(v)) }}
+      >
+        <SelectTrigger aria-labelledby="draft-season-label" className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SEASON_ITEMS.map((item) => (
+            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+  const positionFilter = (
+    <ToggleGroup
+      aria-label="Position filter"
+      value={position === null ? ['ALL'] : [position]}
+      onValueChange={(next) => {
+        // Clicking the pressed filter keeps it (single-choice, always one on).
+        if (next.length === 0) return
+        setPosition(next[0] === 'ALL' ? null : next[0])
+      }}
+    >
+      <ToggleGroupItem value="ALL">ALL</ToggleGroupItem>
+      {POSITIONS.map((p) => (
+        <ToggleGroupItem key={p} value={p} tone={positionTone(p)}>
+          {p}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  )
+  const sortSelect = (
+    <div className="flex items-center gap-2 text-xs text-fg-muted">
+      <span id="sort-label">Sort</span>
+      <Select
+        items={SORT_ITEMS}
+        value={sortKey}
+        onValueChange={(v) => { if (v) setSortKey(v as SortKey) }}
+      >
+        <SelectTrigger aria-labelledby="sort-label" className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SORT_ITEMS.map((item) => (
+            <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header & Mode Switcher */}
@@ -304,9 +482,12 @@ export function DraftBoard() {
           </div>
           <p className="max-w-2xl text-xs text-fg-muted mt-1">
             {mode === 'board'
-              ? 'Preseason Full PPR projections vs available ADP source. Ranked by value over a replacement player in an 8-team league.'
+              ? 'Our rankings next to where the market drafts each player.'
               : 'Simulate live snake drafts against real manager reach tendencies & historical timing.'}
           </p>
+          {isBoard && board && (
+            <p className="mt-1 text-xs text-fg-muted">{freshnessLine(board)}</p>
+          )}
         </div>
 
         <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
@@ -450,90 +631,120 @@ export function DraftBoard() {
         </div>
       )}
 
-      {/* Controls Bar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-xs text-fg-muted">
-          <span id="draft-season-label">Draft season</span>
-          <Select
-            items={SEASON_ITEMS}
-            value={String(season)}
-            onValueChange={(v) => { if (v) setSeason(Number(v)) }}
+      {/* Controls: board mode collapses them behind one button on phones; mock mode keeps its original bar. */}
+      {isBoard ? (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((o) => !o)}
+            aria-expanded={filtersOpen}
+            aria-controls="draft-filters"
+            className={cn(
+              'flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-sm text-fg sm:hidden',
+              FOCUS_RING,
+            )}
           >
-            <SelectTrigger aria-labelledby="draft-season-label" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SEASON_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <ToggleGroup
-          aria-label="Position filter"
-          value={position === null ? ['ALL'] : [position]}
-          onValueChange={(next) => {
-            // Clicking the pressed filter keeps it (single-choice, always one on).
-            if (next.length === 0) return
-            setPosition(next[0] === 'ALL' ? null : next[0])
-          }}
-        >
-          <ToggleGroupItem value="ALL">ALL</ToggleGroupItem>
-          {POSITIONS.map((p) => (
-            <ToggleGroupItem key={p} value={p} tone={positionTone(p)}>
-              {p}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-
-        <div className="flex items-center gap-2 text-xs text-fg-muted">
-          <span id="sort-label">Sort</span>
-          <Select
-            items={SORT_ITEMS}
-            value={sortKey}
-            onValueChange={(v) => { if (v) setSortKey(v as SortKey) }}
+            <SlidersHorizontal className="size-4 text-fg-muted" aria-hidden="true" />
+            <span className="font-medium">Filters</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{filterSummary}</span>
+            <ChevronDown
+              className={cn('size-4 text-fg-muted transition-transform motion-reduce:transition-none', filtersOpen && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </button>
+          <div
+            id="draft-filters"
+            className={cn('flex-wrap items-center gap-3 sm:flex', filtersOpen ? 'flex' : 'hidden')}
           >
-            <SelectTrigger aria-labelledby="sort-label" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {seasonSelect}
+            {positionFilter}
+            {sortSelect}
+          </div>
         </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          {seasonSelect}
+          {positionFilter}
+          {sortSelect}
 
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="rounded-md border border-line px-3 py-1.5 text-xs text-fg-muted hover:text-fg"
-        >
-          {isFetching ? 'Refreshing…' : 'Refresh'}
-        </button>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="rounded-md border border-line px-3 py-1.5 text-xs text-fg-muted hover:text-fg"
+          >
+            Refresh
+          </button>
 
-        {data?.spearman_rho != null && (
-          <span className="ml-auto font-mono text-xs text-accent" aria-label="Draft projection metadata">
-            {data.projection_source} · as of {data.as_of} · ρ={data.spearman_rho.toFixed(3)} · n={data.count}
-          </span>
-        )}
-      </div>
-
-      {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
-
-      {isLoading && (
-        <div>
-          <SkeletonCard count={8} />
+          {board?.spearman_rho != null && (
+            <span className="ml-auto font-mono text-xs text-accent" aria-label="Draft projection metadata">
+              {board.projection_source} · as of {board.as_of} · ρ={board.spearman_rho.toFixed(3)} · n={board.count}
+            </span>
+          )}
         </div>
       )}
 
-      {!isLoading && rows.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-line">
+      {windowOver && board && currentSeason && (
+        <p className="flex items-start gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-xs text-fg sm:text-sm">
+          <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+          <span>{draftWindowNotice(board.season, currentSeason)}</span>
+        </p>
+      )}
+
+      {error && (
+        <div role="alert">
+          <ErrorBanner error={error} onRetry={() => refetch()} />
+        </div>
+      )}
+
+      {isLoading && <DraftBoardSkeleton />}
+
+      {notReady && (
+        <BoardNotReady
+          season={season}
+          previousSeason={previousSeason}
+          onTryPrevious={() => previousSeason != null && setSeason(previousSeason)}
+          onCheckAgain={() => refetch()}
+        />
+      )}
+
+      {isBoard && board && rows.length === 0 && !isLoading && (
+        <BoardEmpty position={position} onClear={() => setPosition(null)} />
+      )}
+
+      {isBoard && rows.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-fg-muted">
+            <span className="font-semibold text-fg">{BOARD_LABELS.value}:</span> {VALUE_LEGEND}
+          </p>
+          <details className="group text-xs text-fg-muted">
+            <summary className={cn('inline-flex cursor-pointer select-none items-center gap-1 rounded text-fg-muted hover:text-fg', FOCUS_RING)}>
+              About these numbers
+              <ChevronDown className="size-3.5 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+            </summary>
+            <ul className="mt-2 flex max-w-2xl list-disc flex-col gap-1.5 pl-5">
+              <li>
+                {BOARD_LABELS.marketRank} is where {marketName ? `${marketName} drafters` : 'drafters'} take each player on average.
+              </li>
+              <li>{BOARD_LABELS.ourRank} orders players by projected points over a replacement-level player in an 8-team league.</li>
+              {agreement && <li>{agreement}</li>}
+              <li>These rankings have not been shown to beat the market. Use them as a second opinion.</li>
+            </ul>
+          </details>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className={isBoard ? 'overflow-clip rounded-xl border border-line' : 'overflow-x-auto rounded-xl border border-line'}>
           <DataTable
             columns={columns}
             data={rows}
-            className="min-w-full [&_th]:px-3 [&_th]:py-2 [&_td]:px-3 [&_td]:py-2"
+            stickyHeader={isBoard}
+            caption={isBoard ? `Draft board, ${rows.length} players` : undefined}
+            className={
+              isBoard
+                ? 'min-w-full [&_th]:px-2 [&_th]:py-2 sm:[&_th]:px-3 [&_td]:px-2 [&_td]:py-2.5 sm:[&_td]:px-3'
+                : 'min-w-full [&_th]:px-3 [&_th]:py-2 [&_td]:px-3 [&_td]:py-2'
+            }
           />
         </div>
       )}

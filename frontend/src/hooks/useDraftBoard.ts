@@ -11,13 +11,14 @@ interface Params {
   position?: string | null
 }
 
-async function fetchDraftBoard(params: Params): Promise<DraftBoardResponse> {
+/** Resolves to null when no board is published for the season (404): that is "not ready", not a failure. */
+async function fetchDraftBoard(params: Params): Promise<DraftBoardResponse | null> {
   const qs = new URLSearchParams()
   qs.set('season', String(params.season))
   if (params.source) qs.set('source', params.source)
   qs.set('scoring', params.scoring ?? 'ppr')
   if (params.position) qs.set('position', params.position)
-  return apiClient.get<DraftBoardResponse>(`/draft/board?${qs.toString()}`)
+  return apiClient.getOrNull<DraftBoardResponse>(`/draft/board?${qs.toString()}`)
 }
 
 export function useDraftBoard(params: Params) {

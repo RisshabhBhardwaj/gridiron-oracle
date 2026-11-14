@@ -40,10 +40,20 @@ export function DataTable<TData extends RowData>({
   columns,
   data,
   className,
+  stickyHeader,
+  caption,
 }: {
   columns: TableColumn<TData>[]
   data: TData[]
   className?: string
+  /**
+   * Keep the header row in view while the page scrolls (it sticks under the
+   * top nav). Needs a parent without `overflow-hidden/auto/scroll`; use
+   * `overflow-clip` for rounded corners.
+   */
+  stickyHeader?: boolean
+  /** Screen-reader name for the table (what it lists). */
+  caption?: string
 }) {
   const table = useLegacyTable({
     columns,
@@ -53,6 +63,7 @@ export function DataTable<TData extends RowData>({
 
   return (
     <table className={cn('w-full text-left text-sm', className)}>
+      {caption && <caption className="sr-only">{caption}</caption>}
       <thead>
         {table.getHeaderGroups().map((group) => (
           <tr key={group.id} className="border-b border-line/60 bg-surface-overlay/40 text-fg-muted">
@@ -61,10 +72,12 @@ export function DataTable<TData extends RowData>({
               return (
                 <th
                   key={header.id}
+                  scope="col"
                   className={cn(
-                    'px-4 py-3 text-[10px] font-semibold uppercase tracking-widest',
+                    'px-4 py-3 align-bottom text-xs font-semibold uppercase tracking-wider',
                     alignClass(def.align),
                     def.hideOnPhone && PHONE_HIDDEN,
+                    stickyHeader && 'sticky top-13 z-10 border-b border-line/60 bg-surface-raised',
                   )}
                 >
                   {flexRender(header.column.columnDef.header, header.getContext())}
@@ -82,7 +95,7 @@ export function DataTable<TData extends RowData>({
               return (
                 <td
                   key={cell.id}
-                  className={cn('px-4 py-3', alignClass(def.align), def.mono && 'font-mono', def.hideOnPhone && PHONE_HIDDEN)}
+                  className={cn('px-4 py-3', alignClass(def.align), def.mono && 'font-mono tabular-nums', def.hideOnPhone && PHONE_HIDDEN)}
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>
