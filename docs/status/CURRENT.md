@@ -20,7 +20,7 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 
 ## State of `main`
 
-`main` is pushed (first push 2026-11-12, owner-approved, gitleaks-clean); `origin/main` = `c3d847d` as of 2026-11-14. Pushing `main` deploys nothing: Railway is retired, Vercel is removed, and Pages is direct-upload (deploys are manual, see the runbook). The box checkout is updated by hand. No training has run; the rerun and re-freeze are owner decisions (see Open questions).
+`main` is pushed (first push 2026-11-12, owner-approved, gitleaks-clean); `origin/main` = `d6c51c6` as of 2026-11-14. Pushing `main` deploys nothing: Railway is retired, Vercel is removed, and Pages is direct-upload (deploys are manual, see the runbook). The box checkout is updated by hand. No training has run; the rerun and re-freeze are owner decisions (see Open questions).
 
 ## What works (verified on 6bc2c3d, 2026-10-17, by the manager)
 
@@ -33,7 +33,7 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 | Evidence manifest and serving manifest | OK (32 pinned cells match SHA-256) |
 | Engine (C++) | ctest 72/72 pass on this head |
 | Backend `-m integration` against local Postgres 18 | not rerun this session |
-| CI on GitHub (2026-11-14) | **red on `c3d847d`** — Alembic (no psycopg in CI), push gate (blocks `infra/hosts/vps1/.env.example`), pytest (CUDA torch wheel trips the CPU-build guard), one Vitest (`CurrentSeason`). Fix in progress. Branch protection not set. Nightly slow tests pass. |
+| CI on GitHub (2026-11-14) | **green on `d6c51c6`** (run 43559700365, all 6 jobs). Fixed: Alembic deps pinned, push gate allows `.env.example`, CPU torch at the pinned version, `CurrentSeason` week effect, GNU `mktemp` template in `e2e/lib/http_assert.sh`. Branch protection not set (owner decision). Nightly slow tests pass. |
 | Docker image build / `make up` | not executed (no cached base layers; disk tight) — compose config validates |
 
 One Hypothesis deadline flake was seen under parallel load (`test_stacking_ensemble` temporal-ordering, 200 ms deadline); the same file passes 57/57 in isolation on both `main` and the branch. Not a product failure.
