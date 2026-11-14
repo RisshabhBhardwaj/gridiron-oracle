@@ -27,16 +27,24 @@ def database_url_from_env() -> str:
     return os.environ.get("DATABASE_URL", DEFAULT_HOST_DATABASE_URL)
 
 
+def _alembic_config(url: str):
+    """Build the repo Alembic config carrying ``url`` both as the ini option and explicitly."""
+    from alembic.config import Config
+
+    cfg = Config(str(REPO_ROOT / "alembic.ini"))
+    # set_main_option goes through configparser interpolation, so a literal `%`
+    # (a URL-encoded password, e.g. `%40`) must be doubled or it raises.
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    # alembic/env.py prefers this explicit URL over DATABASE_URL.
+    cfg.attributes[EXPLICIT_DB_URL] = url
+    return cfg
+
+
 def upgrade_head(db_url: str | None = None) -> None:
     """Run `alembic upgrade head` against the given (or env) database URL."""
     from alembic import command
-    from alembic.config import Config
 
-    url = normalize_dsn(db_url or database_url_from_env())
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", url)
-    # alembic/env.py prefers this explicit URL over DATABASE_URL.
-    cfg.attributes[EXPLICIT_DB_URL] = url
+    cfg = _alembic_config(normalize_dsn(db_url or database_url_from_env()))
     command.upgrade(cfg, "head")
     logger.info("Alembic upgrade head complete.")
 
@@ -44,11 +52,7 @@ def upgrade_head(db_url: str | None = None) -> None:
 def stamp_head(db_url: str | None = None) -> None:
     """Mark an existing schema as current without re-running DDL."""
     from alembic import command
-    from alembic.config import Config
 
-    url = normalize_dsn(db_url or database_url_from_env())
-    cfg = Config(str(REPO_ROOT / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", url)
-    cfg.attributes[EXPLICIT_DB_URL] = url
+    cfg = _alembic_config(normalize_dsn(db_url or database_url_from_env()))
     command.stamp(cfg, "head")
     logger.info("Alembic stamp head complete.")

@@ -162,3 +162,15 @@ def test_stamp_head_marks_head_without_running_ddl(alembic_calls):
     (name, cfg, revision), = alembic_calls.calls
     assert (name, revision) == ("stamp", "head")
     assert cfg.get_main_option("sqlalchemy.url") == "postgresql://u:p@h/db"
+
+
+@pytest.mark.parametrize("helper", ["upgrade_head", "stamp_head"])
+def test_helpers_accept_a_percent_encoded_password(alembic_calls, helper):
+    # A URL-encoded password (`%40` is `@`) used to crash configparser
+    # interpolation inside Config.set_main_option before any SQL ran.
+    url = "postgresql://u:p%40ss%25w@h:5432/db"
+    getattr(schema, helper)(url)
+
+    (_, cfg, _), = alembic_calls.calls
+    assert cfg.get_main_option("sqlalchemy.url") == url
+    assert cfg.attributes[schema.EXPLICIT_DB_URL] == url
