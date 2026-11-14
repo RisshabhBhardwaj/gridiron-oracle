@@ -175,7 +175,7 @@ export function SeasonReview() {
       <p className="text-sm text-fg-muted">
         <span className="font-semibold text-fg">Past results only{data && data.seasons.length > 0 ? ` (${data.seasons[0]}–${data.seasons[data.seasons.length - 1]})` : ''}. </span>
         {currentSeason ? `This season (${currentSeason}) is on the ` : 'This season is on the '}
-        <Link to="/projections" className="text-accent underline-offset-4 hover:underline">Current Season</Link> page.
+        <Link to="/projections" className="text-accent underline underline-offset-4 hover:text-fg">Current Season</Link> page.
       </p>
 
       {isPending && <SeasonReviewSkeleton />}
@@ -226,7 +226,7 @@ export function SeasonReview() {
                   <h2 className="text-sm font-bold text-fg">By position ({season})</h2>
                   {metricLabel && <span className="text-xs text-fg-muted">Scores shown: {metricLabel}</span>}
                 </div>
-                <div className="relative overflow-x-auto">
+                <div role="region" aria-label="Results by position; scrolls sideways on small screens" tabIndex={0} className="relative overflow-x-auto">
                   <DataTable columns={COLUMNS} data={rows} className="text-xs" />
                 </div>
               </section>

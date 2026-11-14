@@ -1,13 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
-import clsx from 'clsx'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { useSeasonProjections } from '@/hooks/useSeasonProjections'
 import { useSeasonWeekProjections } from '@/hooks/useSeasonWeekProjections'
 import { useTeamWins } from '@/hooks/useTeamWins'
 import { useTeamGames } from '@/hooks/useTeamGames'
 import { useSearch } from '@/context/SearchContext'
-import { CardGridSkeleton, LoadingRegion, Skeleton } from '@/components/shared/Skeletons'
+import { CardGridSkeleton, LoadingRegion, Skeleton, TableSkeleton } from '@/components/shared/Skeletons'
 import { NotReady, NOT_READY_PRIMARY, NOT_READY_SECONDARY } from '@/components/shared/NotReady'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { PAGE_NAMES } from '@/lib/page-names'
@@ -15,11 +14,11 @@ import { AVAILABILITY_UNKNOWN_NOTE, isAvailabilityUnknown } from '@/lib/availabi
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
 import { DataStalenessWarning } from '@/components/shared/DataStalenessWarning'
 import { NoForecastBanner } from '@/components/shared/NoForecastBanner'
-import { isForecastRow, needsSimulationNotice, noticeLabel, provenanceLabel, toSearchablePlayers, weekFigureLabel } from '@/lib/forecast-provenance'
+import { isForecastRow, needsSimulationNotice, noticeLabel, toSearchablePlayers } from '@/lib/forecast-provenance'
+import { ProjectionList } from '@/components/ProjectionList'
+import { useProjectionView } from '@/hooks/useProjectionView'
 import { CURRENT_SEASON, POSITIONS, SEASON_SIM_STATS, STAT_LABELS, type SeasonSimStat } from '@/lib/constants'
-import type { SeasonPlayerProjection } from '@/types/api'
-import { PositionBadge } from '@/components/PositionBadge'
-import { positionTone, toneClass } from '@/lib/tokens'
+import { positionTone } from '@/lib/tokens'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -36,92 +35,8 @@ const START_WEEK_ITEMS = Array.from({ length: 18 }, (_, i) => ({
 }))
 const STAT_ITEMS = SEASON_SIM_STATS.map((s) => ({ value: s, label: STAT_LABELS[s] || s }))
 
-interface PlayerCardProps {
-  row: SeasonPlayerProjection
-  onClick: () => void
-  statKey: SeasonSimStat
-  /** Set for the Weekly tab. The Season-Long tab leaves it out: its numbers are season totals. */
-  week?: number
-}
-
-function PlayerCard({ row, onClick, statKey, week }: PlayerCardProps) {
-  // On the Weekly tab, a row that is not a real forecast says what it is on the card itself.
-  const simulated = week != null && !isForecastRow(row)
-  const statData = row[statKey]
-  const projection = statData?.mean ?? 0
-  const floor = statData?.p10 ?? null
-  const ceiling = statData?.p90 ?? null
-
-  // The simulator's weekly distributions are zero-inflated: a player who is
-  // inactive in a minority of paths gets a point mass at 0 that drags the mean
-  // below p10 (or, for a stat he rarely records at all, above p90). That is a
-  // real property of the model, not a bug — but a headline number printed
-  // outside the interval directly beneath it reads as broken, so say why.
-  const meanOutsideBand =
-    (floor != null && projection < floor) || (ceiling != null && projection > ceiling)
-  const bandTitle = meanOutsideBand
-    ? 'The mean falls outside the middle 80% because this stat is zero-inflated: ' +
-      'some simulated paths have the player inactive or not recording the stat at all.'
-    : undefined
-
-  if (!statData) return null
-
-  return (
-    <div
-      className={clsx(
-        toneClass(positionTone(row.position)),
-        'relative rounded-xl overflow-hidden flex flex-col gap-3 p-4 group cursor-pointer transition-all duration-200 hover:-translate-y-0.5',
-        'bg-panel-gradient border border-white/[0.06] shadow-[0_2px_12px_rgb(var(--shadow)/0.3)]',
-      )}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') onClick() }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-fg truncate leading-tight">{row.player_name}</p>
-          <p className="text-[11px] text-fg-muted mt-0.5">{row.team ?? 'UNK'}</p>
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-1.5">
-          {/* Slot: the availability chip (Questionable / Doubtful, decision 0012 D3) is not
-              built. Only the "Unknown" note exists, once above the grid (see CurrentSeason). */}
-          <PositionBadge position={row.position} />
-        </div>
-      </div>
-
-      <div className="flex items-baseline gap-1.5 mt-1">
-        <span className="glow-text font-display text-4xl leading-none text-tone">
-          {projection.toFixed(1)}
-        </span>
-        <span className="text-xs text-fg-muted">
-          {week != null && !simulated ? weekFigureLabel(week, statKey) : STAT_LABELS[statKey] || statKey}
-        </span>
-      </div>
-      {simulated && (
-        <p className="-mt-1 text-[11px] leading-snug text-fg-muted">{provenanceLabel(row.interval_method)}</p>
-      )}
-
-      <div className="flex flex-col gap-1 mt-1">
-        <div className="h-1.5 rounded-full overflow-hidden bg-surface-overlay/80">
-          <div className="h-full w-full rounded-full bg-gradient-to-r from-negative/60 via-tone/50 to-positive/60" />
-        </div>
-        <div className="flex justify-between font-mono text-[10px] text-fg-muted" title={bandTitle}>
-          <span>{floor != null ? `${floor.toFixed(1)} (p10)` : '—'}</span>
-          {meanOutsideBand && (
-            <span className="text-fg-muted/70" aria-label="mean outside middle 80 percent">
-              zero-inflated
-            </span>
-          )}
-          <span>{ceiling != null ? `${ceiling.toFixed(1)} (p90)` : '—'}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function CurrentSeason() {
-  const navigate = useNavigate()
+  const [listView, setListView] = useProjectionView()
   // isPlaceholderData is true while /season/current is still in flight, during
   // which `season` is the offline fallback. Firing the child queries against it
   // produced a full duplicate request set for the wrong season on every mount,
@@ -190,13 +105,8 @@ export function CurrentSeason() {
 
   const playersList = useMemo(() => {
     const source = activeTab === 'weekly' ? weeklyQuery.data?.projections : seasonQuery.data?.projections
-    if (!source) return []
-    return [...source].sort((a, b) => {
-      const aVal = a[statKey]?.mean ?? 0
-      const bVal = b[statKey]?.mean ?? 0
-      return bVal - aVal
-    })
-  }, [activeTab, weeklyQuery.data, seasonQuery.data, statKey])
+    return source ?? []
+  }, [activeTab, weeklyQuery.data, seasonQuery.data])
 
   const weeklyRows = weeklyQuery.data?.projections
   const weeklyNeedsNotice = activeTab === 'weekly' && needsSimulationNotice(weeklyRows ?? [])
@@ -385,7 +295,7 @@ export function CurrentSeason() {
                     <span className="font-display text-xl text-accent mt-0.5">
                       {t.wins_mean.toFixed(1)}
                     </span>
-                    <span className="text-[10px] text-fg-muted font-mono">
+                    <span className="text-xs text-fg-muted font-mono">
                       {t.wins_p10 != null && t.wins_p90 != null ? `${t.wins_p10.toFixed(0)}–${t.wins_p90.toFixed(0)}` : 'wins'}
                     </span>
                   </div>
@@ -448,7 +358,7 @@ export function CurrentSeason() {
                       <div className="flex flex-col items-center justify-center px-3">
                         <span className="text-xs font-mono text-fg-muted">VS</span>
                         {game.home_win_probability != null && (
-                          <span className="text-[10px] font-mono text-accent mt-1">
+                          <span className="text-xs font-mono text-accent mt-1">
                             {(game.home_win_probability * 100).toFixed(0)}% Home Win
                           </span>
                         )}
@@ -499,7 +409,7 @@ export function CurrentSeason() {
           )}
           {listPending ? (
             <LoadingRegion label="Loading player projections">
-              <CardGridSkeleton count={8} />
+              {listView === 'table' ? <TableSkeleton rows={10} columns={5} /> : <CardGridSkeleton count={8} />}
             </LoadingRegion>
           ) : listQuery.error ? (
             <ErrorBanner error={listQuery.error} onRetry={() => void listQuery.refetch()} />
@@ -538,21 +448,17 @@ export function CurrentSeason() {
               </div>
             )
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {visibleList.map((player) => (
-                <PlayerCard
-                  key={player.player_id}
-                  row={player}
-                  statKey={statKey}
-                  week={activeTab === 'weekly' ? selectedWeek : undefined}
-                  onClick={() => navigate(
-                    // The player page needs the name, week, season and stat in its address;
-                    // without them it shows "No player selected". Same address the search builds.
-                    `/player/${player.player_id}?week=${selectedWeek}&season=${season}&stat=${statKey}&name=${encodeURIComponent(player.player_name)}`,
-                  )}
-                />
-              ))}
-            </div>
+            <ProjectionList
+              key={activeTab}
+              rows={visibleList}
+              statKey={statKey}
+              scope={activeTab === 'weekly' ? 'weekly' : 'season'}
+              season={season}
+              week={selectedWeek}
+              view={listView}
+              onViewChange={setListView}
+              onResetPositions={allPositions ? undefined : () => setSelectedPositions([...POSITIONS])}
+            />
           )}
         </div>
       )}

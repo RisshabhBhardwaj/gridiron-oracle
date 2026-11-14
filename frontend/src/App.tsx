@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { NavBar } from './components/layout/NavBar'
 import { PageShell } from './components/layout/PageShell'
+import { SkipLink } from './components/layout/SkipLink'
 import { SearchProvider, useSearch } from './context/SearchContext'
 import { CardGridSkeleton, LoadingRegion, PageHeaderSkeleton } from './components/shared/Skeletons'
 
@@ -47,6 +48,7 @@ export function App() {
   return (
     <SearchProvider>
       <div className="min-h-screen bg-surface text-fg">
+        <SkipLink />
         <NavBar />
         <SearchHost />
         <PageShell>

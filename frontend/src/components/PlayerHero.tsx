@@ -40,7 +40,7 @@ export function PlayerHero({ label, value, low, high, unit }: PlayerHeroProps) {
         <div className="mt-6 flex flex-col gap-2">
           <div
             role="img"
-            aria-label={`Likely range ${low.toFixed(1)} to ${high.toFixed(1)}${unit ? ` ${unit}` : ''}, projection ${value.toFixed(1)}`}
+            aria-label={`Projection ${value.toFixed(1)}${unit ? ` ${unit}` : ''}, in a range from a bad week of ${low.toFixed(1)} to a great week of ${high.toFixed(1)}. The same numbers are written below the bar.`}
             className="relative h-3 rounded-full bg-surface-overlay/80"
           >
             <div className="animate-bar-fill absolute inset-0 rounded-full bg-range-bar" />

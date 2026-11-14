@@ -59,7 +59,7 @@ export function Home() {
   return (
     <div className="min-h-[calc(100vh-53px)] flex flex-col justify-center py-12 sm:py-16">
       <section className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
-        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1 text-[11px] font-mono uppercase tracking-[0.14em] text-fg-muted">
+        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1 text-xs font-mono uppercase tracking-[0.14em] text-fg-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_rgb(var(--accent)/0.8)]" />
           WK {week} · {season}
         </div>
@@ -77,14 +77,13 @@ export function Home() {
           <button
             type="button"
             onClick={open}
-            aria-label="Search players, teams, or positions"
-            className="flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised px-4 py-3 transition-colors hover:border-accent/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="flex w-full items-center gap-3 rounded-lg border border-line bg-surface-raised px-4 py-3 transition-colors hover:border-accent/40"
           >
             <Search className="size-5 flex-shrink-0 text-fg-muted" aria-hidden="true" />
             <span className="min-w-0 flex-1 text-left text-base text-fg-subtle">
               Search players, teams, or positions
             </span>
-            <span className="hidden rounded-md border border-line px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-fg-muted sm:block">
+            <span aria-hidden="true" className="hidden rounded-md border border-line px-2 py-1 font-mono text-xs uppercase tracking-wider text-fg-muted sm:block">
               Cmd K
             </span>
           </button>

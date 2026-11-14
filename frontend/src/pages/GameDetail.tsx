@@ -68,6 +68,9 @@ export function GameDetail() {
         </Link>
       </div>
 
+      {/* The page's one h1 before the data arrives (the matchup takes over once loaded). */}
+      {!data && <h1 className="font-display text-2xl font-bold tracking-wider text-fg">Game simulation</h1>}
+
       {error && <ErrorBanner error={error} onRetry={() => refetch()} />}
 
       {isPending && !error && (
@@ -99,7 +102,7 @@ export function GameDetail() {
           <div className="p-6 rounded-2xl flex flex-col gap-5 border border-line/60 bg-panel-gradient shadow-[0_8px_32px_rgb(var(--shadow)/0.3)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/40 pb-4">
               <div>
-                <span className="text-[11px] uppercase tracking-wider font-bold text-accent">
+                <span className="text-xs uppercase tracking-wider font-bold text-accent">
                   {data.season} Week {data.week} · Drive-by-drive simulation
                 </span>
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-fg mt-0.5">
@@ -203,7 +206,7 @@ export function GameDetail() {
                         <span className="font-mono text-xs font-bold text-fg-muted w-14">
                           Drive {drive.drive_number}
                         </span>
-                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-surface-overlay border border-line text-fg-muted">
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded bg-surface-overlay border border-line text-fg-muted">
                           Q{drive.quarter}
                         </span>
                         <span
@@ -240,7 +243,7 @@ export function GameDetail() {
                     {isExpanded && drive.plays.length > 0 && (
                       <div className="border-t border-line/40 bg-surface/50 p-3 overflow-x-auto">
                         <table className="min-w-full text-left text-xs">
-                          <thead className="text-[10px] uppercase text-fg-muted tracking-wider border-b border-line/40">
+                          <thead className="text-xs uppercase text-fg-muted tracking-wider border-b border-line/40">
                             <tr>
                               <th className="pb-1.5 px-2">Play</th>
                               <th className="pb-1.5 px-2">Down & Dist</th>

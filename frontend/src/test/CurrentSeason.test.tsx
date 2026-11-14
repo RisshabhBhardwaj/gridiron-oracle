@@ -125,13 +125,14 @@ describe('CurrentSeason', () => {
       expect(screen.queryByText('19.8')).not.toBeInTheDocument()
     })
 
-    it('labels the section and every card when the visitor asks for the simulation', async () => {
+    it('labels the section and every row when the visitor asks for the simulation', async () => {
       renderWithProviders(<CurrentSeason />)
       fireEvent.click(await screen.findByRole('button', { name: /show these numbers anyway/i }))
       expect(await screen.findByText('Justin Jefferson')).toBeInTheDocument()
       const label = 'Preseason simulation, not updated for games played'
-      // One heading plus one line on each of the two cards.
-      expect(screen.getAllByText(label)).toHaveLength(3)
+      // The full sentence once, as the section heading; the short form on each of the two rows.
+      expect(screen.getAllByText(label)).toHaveLength(1)
+      expect(screen.getAllByText('Preseason simulation')).toHaveLength(2)
       expect(screen.queryByText(/Week 5 · Fantasy Points/)).not.toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: /hide these numbers/i }))
       expect(screen.queryByText('Justin Jefferson')).not.toBeInTheDocument()
@@ -152,10 +153,10 @@ describe('CurrentSeason', () => {
         expect(screen.queryByText('Justin Jefferson')).not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: /show these numbers anyway/i }))
         await screen.findByText('Justin Jefferson')
-        const own = /unavailable|posterior_samples/.test(method)
-          ? 'Not a verified weekly forecast'
-          : 'Simulation, not a weekly forecast'
-        expect(screen.getAllByText(own)).toHaveLength(3)
+        const unknown = /unavailable|posterior_samples/.test(method)
+        const own = unknown ? 'Not a verified weekly forecast' : 'Simulation, not a weekly forecast'
+        expect(screen.getAllByText(own)).toHaveLength(1)
+        expect(screen.getAllByText(unknown ? 'Not verified' : 'Simulation')).toHaveLength(2)
         expect(screen.queryByText(/Preseason simulation/)).not.toBeInTheDocument()
       },
     )
@@ -194,6 +195,7 @@ describe('CurrentSeason', () => {
       expect(screen.queryByText(/No forecast yet/)).not.toBeInTheDocument()
       expect(screen.queryByText(/Preseason simulation/)).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /these numbers/i })).not.toBeInTheDocument()
+      // The column header carries the same label the search dialog and player page use.
       expect(screen.getAllByText('Week 5 · Fantasy Points (PPR)').length).toBeGreaterThan(0)
     })
 
