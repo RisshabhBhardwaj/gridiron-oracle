@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { ChevronRight, Search, X } from 'lucide-react'
 import { useSearch } from '@/context/SearchContext'
-import { STAT_LABELS } from '@/lib/constants'
+import { weekFigureLabel } from '@/lib/forecast-provenance'
 import { PositionBadge } from '@/components/PositionBadge'
 import { positionTone, toneClass } from '@/lib/tokens'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -143,8 +143,14 @@ export function PlayerSearch() {
                       </div>
 
                       <div className="flex-shrink-0 text-right">
-                        <p className="glow-text font-display text-xl text-tone">{player.projection.toFixed(1)}</p>
-                        <p className="text-[10px] text-fg-muted">{STAT_LABELS[player.stat] ?? player.stat}</p>
+                        {player.projection != null ? (
+                          <>
+                            <p className="glow-text font-display text-xl text-tone">{player.projection.toFixed(1)}</p>
+                            <p className="text-[10px] text-fg-muted">{weekFigureLabel(defaultWeek, player.stat)}</p>
+                          </>
+                        ) : (
+                          <p className="max-w-[9rem] text-[11px] leading-snug text-fg-muted">No Week {defaultWeek} forecast yet</p>
+                        )}
                       </div>
 
                       <ChevronRight

@@ -16,7 +16,8 @@ export interface SearchablePlayer {
   position: string
   team: string | null
   stat: string
-  projection: number
+  /** The figure the player page will show for the default week, or null when it will say "no forecast". */
+  projection: number | null
 }
 
 interface SearchCtx {
@@ -90,7 +91,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
         .filter((entry) => entry.score >= 0)
         .sort((a, b) => {
           if (a.score !== b.score) return b.score - a.score
-          return b.player.projection - a.player.projection
+          return (b.player.projection ?? -Infinity) - (a.player.projection ?? -Infinity)
         })
         .map((entry) => entry.player)
         .slice(0, 20)

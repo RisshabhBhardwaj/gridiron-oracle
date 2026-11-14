@@ -45,7 +45,8 @@ export function Home() {
         position: p.position,
         team: p.team,
         stat: 'fantasy_ppr',
-        projection: p.fantasy_ppr!.mean,
+        // A season total is not what the player page shows (a week forecast or none), so search shows no number.
+        projection: null,
       }))
     setPlayers(searchablePlayers)
   }, [data?.projections, setPlayers])
