@@ -140,9 +140,11 @@ TFT/GNN retrains wait for their own fold profile.
   `env_file`) to the commit the release was frozen from; it stays pinned
   there until the next re-freeze. The forward producer's code provenance is a
   separate `.env` variable, `CODE_GIT_SHA`: set it to the synced Mac HEAD
-  (`git rev-parse HEAD`) after every code sync and before any image build. It
-  is a build arg for `etl` and `training`; an empty value makes the producer
-  refuse to write a forward run.
+  (`git rev-parse HEAD`, from a clean tree) after every code sync and before
+  any image build. It is a build arg for `etl` and `training`, baked into
+  `/app/CODE_GIT_SHA`; the producer reads that file, not the runtime env, so a
+  later `.env` edit cannot change it. A value that is not 40-hex makes the
+  producer refuse to write a forward run.
 - Every training run pings its dead-man URL on success only
   (`HEALTHCHECKS_TRAIN_SMALL_URL` / `HEALTHCHECKS_TRAIN_FULL_URL`).
 

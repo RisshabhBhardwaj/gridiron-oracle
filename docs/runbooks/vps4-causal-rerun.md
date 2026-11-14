@@ -10,7 +10,7 @@ Who runs it: the Gridiron manager, with the owner's go-ahead for the production-
 - **Box commands** run on the box from `/srv/gridiron/infra/hosts/vps1` (`cd` there first). "In training" means `docker compose --profile training exec -T training <cmd>` (container `/app`, image `gridiron-etl:full`, 10 GB, 5 CPUs). "In db" means `docker compose exec -T db <cmd>`.
 - **Mac commands** run in the merged repo checkout and are marked `[Mac]`. `$BOX` is `deploy@<box address>`, set in your shell. The address is never written in the repo.
 - Commit names used below: **C1** = merged `main` that carries this work. **C2** = C1 plus the promoted release candidate (step 12). **C3** = C2 plus evidence only (step 18).
-- **Code-sync rule (`CODE_GIT_SHA`).** After every sync of the Mac checkout to the box, and before any image build, set `.env` `CODE_GIT_SHA` to the synced commit: `[Mac] git rev-parse HEAD`, then `vim .env` on the box (`grep -c '^CODE_GIT_SHA=' .env` must print 1). Never derive it from `GIT_COMMIT_SHA`: that one stays pinned to the freeze commit, so reusing it would stamp every later forward run with the wrong code commit. An empty or `unknown` value makes the forward producer refuse to write.
+- **Code-sync rule (`CODE_GIT_SHA`).** Every sync starts by refusing a dirty Mac tree: `git diff --quiet && git diff --cached --quiet || { echo 'dirty tree: commit first'; exit 1; }`, before the rsync and before the build arg is set (the rsync copies working-tree content of tracked files, so a dirty tree would ship code no commit names). Then set `.env` `CODE_GIT_SHA` to `git rev-parse HEAD` of that tree (`vim .env` on the box; `grep -c '^CODE_GIT_SHA=' .env` must print 1) and build the image. The build arg is baked into `/app/CODE_GIT_SHA`; the producer reads only that file in an image, so a later `.env` edit cannot change what an image records. Never derive it from `GIT_COMMIT_SHA` (pinned to the freeze commit). The value must be 40 lowercase hex; anything else makes the forward producer refuse to write.
 - `/srv/gridiron` has no `.git`. The images copy code and `releases/` at build time (`backend/Dockerfile` and `Dockerfile.serving` both `COPY releases`). `reports/` is gitignored and is **not** in the image.
 
 ## Decisions this runbook makes
@@ -119,6 +119,7 @@ Rollback for the whole runbook's data steps: `docker compose exec -T db pg_resto
 `[Mac]`, from a clean checkout of C1 (`git status --porcelain` is empty and `git rev-parse HEAD` is C1). Model files are Git LFS objects: pull them first, or rsync copies 130-byte pointer files and the box fails its digest check only when it serves.
 
 ```bash
+git diff --quiet && git diff --cached --quiet || { echo 'dirty tree: commit first'; exit 1; }   # CODE_GIT_SHA must name exactly what is copied
 git lfs pull
 git lfs ls-files        # every releases/candidates/*/models/* line must show "*" (content present), not "-" (pointer)
 python3 scripts/check_no_lfs_pointers.py
@@ -319,7 +320,7 @@ docker compose --profile training up -d --force-recreate training
 docker compose --profile training exec -T training bash -c 'echo $GIT_COMMIT_SHA; ls releases/candidates/causal_20261114 | wc -l'
 ```
 
-The block above also sets `CODE_GIT_SHA` (the forward producer's provenance, separate from `GIT_COMMIT_SHA`): see the code-sync rule.
+The block above also sets `CODE_GIT_SHA`, baked into the image at build (the forward producer's provenance, separate from `GIT_COMMIT_SHA`): see the code-sync rule. Set it before `docker compose build`, never after.
 
 The OOF rebuild stays on the `train_out` volume. This sync carries exactly the step 12 files, so it cannot overwrite the promoted release with an older one. Verify anyway: `[Mac] git show HEAD:releases/current_baseline.json | shasum -a 256` must equal `sha256sum /srv/gridiron/releases/current_baseline.json` on the box.
 Rollback: `.env` back to the old SHA, `docker tag gridiron-etl:pre-rerun-<STAMP> gridiron-etl:full`, recreate training.
@@ -472,7 +473,7 @@ Step 4b runs after the stack step and before the simulation. In this order, and 
 
 Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
 
-Code SHA: `.env` `CODE_GIT_SHA` is passed as the build arg of the same name for the `etl` and `training` images, so the producer records the commit the image was built from. It is separate from `GIT_COMMIT_SHA`, which stays pinned to the freeze commit until the next re-freeze. **Every code sync sets it to the synced Mac HEAD before any image build** (sync rule below). A real forward run with `code_git_sha` empty or `unknown` is refused (guard D8); only `--dry-run` may run unstamped.
+Code SHA: `.env` `CODE_GIT_SHA` is the build arg of the same name for the `etl` and `training` images; the Dockerfile writes it to `/app/CODE_GIT_SHA` and the producer reads that file, never the runtime environment (compose `env_file: .env` would override an image `ENV`). It is separate from `GIT_COMMIT_SHA`, which stays pinned to the freeze commit until the next re-freeze. **Every code sync sets it to the synced, clean Mac HEAD before any image build** (code-sync rule above). A real forward run whose recorded sha is not 40-hex is refused (guard D8); only `--dry-run` may run unstamped. Outside an image the producer falls back to a valid env value or a clean git tree.
 
 `--allow-no-availability` (manual only, never in a unit) stores every row with status `Unknown` instead of refusing when no snapshot exists. The run is logged, and the report and summary carry `availability_override`. This needs migration 0029. The API returns the value in `availability_status`; showing it in the UI is a frontend change not made here.
 

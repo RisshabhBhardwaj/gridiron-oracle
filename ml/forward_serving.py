@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import platform
+import re
 import resource
 import subprocess
 import sys
@@ -452,18 +453,43 @@ def _build_rows(
 
 
 # ── run ───────────────────────────────────────────────────────────────────────────────────
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# Written at image build from the CODE_GIT_SHA build arg. A file, not an ENV: compose `env_file: .env`
+# overrides image ENV at runtime, so an env value could name a commit the code was not built from.
+CODE_SHA_FILE = REPO_ROOT / "CODE_GIT_SHA"
+
+
+def _valid_sha(value: str) -> bool:
+    return bool(_SHA_RE.match(value))
+
+
 def _code_sha() -> str:
+    """The commit this code was built from, a 40-hex sha, or "unknown".
+
+    In an image the baked file is authoritative and the environment is ignored. Outside an image
+    (no file: a Mac or a dev shell) the env var is used when valid, then git, but only for a clean tree.
+    """
+    if CODE_SHA_FILE.exists():
+        try:
+            value = CODE_SHA_FILE.read_text().strip()
+        except OSError:
+            value = ""
+        if _valid_sha(value):
+            return value
+        logger.warning("baked code sha %r is not a 40-hex commit; recording 'unknown'", value)
+        return "unknown"
     for name in ("CODE_GIT_SHA", "GIT_SHA"):
         value = os.environ.get(name, "").strip()
-        if value and value != "unknown":  # the image build arg defaults to empty
+        if _valid_sha(value):
             return value
     try:
-        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
+        dirty = subprocess.run(["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
+        if head.returncode == 0 and dirty.returncode == 0 and not dirty.stdout.strip() and _valid_sha(head.stdout.strip()):
+            return head.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
-    logger.warning("code git sha unknown (no CODE_GIT_SHA and no git); recording 'unknown'")
+    logger.warning("code git sha unknown (no baked file, no valid env, no clean git tree); recording 'unknown'")
     return "unknown"
 
 
@@ -502,10 +528,11 @@ def run_forward(
     if mode != ARTIFACT_BACKED:
         raise ForwardGuardError("G1", f"PRODUCT_MODE must be artifact_backed, got {mode!r}")
     sha = code_sha or _code_sha()
-    if sha == "unknown" and not dry_run:
+    if not _valid_sha(sha) and not dry_run:
         raise ForwardGuardError(
-            "D8", "code_git_sha is unknown: refusing to write a forward run nobody can trace to a commit. "
-                  "Bake CODE_GIT_SHA into the image (build arg from GIT_COMMIT_SHA) or set it."
+            "D8", f"code_git_sha {sha!r} is not a 40-hex commit: refusing to write a forward run nobody can "
+                  "trace to a commit. Set CODE_GIT_SHA in .env to the synced commit and rebuild the image "
+                  "(it is baked to /app/CODE_GIT_SHA at build)."
         )
     manifest = manifest or get_manifest()
     cells = _plan(manifest)

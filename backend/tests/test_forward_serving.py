@@ -513,19 +513,79 @@ def test_a_dry_run_may_report_an_unknown_code_sha(manifest, monkeypatch) -> None
     assert report["dry_run"] is True
 
 
-@pytest.mark.parametrize("value", ["", "unknown"])
-def test_a_blank_or_unknown_env_sha_is_not_a_sha(monkeypatch, value) -> None:
-    """The image build arg defaults to empty; that must not count as a recorded commit."""
-    monkeypatch.setenv("CODE_GIT_SHA", value)
-    monkeypatch.delenv("GIT_SHA", raising=False)
+GOOD_SHA = "0123456789abcdef0123456789abcdef01234567"
+OTHER_SHA = "fedcba9876543210fedcba9876543210fedcba98"
+
+
+def _no_git(monkeypatch) -> None:
     monkeypatch.setattr(forward_serving.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("no git")))
+
+
+def test_the_baked_file_is_the_code_sha_and_no_env_value_can_override_it(tmp_path, monkeypatch) -> None:
+    """env_file .env overrides image ENV at runtime, so the baked value lives in a file (review M3)."""
+    sha_file = tmp_path / "CODE_GIT_SHA"
+    sha_file.write_text(GOOD_SHA)
+    monkeypatch.setenv("CODE_GIT_SHA", OTHER_SHA)
+    monkeypatch.setenv("GIT_SHA", OTHER_SHA)
+    monkeypatch.setattr(forward_serving, "CODE_SHA_FILE", sha_file)
+    assert forward_serving._code_sha() == GOOD_SHA
+
+
+@pytest.mark.parametrize("content", ["", "unknown", "latest", "abc123", GOOD_SHA.upper(), GOOD_SHA + "0", "main\n"])
+def test_a_bad_baked_sha_is_unknown_even_when_the_env_has_a_good_one(tmp_path, monkeypatch, content) -> None:
+    sha_file = tmp_path / "CODE_GIT_SHA"
+    sha_file.write_text(content)
+    monkeypatch.setenv("CODE_GIT_SHA", OTHER_SHA)
+    monkeypatch.setattr(forward_serving, "CODE_SHA_FILE", sha_file)
+    _no_git(monkeypatch)
     assert forward_serving._code_sha() == "unknown"
 
 
-def test_the_image_bakes_the_commit_sha_from_a_build_arg() -> None:
+def test_without_a_baked_file_a_valid_env_sha_is_used_and_an_invalid_one_is_not(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(forward_serving, "CODE_SHA_FILE", tmp_path / "absent")
+    _no_git(monkeypatch)
+    monkeypatch.delenv("GIT_SHA", raising=False)
+    monkeypatch.setenv("CODE_GIT_SHA", GOOD_SHA)
+    assert forward_serving._code_sha() == GOOD_SHA
+    for bad in ("", "unknown", "latest", "abc"):
+        monkeypatch.setenv("CODE_GIT_SHA", bad)
+        assert forward_serving._code_sha() == "unknown"
+
+
+def test_the_git_fallback_refuses_a_dirty_tree(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(forward_serving, "CODE_SHA_FILE", tmp_path / "absent")
+    monkeypatch.delenv("CODE_GIT_SHA", raising=False)
+    monkeypatch.delenv("GIT_SHA", raising=False)
+
+    def fake_run(cmd, **kw):
+        out = {"rev-parse": GOOD_SHA + "\n", "status": " M ml/forward_serving.py\n"}[cmd[1]]
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(forward_serving.subprocess, "run", fake_run)
+    assert forward_serving._code_sha() == "unknown"
+
+    def clean_run(cmd, **kw):
+        out = {"rev-parse": GOOD_SHA + "\n", "status": ""}[cmd[1]]
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(forward_serving.subprocess, "run", clean_run)
+    assert forward_serving._code_sha() == GOOD_SHA
+
+
+@pytest.mark.parametrize("bad", ["abc123", "latest", "main", GOOD_SHA[:39], GOOD_SHA.upper()])
+def test_a_real_write_refuses_a_code_sha_that_is_not_40_hex(manifest, bad) -> None:
+    conn = make_conn()
+    with pytest.raises(ForwardGuardError, match="code_git_sha") as e:
+        go(conn, manifest, code_sha=bad)
+    assert_refused(conn, "D8", e.value)
+
+
+def test_the_image_bakes_the_commit_sha_into_a_file_not_an_env_var() -> None:
     root = Path(__file__).resolve().parents[2]
     dockerfile = (root / "backend/Dockerfile").read_text()
-    assert "ARG CODE_GIT_SHA" in dockerfile and "CODE_GIT_SHA=${CODE_GIT_SHA}" in dockerfile
+    assert "ARG CODE_GIT_SHA" in dockerfile
+    assert "> /app/CODE_GIT_SHA" in dockerfile
+    assert "ENV CODE_GIT_SHA" not in dockerfile, "an ENV can be shadowed by env_file at runtime"
     compose = (root / "infra/hosts/vps1/compose.yml").read_text()
     # etl and training builds read their own .env variable. GIT_COMMIT_SHA stays pinned to the freeze
     # commit, so deriving the code sha from it would record false provenance after a later sync.
