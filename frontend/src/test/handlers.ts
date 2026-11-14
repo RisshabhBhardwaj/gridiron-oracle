@@ -3,6 +3,10 @@ import { setupServer } from 'msw/node'
 import { factories } from './factories'
 
 export const handlers = [
+  http.get('/api/health', () =>
+    HttpResponse.json({ status: 'degraded', artifact_mode_ready: true }),
+  ),
+
   http.get('/api/projections/week/:week', () =>
     HttpResponse.json(factories.weekProjectionsResponse()),
   ),
