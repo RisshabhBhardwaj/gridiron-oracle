@@ -43,3 +43,13 @@ describe('ErrorBanner', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 })
+
+describe('isNotReady', () => {
+  it('is true only for a 404 ApiError', async () => {
+    const { isNotReady } = await import('../lib/api-client')
+    expect(isNotReady(new ApiError(404, 'none'))).toBe(true)
+    expect(isNotReady(new ApiError(500, 'boom'))).toBe(false)
+    expect(isNotReady(new ApiError(502, 'x', undefined, 'backend_unavailable'))).toBe(false)
+    expect(isNotReady(new Error('Failed to fetch'))).toBe(false)
+  })
+})

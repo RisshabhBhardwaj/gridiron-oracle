@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, CircleHelp } from 'lucide-react'
 import { useSearch } from '@/context/SearchContext'
@@ -8,6 +9,15 @@ interface NoForecastBannerProps {
   week: number
   /** Shown when we have it, so the message names who it is about. */
   playerName?: string
+  /**
+   * 'player' (default): one player has no forecast. 'week': the whole week has no
+   * real forecast, so the page says so once instead of a number on every card.
+   */
+  scope?: 'player' | 'week'
+  /** Week scope only: switches the page to its season-long view. */
+  onOpenSeasonLong?: () => void
+  /** Extra actions after the standard ones (for example the opt-in simulation toggle). */
+  children?: ReactNode
 }
 
 /**
@@ -16,10 +26,13 @@ interface NoForecastBannerProps {
  * expected product state, not a failure, so it uses the calm info tone and no
  * "something went wrong" wording.
  *
+ * Also used at page level (`scope="week"`) by the Weekly tab when the served
+ * numbers are the preseason simulation, not a forecast for that week.
+ *
  * The words are written here, not taken from the API. The API's own message
  * echoes the request (player='...' week=5) and uses internal terms.
  */
-export function NoForecastBanner({ season, week, playerName }: NoForecastBannerProps) {
+export function NoForecastBanner({ season, week, playerName, scope = 'player', onOpenSeasonLong, children }: NoForecastBannerProps) {
   const { open: openSearch } = useSearch()
   const who = playerName ? playerName : 'this player'
 
@@ -42,24 +55,42 @@ export function NoForecastBanner({ season, week, playerName }: NoForecastBannerP
           No forecast yet for Week {week}, {season}
         </p>
         <p className="text-xs mt-1 leading-relaxed text-fg-muted">
-          We do not have a Week {week} projection for {who} in {season} yet.
-          Season-long projections are ready on the draft board.
+          {scope === 'week'
+            ? `We do not have a real Week ${week} forecast yet. The numbers we do have are a preseason simulation that does not know about games already played, so we do not show them as a Week ${week} forecast.`
+            : `We do not have a Week ${week} projection for ${who} in ${season} yet. Season-long projections are ready on the draft board.`}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          {scope === 'week' && onOpenSeasonLong && (
+            <button
+              type="button"
+              onClick={onOpenSeasonLong}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:brightness-110 active:scale-[0.98] bg-tone/15 border border-tone/[0.35] text-tone"
+            >
+              See season-long projections
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </button>
+          )}
           <Link
             to="/draft"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:brightness-110 active:scale-[0.98] bg-tone/15 border border-tone/[0.35] text-tone"
+            className={
+              scope === 'week'
+                ? 'inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-white/10 text-fg-muted hover:text-fg hover:border-white/20'
+                : 'inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:brightness-110 active:scale-[0.98] bg-tone/15 border border-tone/[0.35] text-tone'
+            }
           >
             Open the draft board
-            <ArrowRight className="size-3.5" aria-hidden="true" />
+            {scope === 'player' && <ArrowRight className="size-3.5" aria-hidden="true" />}
           </Link>
-          <button
-            type="button"
-            onClick={openSearch}
-            className="inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-white/10 text-fg-muted hover:text-fg hover:border-white/20"
-          >
-            Search for another player
-          </button>
+          {scope === 'player' && (
+            <button
+              type="button"
+              onClick={openSearch}
+              className="inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-white/10 text-fg-muted hover:text-fg hover:border-white/20"
+            >
+              Search for another player
+            </button>
+          )}
+          {children}
         </div>
       </div>
     </div>

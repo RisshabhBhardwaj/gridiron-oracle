@@ -15,9 +15,12 @@ export function useTeamGames(params: Params) {
   return useQuery({
     queryKey: ['teamGames', season, week],
     queryFn: async () => {
-      return apiClient.get<TeamGameWeekResponse>(`/team-games/${season}/${week}`)
+      // 404 = no approved predictions for this week yet: resolve to null (not an error).
+      return apiClient.getOrNull<TeamGameWeekResponse>(`/team-games/${season}/${week}`)
     },
-    select: (data): PairedGame[] => {
+    /** `null` means the server has no approved matchup forecasts for this week yet. */
+    select: (data): PairedGame[] | null => {
+      if (data === null) return null
       const byGame: Record<string, { home?: TeamGamePrediction; away?: TeamGamePrediction }> = {}
       for (const row of data.games) {
         if (!byGame[row.game_id]) {
