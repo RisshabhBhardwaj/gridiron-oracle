@@ -1,159 +1,170 @@
 """
 backend/app/api/backtest.py
 
-GET /backtest endpoint.
+GET /backtest and GET /backtest/table.csv
 
-API rules:
-  "/backtest endpoint must include: MAE, RMSE, Brier score, simulated P&L,
-   Sharpe ratio, max drawdown, calibration data points."
-
-This is the page that proves the model has edge (Backtest Explorer).
+Backtest evidence for the served release, read from its pinned causal evals
+(see ``backend/app/services/backtest.py``). Only what the release measures is
+returned: model vs simple-method, trailing-3 and Marcel scores per player-stat
+season. Anything it does not measure is listed under ``not_measured``.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import csv
+import io
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from backend.app.core.config import settings
 from backend.app.core.rate_limit import limiter
 from backend.app.core.runtime_mode import ArtifactRequiredError
-from backend.app.services.backtest import BacktestService
+from backend.app.services.backtest import (
+    UNAVAILABLE_MESSAGE,
+    BacktestService,
+    EvalRow,
+    UnknownStat,
+)
 
 router = APIRouter(prefix="", tags=["backtest"])
 
-
-# ---------------------------------------------------------------------------
-# Response models
-# ---------------------------------------------------------------------------
-
-class CalibrationPoint(BaseModel):
-    predicted_prob: float
-    observed_freq:  float
-    n_samples:      int
+TABLE_PATH = "/backtest/table.csv"
 
 
-class SeasonMetrics(BaseModel):
-    season:                   int
-    position:                 str
-    stat:                     str
-    n_games:                  int
-    stack_mae:                float
-    stack_rmse:               float
-    stack_crps:               float
-    naive_mae:                float
-    coverage_80:              float
-    coverage_50:              float
-    baseline_improvement_pct: float
+class Verdict(BaseModel):
+    cell_seasons: int = Field(description="Player-stat seasons compared")
+    beat_naive: int = Field(description="How many beat the simple method (last game)")
+    beat_trailing3: int = Field(description="How many beat the trailing-3 average")
+    beat_marcel: int = Field(description="How many beat the Marcel baseline")
+    beat_both: int = Field(description="How many beat both the simple method and trailing-3")
+    causal_check_passed: int = Field(description="How many passed the no-future-data check")
+    mean_improvement_vs_naive_pct: Optional[float] = Field(
+        default=None,
+        description="Average percent the model score sits below the simple method's (positive = better)",
+    )
+
+
+class EvalRowOut(BaseModel):
+    stat: str
+    position: str
+    season: int
+    metric: str = Field(description="mae or poisson_deviance")
+    metric_label: str = Field(description="Plain-words name of the score; lower is better")
+    n: int = Field(description="Player-games in the comparison")
+    cohort_rule: str
+    model_score: float
+    naive_score: float = Field(description="Simple method: the player's last game")
+    trailing3_score: float
+    marcel_score: float
+    beats_naive: bool
+    beats_trailing3: bool
+    beats_marcel: bool
+    improvement_vs_naive_pct: Optional[float]
+
+
+class CellOut(BaseModel):
+    stat: str
+    position: str
+    metric: str
+    metric_label: str
 
 
 class BacktestResponse(BaseModel):
-    """
-    Full backtest summary returned by GET /backtest.
-
-    Required fields per 
-      mae, rmse, brier_score, simulated_pnl, sharpe_ratio,
-      max_drawdown, calibration data points.
-    """
-    model_version:            str
-    seasons:                  list[int]
-    positions:                list[str]
-    stat:                     str
-    # ── Core accuracy metrics ────────────────────────────────────────
-    overall_mae:              float = Field(description="Mean Absolute Error (primary metric)")
-    overall_rmse:             float = Field(description="Root Mean Squared Error")
-    overall_crps:             float = Field(description="Continuous Ranked Probability Score")
-    # ── Calibration ──────────────────────────────────────────────────
-    brier_score:              Optional[float] = Field(default=None, description="Binary-event calibration metric when available")
-    calibration:              list[CalibrationPoint] = Field(description="Reliability diagram data")
-    # ── Simulated P&L (flat-bet strategy over backtest period) ───────
-    simulated_pnl:            Optional[float] = Field(default=None, description="Backtest P&L from a real wagering policy when available")
-    sharpe_ratio:             Optional[float] = Field(default=None, description="Risk-adjusted return when simulated P&L is available")
-    max_drawdown:             Optional[float] = Field(default=None, description="Maximum drawdown when simulated P&L is available")
-    # ── Breakdown ────────────────────────────────────────────────────
-    by_season:                list[SeasonMetrics]
-    data_source:              str
-    metric_notes:             dict[str, str] = Field(default_factory=dict)
-    data_freshness:           datetime
+    release: str
+    generated_at: Optional[str]
+    seasons: list[int]
+    stat: Optional[str]
+    positions: list[str]
+    verdict: Verdict = Field(description="Counts for the selected stat and positions")
+    release_verdict: Verdict = Field(description="Counts for the whole release")
+    cohort_rules: list[str]
+    rows: list[EvalRowOut]
+    available: list[CellOut] = Field(description="Every stat and position the release measures")
+    not_measured: dict[str, str]
+    table_url: str
 
 
-# ---------------------------------------------------------------------------
-# Route
-# ---------------------------------------------------------------------------
-
-@router.get("/backtest", response_model=BacktestResponse)
-@limiter.limit("10/minute")
-def get_backtest(
-    request:       Request,
-    stat:          str           = Query("receiving_yards", max_length=64, description="Stat to analyse"),
-    positions:     list[str]     = Query(default=["WR", "RB", "TE", "QB"]),
-    model_version: Optional[str] = Query(None, max_length=128, description="Filter by model version tag"),
-) -> BacktestResponse:
-    """
-    Historical walk-forward backtest results.
-
-    Used by the Backtest Explorer page to display:
-      - Season-by-season MAE / RMSE / CRPS time series
-      - Simulated P&L equity curve with Sharpe and max drawdown
-      - Calibration reliability diagram
-      - Baseline improvement percentage
-
-    Results are loaded from ml/backtest_results/ CSV or the backtest_results DB table.
-    """
-    svc = BacktestService(
-        db_url=settings.database_url,
-        model_version=settings.model_version,
+def _row_out(r: EvalRow) -> EvalRowOut:
+    return EvalRowOut(
+        stat=r.stat, position=r.position, season=r.season, metric=r.metric,
+        metric_label=r.metric_label, n=r.n, cohort_rule=r.cohort_rule,
+        model_score=r.model_score, naive_score=r.naive_score,
+        trailing3_score=r.trailing3_score, marcel_score=r.marcel_score,
+        beats_naive=r.beats_naive, beats_trailing3=r.beats_trailing3,
+        beats_marcel=r.beats_marcel, improvement_vs_naive_pct=r.improvement_vs_naive_pct,
     )
 
+
+def _unavailable() -> HTTPException:
+    # The cause (path, digest) is logged by the service; callers get one safe line.
+    return HTTPException(
+        status_code=503,
+        detail={"message": UNAVAILABLE_MESSAGE, "code": "evidence_unavailable"},
+    )
+
+
+@router.get("/backtest", response_model=BacktestResponse)
+@limiter.limit("30/minute")
+def get_backtest(
+    request: Request,
+    stat: Optional[str] = Query(None, max_length=64, description="Stat to show; omit for all"),
+    positions: Optional[list[str]] = Query(default=None, description="Positions to show; omit for all"),
+) -> BacktestResponse:
+    """Served-release evidence: model vs simple method, trailing-3 and Marcel."""
     try:
-        summary = svc.get_summary(
-            stat=stat,
-            positions=list(positions),
-            model_version=model_version,
-        )
+        s = BacktestService().get_summary(stat=stat, positions=list(positions) if positions else None)
+    except UnknownStat as exc:
+        raise HTTPException(status_code=404, detail=f"No results for stat {exc}") from exc
     except ArtifactRequiredError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise _unavailable() from exc
 
     return BacktestResponse(
-        model_version=summary.model_version,
-        seasons=summary.seasons,
-        positions=summary.positions,
-        stat=summary.stat,
-        overall_mae=summary.overall_mae,
-        overall_rmse=summary.overall_rmse,
-        overall_crps=summary.overall_crps,
-        brier_score=summary.brier_score,
-        calibration=[
-            CalibrationPoint(
-                predicted_prob=c.predicted_prob,
-                observed_freq=c.observed_freq,
-                n_samples=c.n_samples,
-            )
-            for c in summary.calibration
-        ],
-        simulated_pnl=summary.simulated_pnl,
-        sharpe_ratio=summary.sharpe_ratio,
-        max_drawdown=summary.max_drawdown,
-        by_season=[
-            SeasonMetrics(
-                season=s.season,
-                position=s.position,
-                stat=s.stat,
-                n_games=s.n_games,
-                stack_mae=s.stack_mae,
-                stack_rmse=s.stack_rmse,
-                stack_crps=s.stack_crps,
-                naive_mae=s.naive_mae,
-                coverage_80=s.coverage_80,
-                coverage_50=s.coverage_50,
-                baseline_improvement_pct=s.baseline_improvement_pct,
-            )
-            for s in summary.by_season
-        ],
-        data_source=summary.data_source,
-        metric_notes=summary.metric_notes,
-        data_freshness=summary.data_freshness,
+        release=s.release,
+        generated_at=s.generated_at,
+        seasons=s.seasons,
+        stat=s.stat,
+        positions=s.positions,
+        verdict=Verdict(**vars(s.verdict)),
+        release_verdict=Verdict(**vars(s.release_verdict)),
+        cohort_rules=s.cohort_rules,
+        rows=[_row_out(r) for r in s.rows],
+        available=[CellOut(**vars(c)) for c in s.available],
+        not_measured=s.not_measured,
+        table_url=TABLE_PATH,
+    )
+
+
+_TABLE_HEADER = [
+    "stat", "position", "season", "metric", "metric_label", "n",
+    "model_score", "naive_score", "trailing3_score", "marcel_score",
+    "beats_naive", "beats_trailing3", "beats_marcel", "improvement_vs_naive_pct", "cohort_rule",
+]
+
+
+@router.get(TABLE_PATH)
+@limiter.limit("10/minute")
+def get_backtest_table(request: Request) -> Response:
+    """Every player-stat season of the release as a downloadable table."""
+    try:
+        svc = BacktestService()
+        ev = svc.evals()
+    except ArtifactRequiredError as exc:
+        raise _unavailable() from exc
+
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(_TABLE_HEADER)
+    for r in ev.rows:
+        gain = r.improvement_vs_naive_pct
+        w.writerow([
+            r.stat, r.position, r.season, r.metric, r.metric_label, r.n,
+            r.model_score, r.naive_score, r.trailing3_score, r.marcel_score,
+            r.beats_naive, r.beats_trailing3, r.beats_marcel,
+            "" if gain is None else f"{gain:.2f}", r.cohort_rule,
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="gridiron-backtest-{ev.release}.csv"'},
     )
