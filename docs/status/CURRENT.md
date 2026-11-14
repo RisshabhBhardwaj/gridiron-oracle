@@ -1,6 +1,6 @@
 # Gridiron Oracle: current status
 
-As of 2026-11-12 (Cloudflare section); the rest as of 2026-10-17. Checked by running the gates on the commit named below. Items marked unverified were not run.
+As of 2026-11-14 (Cloudflare, `main` state and host sections); the verified-gate table and feature lists as of 2026-10-17. Checked by running the gates on the commit named below. Items marked unverified were not run.
 Update this file at the end of every working session. See `_internal-docs/_platform/DOCS_STANDARD.md`.
 Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-2026-10-11.md` (local, not committed).
 
@@ -8,12 +8,18 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 
 - Live at `https://gridiron.risshabh.com` and `https://gridiron-oracle.pages.dev` (Pages project `gridiron-oracle`, owner's personal Cloudflare account). Runbook: `docs/runbooks/frontend-cloudflare-pages.md`. Decision: [0009](../decisions/0009-frontend-on-cloudflare-pages.md).
 - **LIVE on the VPS-4 (2026-11-12):** production is the `main` build (`49c2706` + `BACKEND_URL` commit `2d9d372`; Pages deploy `d77a1738`): Pages Function proxy → `https://gridiron-api.risshabh.com` (Cloudflare Tunnel to the shared OVH VPS-4 in BHS) → api on the box. Seed = restored `gor_prod_20261010` (2232 games, alembic 0026). Verified live by the manager: site 200, `/api/season/current` 200, season projections 200 (706 rows), `/api/odds` 200 configured with 25 events (events-endpoint + market-key translation fix), settings PUT 403, `/api/docs` 404, only 22/tcp open on the box. Host layout: `infra/hosts/vps1/` + `docs/runbooks/vps4-shared-host.md`; `/srv/HOST.md` on the box; ATS notified (its `/srv/ats` envelope reserved, not deployed by Gridiron).
-- Health is honestly **degraded** (`artifact_mode_ready:false`: stale feature_matrix + un-re-frozen baseline warnings) — predictions serve; re-freeze awaits manager/owner say-so, and the Tuesday ETL is the first scheduled job. Still open: R2 backup credentials + healthchecks URLs (placeholders; the 23:00 UTC backup timer fails loud until set), `TRAIN_*_CMD` unset (training recipes unpinned), Vercel retirement (owner, once satisfied), `agent/cloudflare-live` retirement after `main` soaks.
-- The old live-parity branch `agent/cloudflare-live` (`cfb46f9`) is superseded by the `main` deploy above; neither it nor anything else is pushed (pushing `main` would hit the retired Railway path).
+- Health is honestly **degraded** (`artifact_mode_ready:false`: stale feature_matrix + un-re-frozen baseline warnings) — predictions serve; re-freeze awaits manager/owner say-so, and the Tuesday ETL is the first scheduled job. Still open: R2 backup credentials + healthchecks URLs (placeholders; the 23:00 UTC backup timer fails loud until set), `TRAIN_*_CMD` unset (training recipes unpinned), `agent/cloudflare-live` retirement after `main` soaks. Vercel project `gridiron-oracle` was retired 2026-11-12 (owner approval; only domain was `gridironoracle.vercel.app`, git-connected to `main` — removed before the first push so no Vercel deploy could trigger).
+- The old live-parity branch `agent/cloudflare-live` (`cfb46f9`, local only) is superseded by the `main` deploy above; retire it once `main` has soaked.
+
+## Box B host (verified 2026-11-14 by the Claude manager)
+
+- Manager changed 2026-11-13: Muse cancelled; the Claude Gridiron manager now owns Gridiron and the Box B host layer (`/srv/HOST.md`) for Gridiron, ATS and statuta. Host key matches the internal brief.
+- Timers: backup daily 23:00 UTC passes (last 2026-11-13; uploads **unencrypted** because `AGE_RECIPIENT` is unset). `train-small` (daily 01:00) and `train-full` (Fri 22:00) fail loud by design: `TRAIN_*_CMD` unset. First ETL Tue 2026-11-17 13:00 UTC; watch it.
+- ATS backup timer (21:30 UTC, owner-approved) is **not installed**. Blockers on the ATS side: `/srv/ats/backup-ats.sh` not on the box, host has no `age` or `aws` CLI, `/srv/ats/.env` has no R2 access keys. Install the units once the ATS manager clears these.
 
 ## State of `main`
 
-`main` is at the integrated head `6bc2c3d` (local merges of six worker branches, 2026-10-17; see below). **Nothing is pushed.** `main` is ahead of `origin/main`. Pushing deploys production: Railway services `api` and `weekly-refresh` auto-deploy from `main`. No training was run this session; the rerun and re-freeze are deferred to the future VPS (see `docs/MIGRATION.md`).
+`main` is pushed (first push 2026-11-12, owner-approved, gitleaks-clean); `origin/main` = `c3d847d` as of 2026-11-14. Pushing `main` deploys nothing: Railway is retired, Vercel is removed, and Pages is direct-upload (deploys are manual, see the runbook). The box checkout is updated by hand. No training has run; the rerun and re-freeze are owner decisions (see Open questions).
 
 ## What works (verified on 6bc2c3d, 2026-10-17, by the manager)
 
@@ -26,7 +32,7 @@ Full handoff with branch map and resume steps: `.agent-work/gridiron/HANDOFF-202
 | Evidence manifest and serving manifest | OK (32 pinned cells match SHA-256) |
 | Engine (C++) | ctest 72/72 pass on this head |
 | Backend `-m integration` against local Postgres 18 | not rerun this session |
-| CI on GitHub | **not run.** No branch has been pushed. |
+| CI on GitHub (2026-11-14) | **red on `c3d847d`** — Alembic (no psycopg in CI), push gate (blocks `infra/hosts/vps1/.env.example`), pytest (CUDA torch wheel trips the CPU-build guard), one Vitest (`CurrentSeason`). Fix in progress. Branch protection not set. Nightly slow tests pass. |
 | Docker image build / `make up` | not executed (no cached base layers; disk tight) — compose config validates |
 
 One Hypothesis deadline flake was seen under parallel load (`test_stacking_ensemble` temporal-ordering, 200 ms deadline); the same file passes 57/57 in isolation on both `main` and the branch. Not a product failure.
@@ -63,6 +69,7 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 ## To-dos and reminders
 
+- Old full local DB (PG16, as of 2026-08-27; 6 GB of it is re-downloadable `staging_nflreadpy`) is now only a backup: `~/Projects/_backups/gridiron_oracle/infra_oracle_pg16_20260827.dump` (530 MB, `pg_restore`-verified 2026-10-23). Its Docker volume was deleted. Copy it to the VPS during migration.
 - Keep `docs/DATA_SOURCES.md` documenting `load_pfr_advstats` (a test enforces it).
 - Evidence entries in `releases/artifacts/MANIFEST.json` are "provisional"; flip to frozen after a clean rebuild reproduces them.
 - The baseline JSON and nine baseline files still contain absolute `/Users/...` paths. Fix them only by re-freezing with the repo-relative writer (`scripts/freeze_baseline.py`), never by hand.
@@ -72,12 +79,16 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 ## Open questions
 
+- Owner: authorise the baseline re-freeze (`make freeze-baseline` after the rerun) to clear `artifact_mode_ready:false`.
+- Owner: create a healthchecks.io account and the four checks, then paste the ping URLs into the box `.env` (`HEALTHCHECKS_*_URL`).
+- Owner: pin the `TRAIN_SMALL_CMD` / `TRAIN_FULL_CMD` training recipes (both timers fail every run until then).
+- Owner: set `AGE_RECIPIENT` (an age public key) so Gridiron backups are encrypted.
 - K and DEF are in the league's starting lineup but not modelled (out of scope by design). Confirm the owner wants that to stay.
 - Is `verify_db.py` wanted? It was archived on 2026-10-07 as unreferenced.
 
 ## Migration readiness (2026-10-17)
 
-On `main` at `6bc2c3d`, not pushed. The repo side of the VPS move is done: portable paths (remaining `/Users/...` hits are pinned artifacts — re-freeze only), hardened runtime, pinned deps, localhost-bound Postgres 18 compose, completed `.env.example`, and the runbook in `docs/MIGRATION.md` (bootstrap, secret names, pg_dump/pg_restore, OWNER-ONLY DNS cutover, rollback, VPS training recipe). Image build and `make up` were not executed (no cached base layers on a tight disk); compose config validates.
+Historical (2026-10-17, `6bc2c3d`); superseded by the live VPS-4 deploy above. The repo side of the VPS move is done: portable paths (remaining `/Users/...` hits are pinned artifacts — re-freeze only), hardened runtime, pinned deps, localhost-bound Postgres 18 compose, completed `.env.example`, and the runbook in `docs/MIGRATION.md` (bootstrap, secret names, pg_dump/pg_restore, OWNER-ONLY DNS cutover, rollback, VPS training recipe). Image build and `make up` were not executed (no cached base layers on a tight disk); compose config validates.
 
 ## Decisions
 

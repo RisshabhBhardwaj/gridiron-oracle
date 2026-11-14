@@ -25,6 +25,8 @@ Date: recorded 2026-10-11
 
 Owner decisions also made (not in the numbered list): merge to local `main` without push or deploy. Railway services `api` and `weekly-refresh` deploy from `main` on push, so any push is a production deploy.
 
+> Update 2026-11-14: superseded. Railway is retired and `main` was pushed 2026-11-12 with owner approval; a push no longer deploys anything (see decision 0009 and `docs/status/CURRENT.md`).
+
 ## Still needs an owner decision
 - Optuna validation on the last fold's season (`ml/catboost_model.py` ~L307-312): approved in principle, not implemented.
 - Yardage conformal intervals (`ml/train.py` ~L1177): approved in principle, not implemented.
