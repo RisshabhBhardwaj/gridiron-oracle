@@ -998,7 +998,7 @@ class ProjectionService:
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT DISTINCT ON (player_id, stat)
                            player_id, stat, projection
                     FROM projections
@@ -1006,6 +1006,7 @@ class ProjectionService:
                       AND week = %s
                       AND pipeline_run_id = ANY(%s)
                       AND projection IS NOT NULL
+                      AND {_served_predicate('availability_status')}
                     ORDER BY player_id, stat, created_at DESC
                     """,
                     (season, start_week, list(approved)),

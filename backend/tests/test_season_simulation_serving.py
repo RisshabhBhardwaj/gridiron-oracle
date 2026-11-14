@@ -160,3 +160,44 @@ class TestLoadSeasonSimulationRowsPivot:
         monkeypatch.setattr("psycopg2.connect", lambda *a, **k: _FakeConn())
         out = svc._load_season_simulation_rows(2026, 5, ["WR"], ["fantasy_ppr"], frozenset({"run1"}))
         assert out == []
+
+
+class TestWeeklyRatesIgnoreUnservedForwardRows:
+    """L5: the flat-rate fallback reads ``projections`` for the start week, which is a forward week.
+
+    A forward row for a player who is Out must not feed the season board, exactly as it is hidden
+    from the weekly board and the player lookup.
+    """
+
+    def test_the_query_applies_the_served_predicate(self, monkeypatch) -> None:
+        import psycopg2
+
+        from pipeline.availability import served_predicate
+
+        seen: dict = {}
+
+        class _Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def execute(self, sql, params=None):
+                seen["sql"], seen["params"] = sql, params
+
+            def fetchall(self):
+                return []
+
+        class _Conn:
+            def cursor(self, **kwargs):
+                return _Cur()
+
+            def close(self):
+                seen["closed"] = True
+
+        monkeypatch.setattr(psycopg2, "connect", lambda url: _Conn())
+        ProjectionService("postgresql://unused")._load_weekly_rates(2026, 11, frozenset({"run1"}))
+        assert served_predicate("availability_status") in seen["sql"]
+        assert seen["params"] == (2026, 11, ["run1"])
+        assert seen["closed"]
