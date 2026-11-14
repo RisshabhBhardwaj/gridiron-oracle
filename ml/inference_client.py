@@ -498,7 +498,7 @@ class InferenceClient:
     # ------------------------------------------------------------------
 
     def load_ridge_coefs(
-        self, stat: str, position: Optional[str] = None
+        self, stat: str, position: Optional[str] = None, *, manifest=None
     ) -> Optional[tuple[list[float], float, list[str]]]:
         """
         Load Ridge blending coefficients + intercept.
@@ -528,7 +528,7 @@ class InferenceClient:
             try:
                 from ml.artifact_manifest import ManifestEntryMissing, get_manifest
 
-                candidates.append(get_manifest().resolve_coefficient(stat, position))
+                candidates.append((manifest or get_manifest()).resolve_coefficient(stat, position))
             except ManifestEntryMissing:
                 candidates.append(self.oof_dir / f"ridge_{stat}_{position}_coefs.json")
         else:

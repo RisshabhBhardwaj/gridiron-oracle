@@ -572,6 +572,12 @@ class Projection(SQLModel, table=True):
     # every stat row for a player-game, not just fantasy_ppr.
     derived_fantasy_projection: Optional[float] = None
 
+    # Forward rows only (decision 0012 D3): the player's status as of the feature
+    # snapshot. NULL = no report against the player (and every history row).
+    # Out/Reserve/Suspended/Inactive rows are stored but never served; see
+    # pipeline/availability.py. Added by alembic revision 20261114_0028.
+    availability_status: Optional[str] = None
+
     # ── Pipeline provenance ────────────────────────────────────────────
     pipeline_run_id: Optional[str] = None  # MLflow run ID; NULL for dry_run
     # Max season used to train the model that produced this row.

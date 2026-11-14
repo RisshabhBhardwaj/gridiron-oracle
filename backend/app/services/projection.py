@@ -26,6 +26,7 @@ from fastapi import HTTPException
 
 from backend.app.core.tracing import start_span
 from ml.served_learner import served_learner as _served_learner
+from pipeline.availability import served_predicate as _served_predicate
 
 _CONFORMAL_METHODS = frozenset({
     "posterior_samples",
@@ -226,6 +227,9 @@ class ProjectionResult:
     weighting:               str = "default"
     weights_reason:          Optional[str] = None
     fantasy_scoring:         str = "ppr"
+    # Forward rows only: Questionable / Doubtful. NULL for history and for players with
+    # no report against them. Excluded statuses never reach this layer (see the queries).
+    availability_status:     Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +375,7 @@ class ProjectionService:
                        p.boom_probability, p.bust_probability,
                        p.fantasy_projection, p.fantasy_floor, p.fantasy_ceiling,
                        p.posterior_samples, p.pipeline_run_id, p.interval_method,
+                       p.availability_status,
                        pl.full_name, pl.team
                 FROM   projections p
                 LEFT JOIN players pl ON pl.id = p.player_id
@@ -379,6 +384,7 @@ class ProjectionService:
                   AND  p.stat     = %s
                   AND  p.position IN ({placeholders})
                   AND  p.pipeline_run_id = ANY(%s)
+                  AND  {_served_predicate('p.availability_status')}
                 ORDER BY p.projection DESC NULLS LAST
                 """,
                 [week, season, stat] + pos_filter + [approved],
@@ -461,6 +467,7 @@ class ProjectionService:
                 weighting=weighted.weighting,
                 weights_reason=weighted.weights_reason,
                 fantasy_scoring=weighted.fantasy_scoring,
+                availability_status=r.get("availability_status"),
             ))
         return results
 
@@ -1221,15 +1228,16 @@ class ProjectionService:
             conn = psycopg2.connect(self._db_url)
             cur = conn.cursor()
             cur.execute(
-                """
+                f"""
                 SELECT projection, floor, ceiling,
                        boom_probability, bust_probability,
                        fantasy_projection, fantasy_floor, fantasy_ceiling,
                        posterior_samples, pipeline_run_id, position, created_at,
-                       interval_method
+                       interval_method, availability_status
                 FROM   projections
                 WHERE  player_id = %s AND week = %s AND season = %s AND stat = %s
                   AND  pipeline_run_id = ANY(%s)
+                  AND  {_served_predicate('availability_status')}
                 ORDER BY created_at DESC
                 LIMIT  1
                 """,

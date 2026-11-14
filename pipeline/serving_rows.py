@@ -27,7 +27,7 @@ CONFORMAL_LEVEL = 0.90
 MIN_CONFORMAL_HISTORY = 100
 
 
-def attach_causal_conformal_intervals(df: pd.DataFrame) -> pd.DataFrame:
+def attach_causal_conformal_intervals(df: pd.DataFrame, only_seasons=None) -> pd.DataFrame:
     """Attach 90% empirical intervals using only earlier OOF seasons.
 
     Stack OOF files contain realised outcomes because they are validation
@@ -40,6 +40,10 @@ def attach_causal_conformal_intervals(df: pd.DataFrame) -> pd.DataFrame:
     ``floor`` and ``ceiling`` are lower/upper prediction bounds, not posterior
     percentiles.  ``p25``/``p75`` remain NULL until serving has genuine
     per-player posterior samples.
+
+    ``only_seasons`` limits which seasons receive intervals (the forward producer
+    calibrates one forward season from the pinned history and skips the rest);
+    ``None`` keeps the history behaviour: every season.
     """
     out = df.copy()
     out["floor"] = np.nan
@@ -53,7 +57,10 @@ def attach_causal_conformal_intervals(df: pd.DataFrame) -> pd.DataFrame:
     finite = out["residual"].notna() & np.isfinite(out["residual"])
     alpha = (1.0 - CONFORMAL_LEVEL) / 2.0
 
+    wanted = None if only_seasons is None else {int(x) for x in only_seasons}
     for season in sorted(out["season"].unique()):
+        if wanted is not None and int(season) not in wanted:
+            continue
         target = out["season"] == season
         history = out[(out["season"] < season) & finite].copy()
         if len(history) < MIN_CONFORMAL_HISTORY:
@@ -154,6 +161,9 @@ def upsert_projections(conn, df: pd.DataFrame, attributions: pd.DataFrame | None
     Attributions, when given, go in the same transaction as the projections
     they explain, so a failure leaves neither half behind.
     """
+    # Forward rows carry the availability status known at the snapshot; history rows
+    # have no such column and their SQL is unchanged.
+    with_status = "availability_status" in df.columns
     sql = """
         INSERT INTO projections
             (player_id, game_id, season, week, stat, position,
@@ -161,14 +171,14 @@ def upsert_projections(conn, df: pd.DataFrame, attributions: pd.DataFrame | None
              boom_probability, bust_probability,
              fantasy_projection, fantasy_floor, fantasy_ceiling,
              derived_fantasy_projection,
-             pipeline_run_id, posterior_samples, max_train_season, interval_method)
+             pipeline_run_id, posterior_samples, max_train_season, interval_method__STATUS_COLUMN__)
         VALUES (
             %(player_id)s, %(game_id)s, %(season)s, %(week)s, %(stat)s, %(position)s,
             %(projection)s, %(floor)s, %(ceiling)s, %(p25)s, %(p75)s,
             NULL, NULL,
             %(fantasy_projection)s, %(fantasy_floor)s, %(fantasy_ceiling)s,
             %(derived_fantasy_projection)s,
-            %(pipeline_run_id)s, NULL, %(max_train_season)s, %(interval_method)s
+            %(pipeline_run_id)s, NULL, %(max_train_season)s, %(interval_method)s__STATUS_VALUE__
         )
         ON CONFLICT (player_id, game_id, stat) DO UPDATE SET
             season = EXCLUDED.season,
@@ -188,9 +198,17 @@ def upsert_projections(conn, df: pd.DataFrame, attributions: pd.DataFrame | None
             bust_probability = EXCLUDED.bust_probability,
             posterior_samples = EXCLUDED.posterior_samples,
             max_train_season = EXCLUDED.max_train_season,
-            interval_method = EXCLUDED.interval_method
+            interval_method = EXCLUDED.interval_method__STATUS_UPDATE__
         __GUARD__
     """
+    sql = (
+        sql.replace("__STATUS_COLUMN__", ", availability_status" if with_status else "")
+        .replace("__STATUS_VALUE__", ", %(availability_status)s" if with_status else "")
+        .replace(
+            "__STATUS_UPDATE__",
+            ",\n            availability_status = EXCLUDED.availability_status" if with_status else "",
+        )
+    )
     rows = []
     for r in df.itertuples(index=False):
         rows.append(
@@ -223,6 +241,9 @@ def upsert_projections(conn, df: pd.DataFrame, attributions: pd.DataFrame | None
                 "interval_method": str(r.interval_method) if getattr(r, "interval_method", None) else "unavailable",
             }
         )
+        if with_status:
+            status = getattr(r, "availability_status", None)
+            rows[-1]["availability_status"] = str(status) if status is not None and pd.notna(status) else None
     approved_literal = approved_array_literal(approved_pipeline_run_ids())
     try:
         with conn.cursor() as cur:
