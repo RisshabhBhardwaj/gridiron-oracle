@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-19T23:13:46.254047+00:00",
+  "updated_at": "2026-11-14T12:06:11.387481+00:00",
   "serving_manifest": {
     "path": "releases/current_baseline.json",
     "authoritative_for": "serving artifact selection (ml/oof/ stacks)",
@@ -65,6 +65,270 @@
       "description": "ADP Spearman correlation report."
     },
     {
+      "path": "reports/causal_baseline_beats.json",
+      "sha256": "3ca1e5d95e2b0880ba0701d6fd9205d74a3db40e1c7c882d0044356944145613",
+      "bytes": 13389,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_carries_RB.csv",
+      "sha256": "8f2dc6f65b50b1d887935a10ba993434b8f52a7d09671ad1474558d89699d405",
+      "bytes": 1290,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_completions_QB.csv",
+      "sha256": "0724253d2905ffde9a0544b1ceb3b17d64d72670dba41afb22fc93c70818caed",
+      "bytes": 1308,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fantasy_ppr_QB.csv",
+      "sha256": "53b9f15059ed675623defad8221567a59b1b7fce87eedfd5c6865c58e57511ce",
+      "bytes": 1233,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fantasy_ppr_RB.csv",
+      "sha256": "0017decce11e8f4b5271ffd4f656fb8cfe50699c9e73292d220a25b631d663a9",
+      "bytes": 1237,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fantasy_ppr_TE.csv",
+      "sha256": "7fc663b968e901c9fd719ab290a3fb9d56802fe02b11b07b77929e36baa16ec9",
+      "bytes": 1237,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fantasy_ppr_WR.csv",
+      "sha256": "81d11ef7631c198e20b808e00589ae83a52d9a4fb7e55f19da74ac118dc1c6e8",
+      "bytes": 1256,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fumbles_QB.csv",
+      "sha256": "38e6839de92ada40c046bb07b7f853a8fc44aeff332cb58791f4c2de823161e0",
+      "bytes": 1293,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fumbles_RB.csv",
+      "sha256": "a7b8160f36ff379cad5d22a05df518ae6338def5d19f66db8cb3688577f02442",
+      "bytes": 1297,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fumbles_TE.csv",
+      "sha256": "5a082247fc9264d7c891ae5adf21fad784d3c2d7f14e35ffd9d0234797e1ad81",
+      "bytes": 1304,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_fumbles_WR.csv",
+      "sha256": "720134057793814a9a0b83ccf50aa0d06bcd05330aefb01ddbbbdd70a3ddc112",
+      "bytes": 1325,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_interceptions_QB.csv",
+      "sha256": "b72fcab86371938de0bda497a9a289408b0de198e7c20ec8ff225fc71a058816",
+      "bytes": 1320,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_pass_attempts_QB.csv",
+      "sha256": "b13760e8a7f54ec2cea7bb9fcf6ce1edd112834be444879259286273b5b311ce",
+      "bytes": 1318,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_passing_tds_QB.csv",
+      "sha256": "2fd0743a9a1d77199ebea81d5d0119a76119e202a9ea7861a4ea90b072b1c5a4",
+      "bytes": 1317,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_passing_yards_QB.csv",
+      "sha256": "d9039b6ba07cb51452c59faf5e2f60bcef52c23fe1341ff13b60ce9af632308e",
+      "bytes": 1243,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receiving_tds_RB.csv",
+      "sha256": "6906b99424a48d08e53eb839b1035ac54944431e011c9f6b42b9d5f2bfdae231",
+      "bytes": 1332,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receiving_tds_TE.csv",
+      "sha256": "499bfbd77e2148d7f70baf445f3791ad954a2500413dc9a67d1ab40c90834923",
+      "bytes": 1325,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receiving_tds_WR.csv",
+      "sha256": "92c915b0d556fb1aa746fd9c50ca3001bb9ca126fa21f4e3fd2b0851e07c7828",
+      "bytes": 1346,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receiving_yards_RB.csv",
+      "sha256": "71177e08715765f6acb9e5ec4faefc3edfdeb167ef2bc98f080ee0cde2ed6212",
+      "bytes": 1270,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receiving_yards_TE.csv",
+      "sha256": "27889995558da1ac713788e6fc605dedcd1aa9a8a60b41686de6362bfb835e7d",
+      "bytes": 1261,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receiving_yards_WR.csv",
+      "sha256": "9ae72d2882574b91742d956860c62c87837830a257f8ef9f0819170c06e5d094",
+      "bytes": 1284,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receptions_RB.csv",
+      "sha256": "1a97659ad912d589bcc7d7c7dfea27fd107fb4faba37ad1e44f884956a2d4343",
+      "bytes": 1305,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receptions_TE.csv",
+      "sha256": "59570ead1ca2340191a67f069bb7dabb303725ea6426a063fd6775e896b9ac8d",
+      "bytes": 1308,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_receptions_WR.csv",
+      "sha256": "c908f9203535663259bf725c9f1c9128d3a28f396196bdfc3b87814341fc0cba",
+      "bytes": 1328,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_rushing_tds_QB.csv",
+      "sha256": "86a299c5d4136b94ed3d43cec467275f0c37b91f7564c0292825e833d5c56016",
+      "bytes": 1312,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_rushing_tds_RB.csv",
+      "sha256": "f6e6c7e563ef579422565c9ccbf90e87af3946803d7d7a23e074ea5ccd67ec85",
+      "bytes": 1314,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_rushing_tds_TE.csv",
+      "sha256": "1d0aea242011189f9cc1124a16d5b34a9d823f27457edbec752245c3ae26f625",
+      "bytes": 1345,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_rushing_tds_WR.csv",
+      "sha256": "c4213456b070fc78db25944b6c81264016e2b618b939bd55ddacc05db71a2294",
+      "bytes": 1357,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_rushing_yards_QB.csv",
+      "sha256": "5b56abd4682bef7d3e55967c989a8f743eeced140d18e2f88b1ba8f381dd553d",
+      "bytes": 1265,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_rushing_yards_RB.csv",
+      "sha256": "2759a4bfae439166f202100578b8cbf56faeb08f1dbaa63ff4992e8f3f010f15",
+      "bytes": 1257,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_targets_RB.csv",
+      "sha256": "fbb4258ef12561850ac5314acab433ad0e623efdc3e94fc8ad7603ad679e20bb",
+      "bytes": 1287,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_targets_TE.csv",
+      "sha256": "76b822d7f01c589310c9b66e2c0acbf741e73d4f1649a2d2ed4cf9b0dda50b8f",
+      "bytes": 1295,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
+      "path": "reports/eval_causal_targets_WR.csv",
+      "sha256": "100675d81612965cc922aadfc91eb0ee0c9d19a9390267fc5a7a6e875684d474",
+      "bytes": 1314,
+      "status": "provisional",
+      "produced_by": "scripts/run_causal_evals.py",
+      "description": "Causal rerun 2026-11-14: per-cell baseline comparison and materialization report"
+    },
+    {
       "path": "reports/fantasy_ppr_2022_autopsy.json",
       "sha256": "b1a806a79c47bcd16d8ca829d9a7f94f2fe41e61760cc8cc188186eb725a803d",
       "bytes": 14165,
@@ -82,11 +346,11 @@
     },
     {
       "path": "reports/materialize_stack_projections.json",
-      "sha256": "25486ff7c7499ecf2c1ef67bfa40e62b7ac351b797ec71ff301c8364391d3ef6",
-      "bytes": 1218,
+      "sha256": "e2885af7ed8876dcff4898766339d6951fcea756aa6b1b6711279ead095096bb",
+      "bytes": 3878,
       "status": "provisional",
       "produced_by": "python scripts/materialize_stack_projections.py",
-      "description": "Materialization run record for the projections upsert."
+      "description": "Materialization run record for the projections upsert (stack_materialize_20261114T115324Z, causal rerun 2026-11-14)."
     },
     {
       "path": "reports/yardage_diagnostic.json",

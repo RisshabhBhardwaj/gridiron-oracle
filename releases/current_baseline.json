@@ -210,36 +210,37 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-08-23T00:05:13.059795+00:00",
+  "created_at": "2026-11-14T11:57:26.565839+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
-    "DATABASE_URL": "postgresql://oracle:oracle@localhost:15439/oracle"
+    "DATABASE_URL": "postgresql+asyncpg://oracle:87%40101Winant@db:5432/oracle"
   },
-  "git_branch": "main",
-  "git_commit": "81fe1acf01f0b7a5605a0c9c397f586d01958fa9",
+  "git_branch": "unknown",
+  "git_commit": "226e0ec72730e38a243818a9aad41801cf8c6644",
   "git_dirty": false,
+  "git_provenance": "env:GIT_COMMIT_SHA",
   "integrity": {
     "artifact_mode_ready": false,
     "checks": {
       "backtest_assets": {
         "detail": "Backtest assets available",
         "observed": {
-          "latest_csv": "/Users/risshabh/Projects/Active/gridiron_oracle/ml/backtest_results/backtest_2019_2025.csv"
+          "latest_csv": "/app/ml/backtest_results/backtest_2019_2025.csv"
         },
         "status": "ok"
       },
       "baseline_manifest": {
-        "detail": "Baseline manifest was frozen from a dirty worktree",
+        "detail": "Deployed commit differs from the baseline manifest's pinned commit, and lineage cannot be verified without a git worktree. Re-freeze the baseline at the deployed commit to clear this.",
         "observed": {
-          "created_at": "2026-08-23T00:04:09.798736+00:00",
-          "git_commit": "5d337d999b5bc4d986cbf2cebb4e52c7ca15cd86",
-          "head": "81fe1acf01f0b7a5605a0c9c397f586d01958fa9",
+          "created_at": "2026-08-23T00:05:13.059795+00:00",
+          "git_commit": "81fe1acf01f0b7a5605a0c9c397f586d01958fa9",
+          "head": "226e0ec72730e38a243818a9aad41801cf8c6644",
           "model_version": "latest",
-          "path": "/Users/risshabh/Projects/Active/gridiron_oracle/releases/current_baseline.json",
+          "path": "/app/releases/current_baseline.json",
           "worktree_dirty": false
         },
-        "status": "error"
+        "status": "warn"
       },
       "database": {
         "detail": "Database reachable",
@@ -248,19 +249,19 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 24.16,
-          "computed_at": "2026-08-21T23:55:45.143265+00:00",
+          "age_hours": 7.7,
+          "computed_at": "2026-11-14T04:15:31.988690+00:00",
           "season": 2026,
-          "week": 1
+          "week": 9
         },
-        "status": "warn"
+        "status": "ok"
       },
       "mlflow": {
-        "detail": "MLflow endpoint reachable",
+        "detail": "MLflow unreachable: [Errno 111] Connection refused",
         "observed": {
           "uri": "http://localhost:15091"
         },
-        "status": "ok"
+        "status": "error"
       },
       "tracing": {
         "detail": "Trace propagation enabled; exporter disabled",
@@ -277,9 +278,9 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-08-23T00:05:13.059753+00:00",
+    "generated_at": "2026-11-14T11:57:26.565210+00:00",
     "model_version": "latest",
-    "overall_status": "blocked",
+    "overall_status": "degraded",
     "product_mode": "artifact_backed"
   },
   "mlflow_tracking_uri": "http://localhost:15091",
@@ -287,19 +288,12 @@
   "product_mode": "artifact_backed",
   "projection_policy": {
     "approved_pipeline_run_ids": [
+      "stack_materialize_20261114T115324Z",
       "season_sim_2026_1_20260823T000324_8fb263f0",
       "weekly_auto_2026"
     ],
     "require_interval_columns": true,
     "require_posterior_samples": false
-  },
-  "promotion": {
-    "promoted_at": "2026-11-14T11:34:08.259707+00:00",
-    "release_id": "causal_20261114",
-    "superseded_artifact_groups": [
-      "serving_parity"
-    ],
-    "tool": "scripts/promote_rebuild_candidate.py"
   },
   "verification": {
     "local_verify_command": "make verify-local",
