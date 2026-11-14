@@ -278,32 +278,34 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-11-14T11:57:26.565839+00:00",
+  "created_at": "2026-11-14T16:53:35.742556+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
-    "DATABASE_URL": "postgresql+asyncpg://oracle:87%40101Winant@db:5432/oracle"
+    "DATABASE_URL": "postgresql+asyncpg://oracle:***@db:5432/oracle"
   },
   "git_branch": "unknown",
-  "git_commit": "226e0ec72730e38a243818a9aad41801cf8c6644",
+  "git_commit": "a05689198a641f425d274021d84441bcad729c7e",
   "git_dirty": false,
   "git_provenance": "env:GIT_COMMIT_SHA",
   "integrity": {
     "artifact_mode_ready": false,
     "checks": {
       "backtest_assets": {
-        "detail": "Backtest assets available",
+        "detail": "Pinned causal evals verified",
         "observed": {
-          "latest_csv": "/app/ml/backtest_results/backtest_2019_2025.csv"
+          "cell_seasons": 160,
+          "cells": 32,
+          "release": "causal_20261114"
         },
         "status": "ok"
       },
       "baseline_manifest": {
         "detail": "Deployed commit differs from the baseline manifest's pinned commit, and lineage cannot be verified without a git worktree. Re-freeze the baseline at the deployed commit to clear this.",
         "observed": {
-          "created_at": "2026-08-23T00:05:13.059795+00:00",
-          "git_commit": "81fe1acf01f0b7a5605a0c9c397f586d01958fa9",
-          "head": "226e0ec72730e38a243818a9aad41801cf8c6644",
+          "created_at": "2026-11-14T11:57:26.565839+00:00",
+          "git_commit": "226e0ec72730e38a243818a9aad41801cf8c6644",
+          "head": "a05689198a641f425d274021d84441bcad729c7e",
           "model_version": "latest",
           "path": "/app/releases/current_baseline.json",
           "worktree_dirty": false
@@ -317,8 +319,8 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 7.7,
-          "computed_at": "2026-11-14T04:15:31.988690+00:00",
+          "age_hours": 3.22,
+          "computed_at": "2026-11-14T13:40:08.672670+00:00",
           "season": 2026,
           "week": 9
         },
@@ -346,7 +348,7 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-11-14T11:57:26.565210+00:00",
+    "generated_at": "2026-11-14T16:53:35.741774+00:00",
     "model_version": "latest",
     "overall_status": "degraded",
     "product_mode": "artifact_backed"
