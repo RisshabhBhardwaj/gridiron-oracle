@@ -79,7 +79,7 @@ The old WIP branches (`gor-ml-05-causal-fixes`, `gor-fwd-06-prior-games`, `gor-o
 
 ## Open questions
 
-- Owner: authorise the baseline re-freeze (`make freeze-baseline` after the rerun) to clear `artifact_mode_ready:false`.
+- Baseline re-freeze: **authorised 2026-11-13** (decision 0010). In progress on Box B: ETL started 2026-11-14 03:52 UTC (data was at 2026 week 4); rerun prep next (box DB holds 2024–2026 history only).
 - Owner: create a healthchecks.io account and the four checks, then paste the ping URLs into the box `.env` (`HEALTHCHECKS_*_URL`).
 - Owner: pin the `TRAIN_SMALL_CMD` / `TRAIN_FULL_CMD` training recipes (both timers fail every run until then).
 - Owner: set `AGE_RECIPIENT` (an age public key) so Gridiron backups are encrypted.
@@ -97,6 +97,7 @@ Historical (2026-10-17, `6bc2c3d`); superseded by the live VPS-4 deploy above. T
 - [0003 Betting and Kelly sizing stay in scope](../decisions/0003-betting-and-kelly-sizing-in-scope.md)
 - [0004 shadcn on Base UI](../decisions/0004-shadcn-on-base-ui.md)
 - [0009 Frontend on Cloudflare Pages](../decisions/0009-frontend-on-cloudflare-pages.md)
+- [0010 Owner decisions of 2026-11-13: Claude takeover, data pull and rerun, UI review](../decisions/0010-owner-decisions-2026-11-13.md)
 - [0005 SP0-SP4 rebuild plan retired; built pieces kept](../decisions/0005-sp0-sp2-plan-retired.md)
 - [0006 Forward rows take game context from the target game](../decisions/0006-forward-rows-take-target-game-context.md) (median fallback superseded)
 - [0007 Public Settings are read-only](../decisions/0007-public-settings-read-only.md)
