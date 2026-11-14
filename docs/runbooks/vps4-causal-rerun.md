@@ -1,7 +1,7 @@
 # Runbook: causal rerun on Box B (VPS-4)
 
 Type: Runbook
-Status: Draft, written 2026-11-14. Not yet run on the box. Every command was checked against the code in this branch; every wall time is an estimate (labeled) unless it cites a measurement.
+Status: Run once on the box, 2026-11-14 (C1 `1810f51`, C2 `226e0ec`, C3 `c3dfc11`). Measured times and the fixes the run needed are in "Run log 2026-11-14" below; the Timeline table keeps the pre-run estimates for comparison.
 Goal: restore 2019-2023 history, rebuild all 32 serving cells with per-row bucket attributions, re-freeze, evaluate, and end with `/api/health` reporting `artifact_mode_ready: true` and a clean `weekly_refresh.py`.
 Who runs it: the Gridiron manager, with the owner's go-ahead for the production-DB steps (6, 7, 14).
 
@@ -57,6 +57,31 @@ Before promotion, with the new code and no pinned attributions, default weights 
 | 20 `weekly_refresh.py` | 10-30 min | under 1.5 GB expected (ETL RSS is unmeasured; the `etl` limit is 1.5 GB, so this runbook runs it in training) | |
 
 Whole rerun: about 1.5 days elapsed, of which about 22 h is unattended training. The Fri 22:00 to Mon 06:00 window is 56 h, so it fits, but the timers are stopped for this run, so start it by hand.
+
+## Run log 2026-11-14 (measured)
+
+| Step | Measured |
+|---|---|
+| 2 backup | dump 36 MB, 40 tables (STAMP `20261114T101322Z`) |
+| 7 backfill + Elo | feature_matrix 91,299 rows; Elo on 139,723 rows, 0 nulls; db container peaked 614 of 700 MB |
+| 8-9 OOF rebuild | **51 min** for 32 cells (10:39:57 to 11:30:54 UTC), 36-233 s per cell; the 20-26 h estimate was about 25x too high |
+| 10 selection | 31 `ridge_stack`, 1 `lgbm_identity` (`receiving_tds:WR`) |
+| 14 materialize + freeze | 173,843 rows, run `stack_materialize_20261114T115324Z`, max residual 5.7e-13 |
+| 14-16 serving gap | 6 min 47 s (11:53:23 to 12:00:10 UTC); api build 1 min 27 s |
+| 15 evals | 161 s; 158/160 cell-seasons beat both naive and trailing-3 (misses: `rushing_tds:TE` 2023, `rushing_yards:QB` 2024, both to naive only); Marcel 157/160. Pre- and post-freeze CSVs byte-identical |
+
+What the run needed that this runbook did not foresee:
+
+- **`libgomp1`** was missing from both images (LightGBM import failed on cell 1). Fixed in `backend/Dockerfile` and `infra/hosts/vps1/Dockerfile.serving`, each with an import check after the apt purge.
+- **A `%` in the DB password** crashed Alembic's configparser. `pipeline/schema.py` now escapes it. A crash here prints the URL with its password, so pipe box output through a `://user:pass@` redaction filter.
+- **Hand-pinned image digests** on the box were not in the repo; commit them before syncing, or the sync reverts them.
+- **The sync must exclude `infra/hosts/vps1/cloudflared.config.yml`**: the box keeps its own copy with the real hostname.
+- **`SHA256SUMS` paths are absolute** (`/train_out/...`); strip the prefix before `shasum -c` on the Mac.
+- **Hard-coded candidate paths in tests** (`causal_20260821_fixed`) broke the gate on C2; tests and `ml/served_learner.py` now read the active candidate from the manifest.
+- **`--register` skips paths already in the manifest**, so `reports/materialize_stack_projections.json` kept its old hash. Re-hash that one entry by hand on the Mac; do not run `--update`, which also absorbs unrelated drift.
+- **`/api/health` is the Pages proxy path.** Inside the container, `/health` is the public probe, and the per-check report is `/integrity` with `X-API-Key: $API_KEY`.
+- `feature_matrix` was already `ok` at step 17, because the step 7 backfill writes a fresh `computed_at`.
+- **Step 20 stops at step 7, and that is expected for now.** `weekly_refresh.py` passed steps 1-6 in 8.5 min (12:21 to 12:29 UTC) and then hit the forward-week structural gate: 0 `projections` rows for the target week. Step 4 re-materializes only the out-of-fold history; the forward producer (`build_forward_features.py` then `materialize_forward_projections.py`) is not wired in. Nothing was promoted, and served rows kept their approved run id. Decision 0011 records it. Re-enable the ETL timer only when someone decides to.
 
 ## Phase A: preparation (box is still serving the old release)
 
@@ -351,8 +376,8 @@ Rollback: `docker tag gridiron-api:pre-rerun-<STAMP> gridiron-api:serving && doc
 ### 17. Health checks
 
 ```bash
-docker compose exec -T api curl -fsS http://localhost:8000/api/health | python3 -m json.tool
-curl -fsS https://gridiron-api.risshabh.com/api/health | python3 -m json.tool       # through the tunnel
+docker compose exec -T api sh -c 'curl -fsS -H "X-API-Key: $API_KEY" http://localhost:8000/integrity' | python3 -m json.tool
+curl -fsS https://gridiron-api.risshabh.com/health | python3 -m json.tool       # through the tunnel (public probe)
 ```
 
 Expected now: `baseline_manifest.status` is `ok` ("matches clean HEAD and full cell matrix"), `database` ok, `backtest_assets` ok. `feature_matrix` is still `warn` if its newest `computed_at` is over 24 h old, so `artifact_mode_ready` is `false` here. That is the honest state until step 20. If `baseline_manifest` is anything but `ok`, stop: the likely causes are a `GIT_COMMIT_SHA` that differs from the manifest's `git_commit`, or a freeze run from a different commit.
@@ -415,7 +440,7 @@ Expected: exit 0 and no `FAILED` line. Step 4 materializes with attributions und
 Then, within 24 h of this run's `computed_at`:
 
 ```bash
-docker compose exec -T api curl -fsS http://localhost:8000/api/health | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['artifact_mode_ready'], d['status'])"
+docker compose exec -T api curl -fsS http://localhost:8000/health | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['artifact_mode_ready'], d['status'])"
 ```
 
 Expect `True ok` (or `degraded` only from non-required checks such as MLflow, which this runbook does not touch). Then:
