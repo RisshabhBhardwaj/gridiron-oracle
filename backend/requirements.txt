@@ -17,6 +17,7 @@ sqlmodel==0.0.38
 asyncpg==0.31.0
 psycopg2-binary==2.9.12          # MLflow requires sync psycopg2
 alembic==1.18.4                 # schema migrations (replaces inline CREATE TABLE)
+SQLAlchemy==2.0.49              # pinned: 2.1 makes bare postgresql:// mean psycopg 3, not psycopg2
 
 # ── Scheduling (embedded in backend process) ──────────────────────────────────
 apscheduler==3.11.2
