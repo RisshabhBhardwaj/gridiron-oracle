@@ -1,0 +1,590 @@
+{
+  "schema_version": 1,
+  "generated_by": "python scripts/summarize_causal_evals.py",
+  "generated_at": "2026-11-14T12:05:51.835758+00:00",
+  "metric_note": "`metric` is carried through from the per-cell eval CSVs, which get it from ml.eval_metrics.primary_score. A count target is scored with Poisson deviance and must never be summarised under an MAE-shaped key (audit C-31).",
+  "inputs": [
+    "reports/eval_causal_carries_RB.csv",
+    "reports/eval_causal_completions_QB.csv",
+    "reports/eval_causal_fantasy_ppr_QB.csv",
+    "reports/eval_causal_fantasy_ppr_RB.csv",
+    "reports/eval_causal_fantasy_ppr_TE.csv",
+    "reports/eval_causal_fantasy_ppr_WR.csv",
+    "reports/eval_causal_fumbles_QB.csv",
+    "reports/eval_causal_fumbles_RB.csv",
+    "reports/eval_causal_fumbles_TE.csv",
+    "reports/eval_causal_fumbles_WR.csv",
+    "reports/eval_causal_interceptions_QB.csv",
+    "reports/eval_causal_pass_attempts_QB.csv",
+    "reports/eval_causal_passing_tds_QB.csv",
+    "reports/eval_causal_passing_yards_QB.csv",
+    "reports/eval_causal_receiving_tds_RB.csv",
+    "reports/eval_causal_receiving_tds_TE.csv",
+    "reports/eval_causal_receiving_tds_WR.csv",
+    "reports/eval_causal_receiving_yards_RB.csv",
+    "reports/eval_causal_receiving_yards_TE.csv",
+    "reports/eval_causal_receiving_yards_WR.csv",
+    "reports/eval_causal_receptions_RB.csv",
+    "reports/eval_causal_receptions_TE.csv",
+    "reports/eval_causal_receptions_WR.csv",
+    "reports/eval_causal_rushing_tds_QB.csv",
+    "reports/eval_causal_rushing_tds_RB.csv",
+    "reports/eval_causal_rushing_tds_TE.csv",
+    "reports/eval_causal_rushing_tds_WR.csv",
+    "reports/eval_causal_rushing_yards_QB.csv",
+    "reports/eval_causal_rushing_yards_RB.csv",
+    "reports/eval_causal_targets_RB.csv",
+    "reports/eval_causal_targets_TE.csv",
+    "reports/eval_causal_targets_WR.csv"
+  ],
+  "headline": {
+    "beat_both": 158,
+    "cell_seasons": 160
+  },
+  "cells": [
+    {
+      "source_report": "reports/eval_causal_carries_RB.csv",
+      "stat": "carries",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_completions_QB.csv",
+      "stat": "completions",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_fantasy_ppr_QB.csv",
+      "stat": "fantasy_ppr",
+      "position": "QB",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_fantasy_ppr_RB.csv",
+      "stat": "fantasy_ppr",
+      "position": "RB",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_fantasy_ppr_TE.csv",
+      "stat": "fantasy_ppr",
+      "position": "TE",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_fantasy_ppr_WR.csv",
+      "stat": "fantasy_ppr",
+      "position": "WR",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    },
+    {
+      "source_report": "reports/eval_causal_fumbles_QB.csv",
+      "stat": "fumbles",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_fumbles_RB.csv",
+      "stat": "fumbles",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_fumbles_TE.csv",
+      "stat": "fumbles",
+      "position": "TE",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_fumbles_WR.csv",
+      "stat": "fumbles",
+      "position": "WR",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    },
+    {
+      "source_report": "reports/eval_causal_interceptions_QB.csv",
+      "stat": "interceptions",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_pass_attempts_QB.csv",
+      "stat": "pass_attempts",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_passing_tds_QB.csv",
+      "stat": "passing_tds",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_passing_yards_QB.csv",
+      "stat": "passing_yards",
+      "position": "QB",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_receiving_tds_RB.csv",
+      "stat": "receiving_tds",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_receiving_tds_TE.csv",
+      "stat": "receiving_tds",
+      "position": "TE",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_receiving_tds_WR.csv",
+      "stat": "receiving_tds",
+      "position": "WR",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    },
+    {
+      "source_report": "reports/eval_causal_receiving_yards_RB.csv",
+      "stat": "receiving_yards",
+      "position": "RB",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_receiving_yards_TE.csv",
+      "stat": "receiving_yards",
+      "position": "TE",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_receiving_yards_WR.csv",
+      "stat": "receiving_yards",
+      "position": "WR",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    },
+    {
+      "source_report": "reports/eval_causal_receptions_RB.csv",
+      "stat": "receptions",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_receptions_TE.csv",
+      "stat": "receptions",
+      "position": "TE",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_receptions_WR.csv",
+      "stat": "receptions",
+      "position": "WR",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    },
+    {
+      "source_report": "reports/eval_causal_rushing_tds_QB.csv",
+      "stat": "rushing_tds",
+      "position": "QB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_rushing_tds_RB.csv",
+      "stat": "rushing_tds",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_rushing_tds_TE.csv",
+      "stat": "rushing_tds",
+      "position": "TE",
+      "metric": "poisson_deviance",
+      "beat_both": "4/5",
+      "beat_both_count": 4,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_rushing_tds_WR.csv",
+      "stat": "rushing_tds",
+      "position": "WR",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    },
+    {
+      "source_report": "reports/eval_causal_rushing_yards_QB.csv",
+      "stat": "rushing_yards",
+      "position": "QB",
+      "metric": "mae",
+      "beat_both": "4/5",
+      "beat_both_count": 4,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 2123
+    },
+    {
+      "source_report": "reports/eval_causal_rushing_yards_RB.csv",
+      "stat": "rushing_yards",
+      "position": "RB",
+      "metric": "mae",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_targets_RB.csv",
+      "stat": "targets",
+      "position": "RB",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3905
+    },
+    {
+      "source_report": "reports/eval_causal_targets_TE.csv",
+      "stat": "targets",
+      "position": "TE",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 3963
+    },
+    {
+      "source_report": "reports/eval_causal_targets_WR.csv",
+      "stat": "targets",
+      "position": "WR",
+      "metric": "poisson_deviance",
+      "beat_both": "5/5",
+      "beat_both_count": 5,
+      "cell_seasons": 5,
+      "seasons": [
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "rows": 7391
+    }
+  ]
+}

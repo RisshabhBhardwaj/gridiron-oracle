@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +60,15 @@ if str(REPO_ROOT) not in sys.path:
 
 MANIFEST_PATH = REPO_ROOT / "releases" / "artifacts" / "MANIFEST.json"
 SERVING_MANIFEST_RELPATH = "releases/current_baseline.json"
+#: Check a candidate serving manifest (for example the state after a re-freeze,
+#: built in a temp dir) instead of the committed one. The repo-relative name used
+#: in messages and in ``sha256_authority`` does not change.
+SERVING_MANIFEST_ENV = "EVIDENCE_SERVING_MANIFEST"
+
+
+def serving_manifest_path() -> Path:
+    override = os.environ.get(SERVING_MANIFEST_ENV)
+    return Path(override) if override else REPO_ROOT / SERVING_MANIFEST_RELPATH
 
 # Directories that .gitignore hides, so new files in them are invisible to
 # `git status`. Evidence living here must be manifest-listed.
@@ -109,7 +119,7 @@ def serving_digests() -> dict[str, str]:
     from ml.artifact_manifest import ManifestError, load_manifest
 
     try:
-        manifest = load_manifest(REPO_ROOT / SERVING_MANIFEST_RELPATH, root=REPO_ROOT)
+        manifest = load_manifest(serving_manifest_path(), root=REPO_ROOT)
     except ManifestError as exc:
         print(f"ERROR: serving manifest unreadable: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
@@ -127,7 +137,7 @@ def verify_serving_manifest() -> int:
 
     clear_cache()
     try:
-        manifest = load_manifest(REPO_ROOT / SERVING_MANIFEST_RELPATH, root=REPO_ROOT)
+        manifest = load_manifest(serving_manifest_path(), root=REPO_ROOT)
         for stat, position in sorted(manifest.stack_index):
             manifest.resolve_stack(stat, position)
     except (ManifestError, FileNotFoundError) as exc:
@@ -137,6 +147,17 @@ def verify_serving_manifest() -> int:
         f"Serving manifest OK: {len(manifest.stack_index)} pinned cells resolve "
         f"and match their SHA-256 ({SERVING_MANIFEST_RELPATH})."
     )
+    # The causal evals back /backtest and /season. Until the re-freeze adds the
+    # pin this is a note, not a failure; once pinned, every file must verify.
+    if "causal_evals" not in (manifest.raw.get("artifacts") or {}):
+        print("NOTE: 'causal_evals' is not pinned yet; /backtest fails closed until the re-freeze adds it.")
+        return 0
+    try:
+        files = manifest.resolve_group("causal_evals")
+    except (ManifestError, FileNotFoundError) as exc:
+        print(f"SERVING MANIFEST FAILED: {exc}", file=sys.stderr)
+        return 1
+    print(f"Causal evals OK: {len(files)} pinned files match their SHA-256.")
     return 0
 
 

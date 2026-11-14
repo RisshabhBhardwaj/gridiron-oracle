@@ -184,12 +184,12 @@ status_check "/predict rejects the obsolete player_id/position contract" \
   "$BASE/predict?player_id=00-0031344&week=1&season=2025&stat=receiving_yards&position=WR" \
   422
 
-api_check "/backtest returns results" \
+api_check "/backtest returns the served release verdict" \
   "$BASE/backtest" "
-rows = d['results'] if isinstance(d, dict) and 'results' in d else d
-assert rows, 'empty backtest payload'
-blob = json.dumps(d)
-assert 'mae' in blob, sorted(d) if isinstance(d, dict) else type(d)
+v = d['release_verdict']
+assert v['cell_seasons'] > 0 and d['rows'], 'empty backtest payload'
+assert 0 <= v['beat_both'] <= v['cell_seasons'], v
+assert 'coverage' in d['not_measured'], sorted(d)
 "
 
 api_check "/settings returns weights" \

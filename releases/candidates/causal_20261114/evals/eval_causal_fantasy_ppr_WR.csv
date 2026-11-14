@@ -1,0 +1,6 @@
+stat,metric,n,n_model,n_naive,n_trailing3,cohort_rule,min_prior_games,model_score,naive_score,trailing3_score,beats_naive,beats_trailing3,max_train_season_ok,marcel_score,beats_marcel,season,position
+fantasy_ppr,mae,1506,1745,1506,1745,player has at least this many completed games earlier in the same season,1,5.221632974637713,5.702099056070357,5.577667109340417,True,True,True,5.646365653842716,True,2021,WR
+fantasy_ppr,mae,1493,1727,1493,1727,player has at least this many completed games earlier in the same season,1,5.0864216018341075,5.427558891415843,5.617106496985935,True,True,True,5.382970506222937,True,2022,WR
+fantasy_ppr,mae,1434,1805,1434,1805,player has at least this many completed games earlier in the same season,1,4.897814132779477,5.502943489541883,5.375090655509066,True,True,True,5.637747790535749,True,2023,WR
+fantasy_ppr,mae,1459,1758,1459,1758,player has at least this many completed games earlier in the same season,1,5.030539409291627,5.777405556674008,5.673331048663468,True,True,True,5.689099365826847,True,2024,WR
+fantasy_ppr,mae,1499,1776,1499,1776,player has at least this many completed games earlier in the same season,1,4.900269027177805,5.46927983308258,5.2843540137869685,True,True,True,5.537024410386281,True,2025,WR
