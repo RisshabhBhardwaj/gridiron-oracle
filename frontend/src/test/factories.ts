@@ -233,10 +233,10 @@ export const factories = {
     const COHORT = 'player has at least this many completed games earlier in the same season (min_prior_games=1)'
     const mk = (
       s: string, position: string, season: number, model: number, naive: number,
-      t3: number, marcel: number, beatsMarcel = true,
+      t3: number, marcel: number, beatsMarcel = true, metric = 'mae',
     ): BacktestRow => ({
-      stat: s, position, season, metric: 'mae',
-      metric_label: 'Average miss, in yards (lower is better)',
+      stat: s, position, season, metric,
+      metric_label: metric === 'mae' ? 'Average miss, in yards (lower is better)' : 'Count error score, Poisson deviance (lower is better)',
       n: 500, cohort_rule: COHORT,
       model_score: model, naive_score: naive, trailing3_score: t3, marcel_score: marcel,
       beats_naive: model < naive, beats_trailing3: model < t3, beats_marcel: beatsMarcel,
@@ -250,9 +250,13 @@ export const factories = {
       mk('rushing_yards', 'RB', 2024, 20.1, 22.4, 21.5, 20.9),
       mk('rushing_yards', 'RB', 2025, 19.6, 21.8, 21.0, 20.4),
       mk('rushing_yards', 'QB', 2025, 9.4, 9.1, 9.8, 9.6),
+      mk('receptions', 'TE', 2025, 0.95, 1.3, 1.2, 1.1, true, 'poisson_deviance'),
     ]
     const verdictOf = (rows: BacktestRow[]): BacktestVerdict => {
-      const gains = rows.map((r) => r.improvement_vs_naive_pct).filter((g): g is number => g !== null)
+      const byMetric: Record<string, number[]> = {}
+      for (const r of rows) {
+        if (r.improvement_vs_naive_pct !== null) (byMetric[r.metric] ??= []).push(r.improvement_vs_naive_pct)
+      }
       return {
         cell_seasons: rows.length,
         beat_naive: rows.filter((r) => r.beats_naive).length,
@@ -260,7 +264,9 @@ export const factories = {
         beat_marcel: rows.filter((r) => r.beats_marcel).length,
         beat_both: rows.filter((r) => r.beats_naive && r.beats_trailing3).length,
         causal_check_passed: rows.length,
-        mean_improvement_vs_naive_pct: gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null,
+        improvement_by_metric: Object.fromEntries(
+          Object.entries(byMetric).map(([m, g]) => [m, { cell_seasons: g.length, mean_pct: g.reduce((a, b) => a + b, 0) / g.length }]),
+        ),
       }
     }
     const rows = stat ? all.filter((r) => r.stat === stat) : all

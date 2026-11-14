@@ -327,6 +327,13 @@ export interface ScenarioResponse {
 
 // ── backtest.py ───────────────────────────────────────────────────────────────
 
+export interface MetricImprovement {
+  /** Player-stat seasons scored on this metric. */
+  cell_seasons: number
+  /** Average percent the model score sits below the simple method's; positive = better. */
+  mean_pct: number
+}
+
 export interface BacktestVerdict {
   cell_seasons: number
   beat_naive: number
@@ -334,8 +341,11 @@ export interface BacktestVerdict {
   beat_marcel: number
   beat_both: number
   causal_check_passed: number
-  /** Average percent the model score sits below the simple method's; positive = better. */
-  mean_improvement_vs_naive_pct: number | null
+  /**
+   * Improvement over the simple method per scoring metric ("mae", "poisson_deviance").
+   * Different metrics are on different scales and are never averaged together.
+   */
+  improvement_by_metric: Record<string, MetricImprovement>
 }
 
 export interface BacktestRow {

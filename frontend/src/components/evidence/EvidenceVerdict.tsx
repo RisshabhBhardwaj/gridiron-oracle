@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Download } from 'lucide-react'
 import type { BacktestVerdict } from '@/types/api'
-import { otherBaselinesSentence, verdictSentence } from '@/lib/evidence'
+import { mixedMetricSentence, otherBaselinesSentence, toneGain, verdictSentence } from '@/lib/evidence'
 import { cn } from '@/lib/utils'
 import { toneClass, type Tone } from '@/lib/tokens'
 
@@ -22,7 +22,8 @@ export function EvidenceVerdict({
   /** Optional small label above the sentence, for example "All stats, 2021 to 2025". */
   lead?: string
 }) {
-  const gain = verdict.mean_improvement_vs_naive_pct
+  const gain = toneGain(verdict)
+  const mixed = mixedMetricSentence(verdict)
   const good = verdict.cell_seasons > 0 && verdict.beat_naive * 2 >= verdict.cell_seasons && (gain ?? 0) >= 0
   const tone: Tone = verdict.cell_seasons === 0 ? 'muted' : good ? 'positive' : 'warning'
   const Icon = good ? ArrowUp : ArrowDown
@@ -42,6 +43,7 @@ export function EvidenceVerdict({
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         {lead && <p className="section-label">{lead}</p>}
         <p className="text-lg font-semibold leading-snug text-fg sm:text-xl">{verdictSentence(verdict, noun)}</p>
+        {mixed && <p className="text-sm text-fg">{mixed}</p>}
         <p className="text-sm text-fg-muted">{otherBaselinesSentence(verdict)}</p>
         <a
           href={`/api${tableUrl}`}

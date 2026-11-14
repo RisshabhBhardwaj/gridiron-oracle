@@ -14,7 +14,7 @@ import { ImprovementCell } from '@/components/evidence/ImprovementCell'
 import { PositionFilter } from '@/components/evidence/PositionFilter'
 import { useBacktest } from '@/hooks/useBacktest'
 import { POSITIONS } from '@/lib/constants'
-import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictSentence } from '@/lib/evidence'
+import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf, verdictSentence } from '@/lib/evidence'
 import { positionTone, toneClass, token } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
 
@@ -126,19 +126,7 @@ export function BacktestExplorer() {
   }, [rows, positions])
 
   const metricLabel = rows[0]?.metric_label
-  const selectionVerdict = useMemo(() => {
-    const cellSeasons = rows.length
-    const gains = rows.map((r) => r.improvement_vs_naive_pct).filter((g): g is number => g !== null)
-    return {
-      cell_seasons: cellSeasons,
-      beat_naive: rows.filter((r) => r.beats_naive).length,
-      beat_trailing3: rows.filter((r) => r.beats_trailing3).length,
-      beat_marcel: rows.filter((r) => r.beats_marcel).length,
-      beat_both: rows.filter((r) => r.beats_naive && r.beats_trailing3).length,
-      causal_check_passed: cellSeasons,
-      mean_improvement_vs_naive_pct: gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null,
-    }
-  }, [rows])
+  const selectionVerdict = useMemo(() => verdictOf(rows), [rows])
 
   const seasonsText = data && data.seasons.length > 0 ? `${data.seasons[0]} to ${data.seasons[data.seasons.length - 1]}` : ''
 

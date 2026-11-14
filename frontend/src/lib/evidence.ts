@@ -1,6 +1,6 @@
 import { ApiError } from '@/lib/api-client'
 import { STATS, STAT_LABELS } from '@/lib/constants'
-import type { BacktestCell, BacktestVerdict } from '@/types/api'
+import type { BacktestCell, BacktestRow, BacktestVerdict } from '@/types/api'
 
 /** `detail.code` the api sends when the release's pinned evidence cannot be read. */
 export const EVIDENCE_UNAVAILABLE = 'evidence_unavailable'
@@ -39,8 +39,43 @@ export function formatPct(n: number): string {
 }
 
 /**
+ * The verdict for a set of rows. Improvement is averaged per scoring metric:
+ * average-miss scores and count-error (deviance) scores are on different scales,
+ * so they are never averaged together.
+ */
+export function verdictOf(rows: BacktestRow[]): BacktestVerdict {
+  const byMetric: Record<string, number[]> = {}
+  for (const r of rows) {
+    if (r.improvement_vs_naive_pct !== null) (byMetric[r.metric] ??= []).push(r.improvement_vs_naive_pct)
+  }
+  return {
+    cell_seasons: rows.length,
+    beat_naive: rows.filter((r) => r.beats_naive).length,
+    beat_trailing3: rows.filter((r) => r.beats_trailing3).length,
+    beat_marcel: rows.filter((r) => r.beats_marcel).length,
+    beat_both: rows.filter((r) => r.beats_naive && r.beats_trailing3).length,
+    causal_check_passed: rows.length,
+    improvement_by_metric: Object.fromEntries(
+      Object.entries(byMetric).map(([m, g]) => [m, { cell_seasons: g.length, mean_pct: g.reduce((a, b) => a + b, 0) / g.length }]),
+    ),
+  }
+}
+
+/** The percent a sentence may state on its own: only when every cell shares one metric. */
+function singleMetricGain(v: BacktestVerdict): number | null {
+  const all = Object.values(v.improvement_by_metric)
+  return all.length === 1 ? all[0].mean_pct : null
+}
+
+/** The percent that sets the tone of a verdict: the single metric's, else the average-miss one. */
+export function toneGain(v: BacktestVerdict): number | null {
+  return singleMetricGain(v) ?? v.improvement_by_metric.mae?.mean_pct ?? null
+}
+
+/**
  * One plain sentence: better or not than the simple method, and by how much.
  * `noun` names what is counted, e.g. "player-stat seasons" or "positions".
+ * The percent appears only when all the cells share one scoring metric.
  */
 export function verdictSentence(v: BacktestVerdict, noun: string): string {
   const total = v.cell_seasons
@@ -52,11 +87,24 @@ export function verdictSentence(v: BacktestVerdict, noun: string): string {
       : n === 0
         ? `Not better than the simple method in any of ${total} ${noun}`
         : `Better than the simple method in ${n} of ${total} ${noun}`
-  const gain = v.mean_improvement_vs_naive_pct
+  const gain = singleMetricGain(v)
   if (gain === null) return `${head}.`
   return gain >= 0
     ? `${head}, by ${formatPct(gain)} on average.`
     : `${head}, and ${formatPct(gain)} worse on average.`
+}
+
+/**
+ * When a verdict mixes scoring metrics, the one percent we can state honestly:
+ * the average miss on yards and fantasy points. Count stats get no blended percent.
+ * Null when the verdict is a single metric (the main sentence has it) or has no average-miss cells.
+ */
+export function mixedMetricSentence(v: BacktestVerdict): string | null {
+  if (Object.keys(v.improvement_by_metric).length < 2) return null
+  const mae = v.improvement_by_metric.mae
+  if (!mae) return null
+  const size = mae.mean_pct >= 0 ? 'smaller' : 'larger'
+  return `On yards and fantasy points, our average miss is ${formatPct(mae.mean_pct)} ${size}.`
 }
 
 /** The other two baselines, in one line. */

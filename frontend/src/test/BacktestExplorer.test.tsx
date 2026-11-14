@@ -25,9 +25,18 @@ describe('BacktestExplorer', () => {
   it('leads with a plain verdict and a link to the data', async () => {
     renderBacktest()
     const verdict = await screen.findByRole('region', { name: 'Verdict' })
-    expect(verdict).toHaveTextContent(/Better than the simple method in 6 of 7 player-stat seasons/)
+    expect(verdict).toHaveTextContent(/Better than the simple method in 7 of 8 player-stat seasons/)
     const link = within(verdict).getByRole('link', { name: /Download all the numbers/ })
     expect(link).toHaveAttribute('href', '/api/backtest/table.csv')
+  })
+
+  it('gives a percent only over yards and fantasy points, never blended with count stats', async () => {
+    renderBacktest()
+    const verdict = await screen.findByRole('region', { name: 'Verdict' })
+    // The first sentence is a count, with no percent.
+    expect(verdict).toHaveTextContent(/Better than the simple method in 7 of 8 player-stat seasons\.On yards/)
+    expect(verdict).toHaveTextContent(/On yards and fantasy points, our average miss is \d+\.\d% smaller\./)
+    expect(verdict).not.toHaveTextContent(/on average\./)
   })
 
   it('shows release-measured WR 2025 numbers: 23.24 vs 25.17', async () => {

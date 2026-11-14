@@ -4,8 +4,8 @@ import { cohortPlain } from '@/lib/evidence'
 export function BaselineGuide({ cohortRules }: { cohortRules: string[] }) {
   const items: [string, string][] = [
     ['Who is counted', cohortRules.map(cohortPlain).join(' ')],
-    ['Simple method', "Predict that a player repeats his last game."],
-    ['Trailing 3', "Predict the average of his last three games."],
+    ['Simple method', 'Predict that a player repeats their last game.'],
+    ['Trailing 3', 'Predict the average of their last three games.'],
     ['Marcel', 'A classic forecast that blends recent seasons and pulls extremes toward average.'],
     ['Fair test', 'Every prediction uses only what was known before that game.'],
   ]

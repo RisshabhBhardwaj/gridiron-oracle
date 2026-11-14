@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { LegacyRow } from '@tanstack/react-table/legacy'
-import type { BacktestRow, BacktestVerdict } from '@/types/api'
+import type { BacktestRow } from '@/types/api'
 import { useBacktest } from '@/hooks/useBacktest'
 import { useCurrentSeason } from '@/hooks/useCurrentSeason'
 import { ErrorBanner } from '@/components/shared/ErrorBanner'
@@ -13,7 +13,7 @@ import { BaselineGuide } from '@/components/evidence/BaselineGuide'
 import { ImprovementCell } from '@/components/evidence/ImprovementCell'
 import { PositionFilter } from '@/components/evidence/PositionFilter'
 import { POSITIONS } from '@/lib/constants'
-import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn } from '@/lib/evidence'
+import { formatScore, isEvidenceUnavailable, positionsWithRows, statLabel, statsIn, verdictOf } from '@/lib/evidence'
 import { positionTone, toneClass } from '@/lib/tokens'
 import { cn } from '@/lib/utils'
 
@@ -89,19 +89,6 @@ const COLUMNS: TableColumn<BacktestRow>[] = [
     cell: ({ row }: { row: LegacyRow<BacktestRow> }) => <ImprovementCell pct={row.original.improvement_vs_naive_pct} />,
   },
 ]
-
-function verdictOf(rows: BacktestRow[]): BacktestVerdict {
-  const gains = rows.map((r) => r.improvement_vs_naive_pct).filter((g): g is number => g !== null)
-  return {
-    cell_seasons: rows.length,
-    beat_naive: rows.filter((r) => r.beats_naive).length,
-    beat_trailing3: rows.filter((r) => r.beats_trailing3).length,
-    beat_marcel: rows.filter((r) => r.beats_marcel).length,
-    beat_both: rows.filter((r) => r.beats_naive && r.beats_trailing3).length,
-    causal_check_passed: rows.length,
-    mean_improvement_vs_naive_pct: gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null,
-  }
-}
 
 export function SeasonReview() {
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null)
