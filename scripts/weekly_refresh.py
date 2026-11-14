@@ -197,32 +197,7 @@ def log_database_size(cur) -> None:
         logger.warning("Could not query pg_database_size: %s", exc)
 
 
-def replace_week_rows(conn, season: int, week: int) -> int:
-    """Delete the target week's projection rows so step 4b can write them again (manual only).
-
-    Refuses a week that has scores or whose first kickoff has passed: the producer would refuse it
-    too, and the delete would leave the week empty. Commits itself; returns the rows deleted.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT COUNT(*) FROM games WHERE season = %s AND week = %s "
-            "AND (home_score IS NOT NULL OR away_score IS NOT NULL OR kickoff_at <= now())",
-            (season, week),
-        )
-        blocking = cur.fetchone()[0]
-        if blocking:
-            conn.rollback()
-            raise RuntimeError(
-                f"week {week} of {season} has {blocking} game(s) played or has kicked off; "
-                "refusing to delete its projections"
-            )
-        cur.execute("DELETE FROM projections WHERE season = %s AND week = %s", (season, week))
-        deleted = cur.rowcount
-    conn.commit()
-    return int(deleted)
-
-
-def produce_forward_week(dsn: str, season: int, week: int) -> dict:
+def produce_forward_week(dsn: str, season: int, week: int, *, replace_week: bool = False) -> dict:
     """Capture availability, build the forward features at as_of=now, run the producer.
 
     The order is the causality rule: an availability snapshot fetched after ``as_of`` is
@@ -244,7 +219,9 @@ def produce_forward_week(dsn: str, season: int, week: int) -> dict:
         dsn, season, week, as_of=datetime.now(timezone.utc), pipeline_run_id=snapshot_id,
     )
     with closing(psycopg2.connect(dsn)) as conn:
-        report = run_forward(conn, season, week, feature_run_id=built["pipeline_run_id"])
+        report = run_forward(
+            conn, season, week, feature_run_id=built["pipeline_run_id"], replace_week=replace_week,
+        )
     logger.info("Forward producer wrote: %s", {k: report.get(k) for k in ("rows_served", "rows_not_served")})
     return report
 
@@ -350,19 +327,6 @@ def run_weekly_refresh(
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
 
-    # 4a. Manual only (--replace-week, after a dump): clear the week so 4b can rewrite it.
-    if replace_week:
-        step_name = "replace_week"
-        try:
-            with closing(psycopg2.connect(dsn)) as conn:
-                deleted = replace_week_rows(conn, season, start_week)
-            logger.warning("--replace-week: deleted %d projection rows for season=%d week=%d",
-                           deleted, season, start_week)
-        except (Exception, SystemExit) as exc:
-            logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
-            _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
-            return 1
-
     # 4b. Forward producer (decision 0012): the pinned base models write the forward week's
     # projections under the pending id. Order is causal: availability is captured first, then
     # features are built with as_of=now, so the snapshot's fetch time is never after as_of.
@@ -370,7 +334,7 @@ def run_weekly_refresh(
     try:
         logger.info("Step 4b: Forward producer for season=%d week=%d (run id %s)...",
                     season, start_week, pending_run_id)
-        produce_forward_week(dsn, season, start_week)
+        produce_forward_week(dsn, season, start_week, replace_week=replace_week)
     except (Exception, SystemExit) as exc:
         logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
@@ -575,8 +539,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--replace-week",
         action="store_true",
-        help="MANUAL ONLY, never from a timer: delete the target week's projection rows so the "
-             "producer rewrites them. Requires --dump-path to a non-empty database dump.",
+        help="MANUAL ONLY, never from a timer: the producer deletes the target week's projection rows "
+             "and writes them again in one transaction (a failure keeps the old week). Requires "
+             "--dump-path to a non-empty database dump.",
     )
     parser.add_argument(
         "--dump-path",

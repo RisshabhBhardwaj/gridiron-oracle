@@ -385,35 +385,35 @@ def test_step7_passes_the_approved_run_id_so_a_promoted_week_counts_as_current()
     assert argv[argv.index("--approved-run-id") + 1] == "weekly_auto_2026"
 
 
-def test_replace_week_clears_the_week_before_availability_and_the_producer():
+def test_replace_week_is_handed_to_the_producer_not_done_as_a_separate_delete():
     summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
-    with _weekly_refresh_with_orchestrator(summary) as m, \
-            patch("scripts.weekly_refresh.replace_week_rows", return_value=41) as replace:
-        order = _record_order(m)
-        replace.side_effect = lambda *a, **k: order.append("replace") or 41
+    with _weekly_refresh_with_orchestrator(summary) as m:
         m["cursor"].fetchone.side_effect = [(2,), (False,)]
         rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
     assert rc == 0
-    assert order[:3] == ["stack", "replace", "availability"]
-    assert replace.call_args.args[1:] == (2026, 3)
+    assert m["forward"].call_args.kwargs["replace_week"] is True
+    executed = [c.args[0] for c in m["cursor"].execute.call_args_list]
+    assert not any("DELETE FROM projections" in sql for sql in executed)
 
 
-def test_a_refused_replace_week_dead_letters_and_never_reaches_the_producer():
+def test_a_refused_replace_week_dead_letters_under_the_producer_step():
+    from ml.forward_serving import ForwardGuardError
+
     summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
-    with _weekly_refresh_with_orchestrator(summary) as m, \
-            patch("scripts.weekly_refresh.replace_week_rows", side_effect=RuntimeError("kicked off")):
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        m["forward"].side_effect = ForwardGuardError("G2", "week 3 already has scores")
         m["cursor"].fetchone.side_effect = [(2,)]
         rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
     assert rc == 1
-    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/replace_week"
-    m["availability"].assert_not_called()
-    m["forward"].assert_not_called()
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
+    m["simulation"].assert_not_called()
 
 
-def test_without_replace_week_nothing_is_deleted():
+def test_the_weekly_run_never_passes_the_availability_override_or_replace_by_default():
     summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
-    with _weekly_refresh_with_orchestrator(summary) as m, \
-            patch("scripts.weekly_refresh.replace_week_rows") as replace:
+    with _weekly_refresh_with_orchestrator(summary) as m:
         m["cursor"].fetchone.side_effect = [(2,), (False,)]
         run_weekly_refresh("postgres://dummy", season=2026)
-    replace.assert_not_called()
+    kwargs = m["forward"].call_args.kwargs
+    assert kwargs.get("replace_week") is False
+    assert "allow_no_availability" not in kwargs

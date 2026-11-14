@@ -435,12 +435,99 @@ def test_availability_snapshot_after_as_of_is_not_used(manifest) -> None:
     assert_refused(conn, "D3", e.value, "availability")
 
 
-def test_unknown_availability_can_be_allowed_explicitly(manifest) -> None:
+def test_unknown_availability_can_be_allowed_explicitly(manifest, caplog) -> None:
+    """Coordinator answer 2: manual override, logged, and every row says "availability unknown"."""
+    caplog.set_level("WARNING")
     conn = make_conn(avail_fetched=AS_OF + timedelta(minutes=1))
     report = go(conn, manifest, allow_no_availability=True)
     assert report["availability"]["snapshot_id"] is None
+    assert report["availability"]["override"] is True
     rows = next(w for w in conn.writes if w[0] == "batch" and "INSERT INTO projections" in w[1])[2]
-    assert {r["availability_status"] for r in rows} == {None}
+    assert {r["availability_status"] for r in rows} == {"Unknown"}
+    assert any("availability NOT applied" in r.getMessage() for r in caplog.records)
+    insert = next(w for w in conn.writes if w[0] == "execute" and "INSERT INTO forecast_runs" in w[1])
+    assert json.loads(insert[2][5])["availability_override"] is True
+
+
+def test_the_unknown_marker_is_served_not_excluded() -> None:
+    from pipeline.availability import EXCLUDED_STATUSES, STORED_STATUSES, UNKNOWN, is_served
+
+    assert UNKNOWN == "Unknown" and UNKNOWN in STORED_STATUSES
+    assert UNKNOWN not in EXCLUDED_STATUSES and is_served(UNKNOWN)
+
+
+# ── coordinator answers 7 and 8 ───────────────────────────────────────────────────────────
+def _delete(conn):
+    return [i for i, w in enumerate(conn.log) if w[0] == "execute" and w[1].lstrip().upper().startswith("DELETE")]
+
+
+def test_replace_week_deletes_and_inserts_in_one_transaction(manifest) -> None:
+    conn = make_conn()
+    report = go(conn, manifest, replace_week=True)
+    deletes = _delete(conn)
+    assert len(deletes) == 1
+    delete_sql, params = conn.log[deletes[0]][1:3]
+    assert "FROM projections" in delete_sql and params == (SEASON, WEEK)
+    insert_at = next(i for i, w in enumerate(conn.log) if w[0] == "batch" and "INSERT INTO projections" in w[1])
+    assert deletes[0] < insert_at
+    assert conn.commits == 1 and ("rollback",) not in conn.log
+    assert "rows_replaced" in report
+
+
+def test_a_failed_insert_after_the_delete_rolls_everything_back(manifest, monkeypatch) -> None:
+    def boom(conn, df, **kw):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(forward_serving, "upsert_projections", boom)
+    conn = make_conn()
+    with pytest.raises(RuntimeError, match="disk full"):
+        go(conn, manifest, replace_week=True)
+    assert len(_delete(conn)) == 1
+    assert conn.commits == 0 and ("rollback",) in conn.log  # the old week is still served
+
+
+def test_without_replace_week_nothing_is_deleted(manifest) -> None:
+    conn = make_conn()
+    go(conn, manifest)
+    assert _delete(conn) == []
+
+
+def test_a_refused_guard_never_reaches_the_replace_delete(manifest) -> None:
+    conn = make_conn(target_scored=True)
+    with pytest.raises(ForwardGuardError):
+        go(conn, manifest, replace_week=True)
+    assert _delete(conn) == [] and conn.writes == []
+
+
+def test_a_real_write_refuses_an_unknown_code_sha(manifest, monkeypatch) -> None:
+    monkeypatch.setattr(forward_serving, "_code_sha", lambda: "unknown")
+    conn = make_conn()
+    with pytest.raises(ForwardGuardError, match="code_git_sha") as e:
+        go(conn, manifest, code_sha=None)
+    assert_refused(conn, "D8", e.value)
+
+
+def test_a_dry_run_may_report_an_unknown_code_sha(manifest, monkeypatch) -> None:
+    monkeypatch.setattr(forward_serving, "_code_sha", lambda: "unknown")
+    report = go(make_conn(), manifest, code_sha=None, dry_run=True)
+    assert report["dry_run"] is True
+
+
+@pytest.mark.parametrize("value", ["", "unknown"])
+def test_a_blank_or_unknown_env_sha_is_not_a_sha(monkeypatch, value) -> None:
+    """The image build arg defaults to empty; that must not count as a recorded commit."""
+    monkeypatch.setenv("CODE_GIT_SHA", value)
+    monkeypatch.delenv("GIT_SHA", raising=False)
+    monkeypatch.setattr(forward_serving.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("no git")))
+    assert forward_serving._code_sha() == "unknown"
+
+
+def test_the_image_bakes_the_commit_sha_from_a_build_arg() -> None:
+    root = Path(__file__).resolve().parents[2]
+    dockerfile = (root / "backend/Dockerfile").read_text()
+    assert "ARG CODE_GIT_SHA" in dockerfile and "CODE_GIT_SHA=${CODE_GIT_SHA}" in dockerfile
+    compose = (root / "infra/hosts/vps1/compose.yml").read_text()
+    assert compose.count("CODE_GIT_SHA: ${GIT_COMMIT_SHA") >= 2  # etl and training builds
 
 
 def test_report_freshness_is_logged(manifest, caplog) -> None:

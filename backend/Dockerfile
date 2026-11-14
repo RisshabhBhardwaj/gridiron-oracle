@@ -37,6 +37,11 @@ RUN set -eu; \
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy project packages — layout matches import paths in source code
+# The commit this image was built from (compose passes GIT_COMMIT_SHA). The forward producer records
+# it in every run and refuses to write when it is empty or "unknown" (decision 0012, D8).
+ARG CODE_GIT_SHA=
+ENV CODE_GIT_SHA=${CODE_GIT_SHA}
+# Declared after the dependency layers so a new commit does not rebuild them.
 COPY backend/app  /app/backend/app
 COPY pipeline     /app/pipeline
 COPY ml           /app/ml

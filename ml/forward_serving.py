@@ -50,7 +50,7 @@ from ml.artifact_manifest import (
 from ml.inference_client import InferenceClient
 from ml.product_mode import ARTIFACT_BACKED, resolve_product_mode
 from ml.utils import FEATURE_COLS, MISSING_VALUE_SENTINEL
-from pipeline.availability import AvailabilityResult, is_served
+from pipeline.availability import UNKNOWN, AvailabilityResult, is_served
 from pipeline.availability_store import NoAvailabilitySnapshot, load_availability
 from pipeline.serving_rows import (
     attach_causal_conformal_intervals,
@@ -454,8 +454,9 @@ def _build_rows(
 # ── run ───────────────────────────────────────────────────────────────────────────────────
 def _code_sha() -> str:
     for name in ("CODE_GIT_SHA", "GIT_SHA"):
-        if os.environ.get(name):
-            return os.environ[name]
+        value = os.environ.get(name, "").strip()
+        if value and value != "unknown":  # the image build arg defaults to empty
+            return value
     try:
         out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
         if out.returncode == 0 and out.stdout.strip():
@@ -489,12 +490,23 @@ def run_forward(
     code_sha: Optional[str] = None,
     bounds: Optional[dict[str, tuple[int, int]]] = None,
     null_margin: float = NULL_RATE_MARGIN,
+    replace_week: bool = False,
 ) -> dict:
-    """Run G1-G5, compute every row, then write once. Returns a report."""
+    """Run G1-G5, compute every row, then write once. Returns a report.
+
+    ``replace_week`` (manual, after a dump) deletes the week's existing projection rows in the same
+    transaction as the insert, so a failure leaves the old week served.
+    """
     started = now()
     mode = product_mode or resolve_product_mode()
     if mode != ARTIFACT_BACKED:
         raise ForwardGuardError("G1", f"PRODUCT_MODE must be artifact_backed, got {mode!r}")
+    sha = code_sha or _code_sha()
+    if sha == "unknown" and not dry_run:
+        raise ForwardGuardError(
+            "D8", "code_git_sha is unknown: refusing to write a forward run nobody can trace to a commit. "
+                  "Bake CODE_GIT_SHA into the image (build arg from GIT_COMMIT_SHA) or set it."
+        )
     manifest = manifest or get_manifest()
     cells = _plan(manifest)
 
@@ -510,8 +522,8 @@ def run_forward(
 
     player_ids = sorted({str(p) for p in frame["player_id"]})
     if allow_no_availability:
-        statuses: dict[str, Optional[str]] = {}
-        avail = AvailabilityResult(statuses=statuses, as_of=as_of)
+        statuses: dict[str, Optional[str]] = {pid: UNKNOWN for pid in player_ids}
+        avail = AvailabilityResult(statuses=statuses, as_of=as_of, counts={UNKNOWN: len(player_ids)})
     else:
         loader = availability or load_availability
         try:
@@ -521,7 +533,7 @@ def run_forward(
                 "D3", f"availability unknown: {exc}. Capture a snapshot first, or pass allow_no_availability."
             ) from exc
     if allow_no_availability:
-        logger.warning("availability NOT applied (explicit override): every row is stored with a NULL status")
+        logger.warning("availability NOT applied (explicit override): every row is stored as 'Unknown'")
 
     run_id = pending_run_id(season)
     preds: dict[tuple[str, str], pd.DataFrame] = {}
@@ -547,7 +559,7 @@ def run_forward(
         "feature_snapshot_id": snapshot["pipeline_run_id"], "as_of": as_of.isoformat(),
         "projection_rows": int(len(df)), "rows_served": int(len(df)) - not_served, "rows_not_served": not_served,
         "availability": {"snapshot_id": avail.snapshot_id, "counts": dict(avail.counts),
-                         "newest_report_age": str(avail.newest_report_age)},
+                         "newest_report_age": str(avail.newest_report_age), "override": allow_no_availability},
         "memory": memory,
     }
     if dry_run:
@@ -560,11 +572,16 @@ def run_forward(
         "kind": "forward_projections", "pipeline_run_id": run_id, "feature_snapshot_id": snapshot["pipeline_run_id"],
         "as_of": as_of.isoformat(), "availability_snapshot_id": avail.snapshot_id,
         "current_baseline_sha256": sha256_of(manifest.path), "models_json_sha256": _models_json_sha(manifest),
-        "code_git_sha": code_sha or _code_sha(), "projection_rows": int(len(df)),
+        "code_git_sha": sha, "projection_rows": int(len(df)),
+        "availability_override": allow_no_availability, "replace_week": replace_week,
         "rows_not_served": not_served, "memory": memory,
     }
     try:
         with conn.cursor() as cur:
+            if replace_week:
+                cur.execute("DELETE FROM projections WHERE season = %s AND week = %s", (season, week))
+                report["rows_replaced"] = int(cur.rowcount)
+                summary["rows_replaced"] = report["rows_replaced"]
             cur.execute(
                 "INSERT INTO forecast_runs (pipeline_run_id, season, week, as_of, feature_rows, source_summary) "
                 "VALUES (%s, %s, %s, %s, %s, %s)",

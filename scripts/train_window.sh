@@ -31,7 +31,9 @@
 # Promotion (select -> promote -> freeze) is a manager step, never automatic.
 #
 # One trainer at a time: an flock on the volume makes a second window exit 75
-# (EX_TEMPFAIL) without pinging its dead-man URL.
+# (EX_TEMPFAIL) without pinging its dead-man URL. The Friday availability job takes the same
+# lock for a few seconds, so a trainer waits up to TRAIN_LOCK_WAIT_SECONDS (default 120) for it
+# instead of skipping its whole window.
 # bash 3.2 compatible (no associative arrays).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -44,7 +46,7 @@ export PY="${PY:-python3}"
 mkdir -p "$TRAIN_OUT_ROOT/oof" "$TRAIN_OUT_ROOT/logs"
 
 exec 9>"$TRAIN_OUT_ROOT/.train.lock"
-if ! flock -n 9; then
+if ! flock -w "${TRAIN_LOCK_WAIT_SECONDS:-120}" 9; then
   echo "another training run holds $TRAIN_OUT_ROOT/.train.lock; skipping this window" >&2
   exit 75
 fi

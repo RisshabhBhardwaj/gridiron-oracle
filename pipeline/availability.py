@@ -33,8 +33,11 @@ QUESTIONABLE = "Questionable"
 RESERVE = "Reserve"
 SUSPENDED = "Suspended"
 INACTIVE = "Inactive"
+# Stored only by the manual --allow-no-availability override: no snapshot was applied, so the
+# row says so instead of passing as "no report against the player". Served, never excluded.
+UNKNOWN = "Unknown"
 
-STORED_STATUSES: tuple[str, ...] = (QUESTIONABLE, DOUBTFUL, OUT, RESERVE, SUSPENDED, INACTIVE)
+STORED_STATUSES: tuple[str, ...] = (QUESTIONABLE, DOUBTFUL, OUT, RESERVE, SUSPENDED, INACTIVE, UNKNOWN)
 EXCLUDED_STATUSES: frozenset[str] = frozenset({OUT, RESERVE, SUSPENDED, INACTIVE})
 
 # Most restrictive first: when two sources disagree, the player is treated as the

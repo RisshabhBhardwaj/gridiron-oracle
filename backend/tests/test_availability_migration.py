@@ -19,6 +19,7 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[2]
 PREV = "20261114_0027"
 REV = "20261114_0028"
+NEXT = "20261114_0029"
 
 
 def _cfg() -> Config:
@@ -56,8 +57,9 @@ def _sql(fn, *args) -> str:
 
 def test_single_head_and_chain() -> None:
     script = ScriptDirectory.from_config(_cfg())
-    assert script.get_heads() == [REV]
+    assert script.get_heads() == [NEXT]
     assert script.get_revision(REV).down_revision == PREV
+    assert script.get_revision(NEXT).down_revision == REV
 
 
 def test_upgrade_sql_is_additive() -> None:
@@ -89,3 +91,19 @@ def test_orm_projection_has_the_column() -> None:
 
     assert "availability_status" in Projection.__table__.columns
     assert Projection.__table__.columns["availability_status"].nullable is True
+
+
+def test_0029_allows_the_unknown_marker_and_nothing_else_new() -> None:
+    sql = _sql(command.upgrade, f"{REV}:{NEXT}")
+    assert "DROP CONSTRAINT IF EXISTS ck_projections_availability_status" in sql
+    for status in ("Questionable", "Doubtful", "Out", "Reserve", "Suspended", "Inactive", "Unknown"):
+        assert f"'{status}'" in sql
+    assert "DROP TABLE" not in sql and "DROP COLUMN" not in sql
+
+
+def test_0029_downgrade_clears_unknown_rows_before_tightening_the_constraint() -> None:
+    sql = _sql(command.downgrade, f"{NEXT}:{REV}")
+    clear = sql.index("UPDATE projections SET availability_status = NULL WHERE availability_status = 'Unknown'")
+    add = sql.index("ADD CONSTRAINT ck_projections_availability_status")
+    assert clear < add
+    assert "'Unknown'" not in sql[add:]

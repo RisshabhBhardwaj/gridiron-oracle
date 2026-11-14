@@ -1,7 +1,7 @@
 # Friday availability refresh: Friday 22:00 UTC = Friday 17:00 EST (UTC-5, November).
 #
 # Persistent=false (the default, stated): after downtime a missed refresh does NOT catch up on boot.
-# By then the week may have kicked off, and the job refuses a week with a passed kickoff anyway.
+# By then more games may have kicked off; the job freezes those and updates only unstarted games.
 # The box runs on UTC (bootstrap.sh forces it); no Timezone= is set on purpose.
 [Unit]
 Description=Friday Gridiron availability refresh - Friday 22:00 UTC (17:00 EST)

@@ -17,15 +17,19 @@ from pipeline.availability_store import AvailabilityFetchError
 from backend.tests._fake_db import FakeConn, install_batch_recorder
 
 NOW = datetime(2026, 11, 20, 22, 0, tzinfo=timezone.utc)  # Friday
+THURSDAY = NOW - timedelta(days=1)
 SUNDAY = NOW + timedelta(days=2)
+MONDAY = NOW + timedelta(days=3)
 SEASON, WEEK = 2026, 11
 COLS = ["player_id", "availability_status"]
+# A normal week: the Thursday game is over, Sunday and Monday are still ahead.
+NORMAL = (("g_thu", THURSDAY, 24, 17), ("g_sun1", SUNDAY, None, None), ("g_sun2", SUNDAY, None, None),
+          ("g_mon", MONDAY, None, None))
 
 
-def _conn(*, kickoffs=(SUNDAY,), scores=(None,), rows=(("p1", "Questionable"), ("p2", None), ("p3", "Out"))):
-    games = [(f"g{i}", k, s, s) for i, (k, s) in enumerate(zip(kickoffs, scores * len(kickoffs) if len(scores) == 1 else scores))]
+def _conn(*, games=NORMAL, rows=(("p1", "Questionable"), ("p2", None), ("p3", "Out"))):
     return FakeConn(routes=[
-        ("-- av:games", (["id", "kickoff_at", "home_score", "away_score"], games)),
+        ("-- av:games", (["id", "kickoff_at", "home_score", "away_score"], list(games))),
         ("-- av:rows", (COLS, list(rows))),
     ])
 
@@ -99,6 +103,7 @@ def test_updates_are_scoped_to_the_week_and_the_forward_run_ids():
     row = _updates(conn)[0]
     assert (row["season"], row["week"]) == (SEASON, WEEK)
     assert row["run_ids"] == ["weekly_auto_2026", "weekly_auto_2026_pending"]
+    assert row["game_ids"]
     sql = next(e[1] for e in conn.log if e[0] == "batch")
     assert "season = %(season)s" in sql and "week = %(week)s" in sql and "pipeline_run_id = ANY" in sql
 
@@ -122,35 +127,62 @@ def test_unchanged_statuses_write_no_updates_but_are_still_recorded():
     assert any(e[0] == "execute" and "INSERT INTO forecast_runs" in e[1] for e in conn.log)
 
 
-def test_a_week_with_a_passed_kickoff_is_refused_before_anything_is_fetched_or_written():
-    conn = _conn(kickoffs=(NOW - timedelta(hours=1), SUNDAY))
-    with pytest.raises(AvailabilityRefreshRefused, match="kickoff"):
+def test_a_week_with_thursday_sunday_and_monday_games_updates_only_the_games_not_started():
+    """Coordinator answer 6: freeze games that kicked off, update the rest."""
+    conn = _conn()
+    result, _ = _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    row = _updates(conn)[0]
+    assert row["game_ids"] == ["g_sun1", "g_sun2", "g_mon"]
+    assert "g_thu" not in row["game_ids"]
+    sql = next(e[1] for e in conn.log if e[0] == "batch")
+    assert "game_id = ANY(%(game_ids)s)" in sql
+    assert result["games_updated"] == 3 and result["games_frozen"] == 1
+    rows_query = next(e for e in conn.log if e[0] == "execute" and "-- av:rows" in e[1])
+    assert "game_id = ANY(%s)" in rows_query[1] and rows_query[2][3] == ["g_sun1", "g_sun2", "g_mon"]
+
+
+def test_a_game_that_kicked_off_without_a_score_yet_is_frozen_too():
+    conn = _conn(games=(("g_thu", THURSDAY, None, None), ("g_sun", SUNDAY, None, None)))
+    _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    assert _updates(conn)[0]["game_ids"] == ["g_sun"]
+
+
+def test_a_kickoff_exactly_at_as_of_is_frozen():
+    conn = _conn(games=(("g_now", NOW, None, None), ("g_sun", SUNDAY, None, None)))
+    _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    assert _updates(conn)[0]["game_ids"] == ["g_sun"]
+
+
+def test_a_game_with_no_kickoff_time_is_frozen_not_guessed():
+    conn = _conn(games=(("g_tbd", None, None, None), ("g_sun", SUNDAY, None, None)))
+    _run(conn, {"p1": "Out", "p2": None, "p3": "Out"})
+    assert _updates(conn)[0]["game_ids"] == ["g_sun"]
+
+
+def test_a_week_where_every_game_has_started_is_refused_before_anything_is_fetched():
+    conn = _conn(games=(("g_thu", THURSDAY, 24, 17), ("g_sun", NOW - timedelta(hours=1), None, None)))
+    with pytest.raises(AvailabilityRefreshRefused, match="every game"):
         _run(conn, {"p1": "Out"})
     assert conn.writes == []
 
 
-def test_a_kickoff_exactly_at_as_of_is_refused():
-    conn = _conn(kickoffs=(NOW,))
-    with pytest.raises(AvailabilityRefreshRefused):
-        _run(conn, {})
-    assert conn.writes == []
-
-
-def test_a_kickoff_that_passes_during_the_fetch_is_caught_by_the_second_check():
-    """The first check passes; the capture takes long enough that the clock crosses kickoff."""
+def test_a_game_that_kicks_off_during_the_fetch_is_frozen_by_the_second_check():
+    """The first check sees two open games; the clock crosses Sunday's kickoff during the fetch."""
     clock = iter([NOW, SUNDAY + timedelta(minutes=1), SUNDAY + timedelta(minutes=1)])
-    conn = _conn(kickoffs=(SUNDAY,))
-    with pytest.raises(AvailabilityRefreshRefused, match="kickoff"):
+    conn = _conn(games=(("g_sun", SUNDAY, None, None), ("g_mon", MONDAY, None, None)))
+    refresh_availability(conn, SEASON, WEEK, now=lambda: next(clock),
+                         capture=lambda *a: {"snapshot_id": "avail_new"},
+                         loader=_loader({"p1": "Out", "p2": None, "p3": "Out"}), run_ids=["weekly_auto_2026"])
+    assert _updates(conn)[0]["game_ids"] == ["g_mon"]
+
+
+def test_if_every_game_starts_during_the_fetch_nothing_is_written():
+    clock = iter([NOW, MONDAY + timedelta(hours=5), MONDAY + timedelta(hours=5)])
+    conn = _conn(games=(("g_sun", SUNDAY, None, None), ("g_mon", MONDAY, None, None)))
+    with pytest.raises(AvailabilityRefreshRefused, match="every game"):
         refresh_availability(conn, SEASON, WEEK, now=lambda: next(clock),
                              capture=lambda *a: {"snapshot_id": "avail_new"},
-                             loader=_loader({"p1": "Out"}), run_ids=["weekly_auto_2026"])
-    assert conn.writes == []
-
-
-def test_a_played_week_is_refused():
-    conn = _conn(scores=(24,))
-    with pytest.raises(AvailabilityRefreshRefused, match="scores"):
-        _run(conn, {})
+                             loader=_loader({}), run_ids=["weekly_auto_2026"])
     assert conn.writes == []
 
 
@@ -286,3 +318,24 @@ def test_compose_has_a_jobs_profile_one_shot_that_runs_the_script():
     assert 'profiles: ["jobs"]' in block and 'restart: "no"' in block
     assert "scripts/refresh_availability.py" in block
     assert "PRODUCT_MODE: artifact_backed" in block
+
+
+def test_availability_and_training_share_one_lock_and_availability_waits_with_a_timeout():
+    """Coordinator answer 5: wait for the retrain (timeout, then an alert); never stop it."""
+    compose = (UNITS / "compose.yml").read_text()
+    block = compose[compose.index("\n  availability:"):]
+    block = block[: block.index("\n\n")]
+    assert "train_out:/train_out" in block
+    assert "flock -w" in block and "-E 75" in block and "/train_out/.train.lock" in block
+    assert "AVAILABILITY_LOCK_WAIT_SECONDS" in block
+    assert "HEALTHCHECKS_AVAILABILITY_URL" in block  # a missing ping after a timeout is the alert
+    script = (UNITS.parents[2] / "scripts/train_window.sh").read_text()
+    assert ".train.lock" in script  # the trainers take the same file
+    assert "flock -w" in script and "TRAIN_LOCK_WAIT_SECONDS" in script  # and wait briefly, not skip a window
+
+
+def test_nothing_in_the_availability_path_stops_a_training_unit():
+    for name in ("systemd/gridiron-availability.service", "compose.yml"):
+        text = (UNITS / name).read_text()
+        block = text[text.index("availability"):] if name == "compose.yml" else text
+        assert "systemctl stop" not in block and "docker stop" not in block and "docker kill" not in block

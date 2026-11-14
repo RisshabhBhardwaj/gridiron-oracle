@@ -469,18 +469,22 @@ Step 4b runs after the stack step and before the simulation. In this order, and 
 
 Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
 
+Code SHA: `GIT_COMMIT_SHA` from `.env` is passed as the `CODE_GIT_SHA` build arg for the `etl` and `training` images, so the producer records the commit the image was built from. A real forward run with `code_git_sha` `unknown` is refused (guard D8); only `--dry-run` may run unstamped. Rebuild the image after changing `GIT_COMMIT_SHA`.
+
+`--allow-no-availability` (manual only, never in a unit) stores every row with status `Unknown` instead of refusing when no snapshot exists. The run is logged, and the report and summary carry `availability_override`. This needs migration 0029. The API returns the value in `availability_status`; showing it in the UI is a frontend change not made here.
+
 Inactives: the NFL publishes game-day inactives about 90 minutes before kickoff. The Tuesday refresh sees only injury reports, so a Questionable player is served with his status shown. Neither the weekly refresh nor the Friday job sees inactives; do not expect either to.
 
 #### Friday availability refresh (`gridiron-availability.timer`, not enabled)
 
-`scripts/refresh_availability.py` fetches a new availability snapshot and changes only `availability_status` on the next forward week's rows, in one transaction, recorded in `forecast_runs` as `availability_refresh_<season>_w<WW>_<stamp>`. It never changes a prediction. It refuses (exit 1, nothing written) when the week has scores, has no forward rows, or has a kickoff at or before the new `as_of`: in a week with a Thursday game it refuses on Friday, by design. Run it by hand once, in the same container as step 20, before enabling the timer:
+`scripts/refresh_availability.py` fetches a new availability snapshot and changes only `availability_status` on the next forward week's rows, in one transaction, recorded in `forecast_runs` as `availability_refresh_<season>_w<WW>_<stamp>`. It never changes a prediction. It works per game: rows of games that have kicked off (or have a score) are frozen, and only games that have not started are updated, so a Thursday game never blocks Friday's update of Sunday and Monday games. It refuses (exit 1, nothing written) only when no game of the week is still open or the week has no forward rows. The report and the `forecast_runs` summary carry `games_updated` and `games_frozen`. Run it by hand once, in the same container as step 20, before enabling the timer:
 
 ```bash
 docker compose --profile jobs run --rm availability
 echo "exit $?"
 ```
 
-Then `sudo cp systemd/gridiron-availability.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now gridiron-availability.timer`. Fri 22:00 UTC is also the full retrain's start; the unit declares no `Conflicts=` so it never stops training. Record the job's peak RSS on the first run (`mem_limit: 512m` is a guess).
+Then `sudo cp systemd/gridiron-availability.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now gridiron-availability.timer`. Fri 22:00 UTC is also the full retrain's start. The unit declares no `Conflicts=` and never stops training: the compose service takes the same `flock` as `scripts/train_window.sh` (`/train_out/.train.lock`) and waits up to `AVAILABILITY_LOCK_WAIT_SECONDS` (default 900) for it. On timeout it exits 75, the unit fails and no `HEALTHCHECKS_AVAILABILITY_URL` ping is sent, so the missing ping is the alert. The trainers wait up to `TRAIN_LOCK_WAIT_SECONDS` (default 120) for the lock instead of skipping their window. A retrain holds the lock for up to 56 h, so on a retrain weekend the refresh will time out unless the timer is moved earlier than the retrain start (open decision). Record the job's peak RSS on the first run and set `mem_limit` from it (`512m` is a guess).
 
 #### `--replace-week` (manual only)
 
@@ -492,7 +496,7 @@ docker compose --profile training exec -T training python3 scripts/weekly_refres
   --replace-week --dump-path /home/<user>/rerun_backup/pre_replace_<STAMP>.dump
 ```
 
-`--dump-path` must be an existing, non-empty file, or the command refuses with exit 2 before touching anything. It deletes that week's `projections` rows (all run ids), then step 4b writes them again; the week stays empty until the refresh finishes, so a failure after the delete means restoring the dump. It refuses a week that has scores or has kicked off. It is never in a systemd unit or compose file, and a test fails if one ever carries it.
+`--dump-path` must be an existing, non-empty file, or the command refuses with exit 2 before touching anything. The delete and the new insert run in one transaction inside `run_forward`, so a failure leaves the old week served untouched; the dump is kept as a second safety net. It refuses a week that has scores or has kicked off. It is never in a systemd unit or compose file, and a test fails if one ever carries it.
 
 ## Files that land
 

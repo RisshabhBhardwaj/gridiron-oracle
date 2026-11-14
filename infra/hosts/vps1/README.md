@@ -85,7 +85,7 @@ under EDT — the UTC column is authoritative.
 | `cloudflared` | 128 MB | Single tunnel, one hostname. |
 | **Steady site total** | **~1.83 GB** | **≤ 2.5 GB envelope. ✓** |
 | `etl` one-shot | 1.5 GB | Training-idle window (Tue 13:00 UTC), draws from host slack. KNOWN TIGHT SPOT: combined site + ETL ≈ 3.3 GB exceeds the site line — fits only because the training slice is idle then. First thing to tighten against the ETL peak-RSS measurement. |
-| `availability` one-shot | 512 MB (a guess, not measured) | Fri 22:00 UTC. Fetches one small source and updates status rows; loads no models. Record its peak RSS on the first run. |
+| `availability` one-shot | 512 MB (a guess, not measured) | Fri 22:00 UTC. Fetches one small source and updates status rows per unstarted game; loads no models. Shares `/train_out/.train.lock` with the trainers and waits for them. Record its peak RSS on the first run and set `mem_limit` from it. |
 | `backup` one-shot | 512 MB | Daily 23:00 UTC. Site + backup ≈ 2.33 GB ≤ 2.5 GB ✓ (fits even inside the site line). |
 | `training` | 10 GB / 5 CPUs / shares 128 | Slice + container caps (see "Training slice"). |
 | Observability trio | 448 MB | prometheus 256m + alertmanager 64m + otel 128m. Site + trio ≈ 2.28 GB ≤ 2.5 GB ✓. |

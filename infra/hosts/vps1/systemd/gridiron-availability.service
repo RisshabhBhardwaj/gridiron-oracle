@@ -1,9 +1,11 @@
 # Friday availability refresh one-shot (Fri 22:00 UTC): updates only the status column of the
 # next forward week's rows (decision 0012 addendum). No models are loaded and no prediction changes.
 #
-# NO Conflicts= on purpose. Fri 22:00 UTC is also the start of the full retrain window, and the
-# ETL's Conflicts= would stop it. This job fetches one small source and updates a few hundred rows
-# in seconds, so the two overlap harmlessly; the training slice has its own cgroup.
+# NO Conflicts= on purpose: Fri 22:00 UTC is also the start of the full retrain window, and this job
+# must never stop it. Instead the compose service takes the same flock as scripts/train_window.sh
+# (/train_out/.train.lock) and waits up to AVAILABILITY_LOCK_WAIT_SECONDS for a running retrain.
+# On timeout it exits 75, this unit fails and no HEALTHCHECKS_AVAILABILITY_URL ping is sent: that
+# missing ping is the alert. The trainers wait up to TRAIN_LOCK_WAIT_SECONDS for this job's few seconds.
 #
 # Not installed or enabled by the repo: the owner enables it after the forward producer has run once.
 [Unit]

@@ -179,6 +179,8 @@ services:
     build:
       context: ../../..
       dockerfile: backend/Dockerfile
+      args:
+        CODE_GIT_SHA: ${GIT_COMMIT_SHA:-}
     image: gridiron-etl:full
     profiles: ["jobs"]
     # weekly_refresh.py has no ping of its own: curl the dead-man URL on
@@ -207,13 +209,16 @@ services:
     logging: *logging
 
   # ── Friday availability refresh — one-shot, never `up -d` ─────────────────
-  # Updates availability_status on the next forward week (scripts/refresh_availability.py).
-  # No models are loaded. mem_limit is a guess, not a measurement: record the peak RSS on the
-  # first run and tighten it.
+  # Updates availability_status on the next forward week (scripts/refresh_availability.py), per game:
+  # games that have kicked off are frozen. No models are loaded.
+  # It takes the SAME lock as the training windows (scripts/train_window.sh), on the shared train_out
+  # volume, and waits up to AVAILABILITY_LOCK_WAIT_SECONDS for a running retrain; it never stops one.
+  # On timeout flock exits 75, the unit fails and no ping is sent: that is the alert.
+  # mem_limit is a guess, not a measurement: set it from the first dry-run's peak RSS.
   availability:
     image: gridiron-etl:full
     profiles: ["jobs"]
-    command: ["python3", "/app/scripts/refresh_availability.py"]
+    command: ["/bin/sh", "-c", "flock -w ${AVAILABILITY_LOCK_WAIT_SECONDS:-900} -E 75 /train_out/.train.lock python3 /app/scripts/refresh_availability.py && if [ -n \"$HEALTHCHECKS_AVAILABILITY_URL\" ]; then curl -fsS -m 10 --retry 3 \"$HEALTHCHECKS_AVAILABILITY_URL\" -o /dev/null; fi"]
     env_file:
       - path: .env
         required: true
@@ -221,6 +226,10 @@ services:
       PYTHONPATH: /app
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://oracle:oracle@db:5432/oracle}
       PRODUCT_MODE: artifact_backed
+      AVAILABILITY_LOCK_WAIT_SECONDS: ${AVAILABILITY_LOCK_WAIT_SECONDS:-900}
+      HEALTHCHECKS_AVAILABILITY_URL: ${HEALTHCHECKS_AVAILABILITY_URL:-}
+    volumes:
+      - train_out:/train_out
     depends_on:
       db:
         condition: service_healthy
@@ -286,6 +295,8 @@ services:
     build:
       context: ../../..
       dockerfile: backend/Dockerfile
+      args:
+        CODE_GIT_SHA: ${GIT_COMMIT_SHA:-}
     image: gridiron-etl:full
     profiles: ["training"]
     command: sleep infinity
