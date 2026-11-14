@@ -50,6 +50,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ml.artifact_manifest import REQUIRED_SERVING_CELLS, get_manifest  # noqa: E402
+from ml.bucket_attribution import (  # noqa: E402
+    ATTR_COLUMNS,
+    ATTRIBUTION_TOLERANCE,
+    AttributionError,
+    residual,
+)
 from ml.scoring import SCORED_STATS, score_fantasy  # noqa: E402
 from pipeline.run_guard import (  # noqa: E402
     approved_array_literal,
@@ -192,6 +198,47 @@ def _load_cell(stat: str, position: str) -> pd.DataFrame:
     return df
 
 
+def _load_cell_attributions(stat: str, position: str, cell: pd.DataFrame) -> pd.DataFrame:
+    """The pinned bucket attributions for a cell, checked against the stack rows.
+
+    Every stack row needs exactly one attribution row, and
+    ``base + buckets + unweighted`` must equal the row's projection to within
+    ATTRIBUTION_TOLERANCE. Anything else raises: attributions that do not add
+    up to the served number would make a user's re-weighted number wrong.
+    """
+    path = get_manifest().resolve_attribution(stat, position)
+    attr = pd.read_parquet(path)
+    missing = {"player_id", "game_id", *ATTR_COLUMNS} - set(attr.columns)
+    if missing:
+        raise AttributionError(f"{path.name} missing columns {sorted(missing)}")
+    if attr.duplicated(["player_id", "game_id"]).any():
+        raise AttributionError(f"{path.name} repeats a (player_id, game_id)")
+    keys = cell[["player_id", "game_id", "projection"]]
+    merged = keys.merge(
+        attr[["player_id", "game_id", *ATTR_COLUMNS]],
+        on=["player_id", "game_id"], how="left", validate="1:1",
+    )
+    if merged["base"].isna().any():
+        raise AttributionError(
+            f"{path.name}: {int(merged['base'].isna().sum())} of {len(merged)} "
+            f"{stat}/{position} stack rows have no attribution row"
+        )
+    values = merged[list(ATTR_COLUMNS)].to_numpy(dtype=float)
+    if not np.isfinite(values).all():
+        raise AttributionError(f"{path.name} has non-finite attributions")
+    merged["max_residual"] = np.abs(residual(merged, merged["projection"].to_numpy()))
+    worst = float(merged["max_residual"].max()) if len(merged) else 0.0
+    if worst > ATTRIBUTION_TOLERANCE:
+        raise AttributionError(
+            f"{path.name}: attributions do not add up to the pinned stack's y_pred "
+            f"(max residual {worst:.6g} > {ATTRIBUTION_TOLERANCE})"
+        )
+    merged["stat"] = stat
+    merged["pipeline_run_id"] = PIPELINE_RUN_ID
+    logger.info("Attributions %s/%s: %d rows, max residual %.2e", stat, position, len(merged), worst)
+    return merged.drop(columns=["projection"])
+
+
 def _attach_derived_fantasy_projection(df: pd.DataFrame) -> pd.DataFrame:
     """
     Compute one derived fantasy total per (player_id, game_id) from every
@@ -215,8 +262,55 @@ def _attach_derived_fantasy_projection(df: pd.DataFrame) -> pd.DataFrame:
     return df.merge(derived, on=["player_id", "game_id"], how="left")
 
 
-def _upsert(conn, df: pd.DataFrame) -> int:
-    """Write this run's rows. A row already served under another approved run is never changed."""
+def _upsert_attributions(cur, attr: pd.DataFrame, approved_literal: str) -> int:
+    """Write the attribution rows beside the projections they explain."""
+    sql = """
+        INSERT INTO projection_attributions
+            (player_id, game_id, stat, pipeline_run_id, base,
+             kalman_form, seasonal_baseline, matchup, weather_venue,
+             team_context, roster_injury, rule_meta, unweighted, max_residual)
+        VALUES (
+            %(player_id)s, %(game_id)s, %(stat)s, %(pipeline_run_id)s, %(base)s,
+            %(kalman_form)s, %(seasonal_baseline)s, %(matchup)s, %(weather_venue)s,
+            %(team_context)s, %(roster_injury)s, %(rule_meta)s, %(unweighted)s,
+            %(max_residual)s
+        )
+        ON CONFLICT (player_id, game_id, stat) DO UPDATE SET
+            pipeline_run_id = EXCLUDED.pipeline_run_id,
+            base = EXCLUDED.base,
+            kalman_form = EXCLUDED.kalman_form,
+            seasonal_baseline = EXCLUDED.seasonal_baseline,
+            matchup = EXCLUDED.matchup,
+            weather_venue = EXCLUDED.weather_venue,
+            team_context = EXCLUDED.team_context,
+            roster_injury = EXCLUDED.roster_injury,
+            rule_meta = EXCLUDED.rule_meta,
+            unweighted = EXCLUDED.unweighted,
+            max_residual = EXCLUDED.max_residual,
+            created_at = now()
+        __GUARD__
+    """
+    columns = ["player_id", "game_id", "stat", "pipeline_run_id", *ATTR_COLUMNS, "max_residual"]
+    rows = [
+        {
+            key: (value if isinstance(value, str) else float(value))
+            for key, value in zip(columns, record)
+        }
+        for record in attr[columns].itertuples(index=False, name=None)
+    ]
+    guard = skip_rows_served_by_another_approved_run(
+        "projection_attributions", "pipeline_run_id", approved_literal
+    )
+    psycopg2.extras.execute_batch(cur, sql.replace("__GUARD__", guard), rows, page_size=500)
+    return len(rows)
+
+
+def _upsert(conn, df: pd.DataFrame, attributions: pd.DataFrame | None = None) -> int:
+    """Write this run's rows. A row already served under another approved run is never changed.
+
+    Attributions, when given, go in the same transaction as the projections
+    they explain, so a failure leaves neither half behind.
+    """
     sql = """
         INSERT INTO projections
             (player_id, game_id, season, week, stat, position,
@@ -286,13 +380,19 @@ def _upsert(conn, df: pd.DataFrame) -> int:
                 "interval_method": str(r.interval_method) if getattr(r, "interval_method", None) else "unavailable",
             }
         )
-    with conn.cursor() as cur:
-        guard = skip_rows_served_by_another_approved_run(
-            "projections", "pipeline_run_id",
-            approved_array_literal(approved_pipeline_run_ids()),
-        )
-        psycopg2.extras.execute_batch(cur, sql.replace("__GUARD__", guard), rows, page_size=500)
-    conn.commit()
+    approved_literal = approved_array_literal(approved_pipeline_run_ids())
+    try:
+        with conn.cursor() as cur:
+            guard = skip_rows_served_by_another_approved_run(
+                "projections", "pipeline_run_id", approved_literal
+            )
+            psycopg2.extras.execute_batch(cur, sql.replace("__GUARD__", guard), rows, page_size=500)
+            if attributions is not None:
+                _upsert_attributions(cur, attributions, approved_literal)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return len(rows)
 
 
@@ -315,11 +415,16 @@ def main() -> int:
         return 2
 
     frames: list[pd.DataFrame] = []
+    attribution_frames: list[pd.DataFrame] = []
     for stat, pos in CELLS:
         # A declared release cell is all-or-nothing.  Selection itself verifies
         # the SHA-256 manifest pin before this reader sees any bytes.
         try:
-            frames.append(_load_cell(stat, pos))
+            cell = _load_cell(stat, pos)
+            frames.append(cell)
+            # Attributions are part of the cell: a release without them cannot
+            # honour the Settings weights, so it is not materialized.
+            attribution_frames.append(_load_cell_attributions(stat, pos, cell))
         except Exception as exc:
             logger.error("Refusing materialization: required %s/%s is invalid: %s", stat, pos, exc)
             return 1
@@ -329,6 +434,7 @@ def main() -> int:
         return 1
 
     all_df = pd.concat(frames, ignore_index=True)
+    attributions = pd.concat(attribution_frames, ignore_index=True)
     # Drop rows without usable projections
     all_df = all_df.dropna(subset=["projection", "player_id", "game_id"])
     all_df = _attach_derived_fantasy_projection(all_df)
@@ -350,6 +456,11 @@ def main() -> int:
             "reason_unavailable": "No strictly prior OOF season exists for calibration.",
             "posterior_percentiles_materialized": False,
         },
+        "attributions": {
+            "rows": int(len(attributions)),
+            "max_residual": float(attributions["max_residual"].max()) if len(attributions) else 0.0,
+            "tolerance": ATTRIBUTION_TOLERANCE,
+        },
         "dry_run": bool(args.dry_run),
     }
     out = ROOT / "reports" / "materialize_stack_projections.json"
@@ -366,7 +477,7 @@ def main() -> int:
         # Runtime DDL from ~10 call sites meant fresh-database behaviour depended
         # on the current checkout rather than on the migration history. Run
         # `alembic upgrade head` before materializing.
-        n = _upsert(conn, all_df)
+        n = _upsert(conn, all_df, attributions)
         report["n_upserted"] = n
         out.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))

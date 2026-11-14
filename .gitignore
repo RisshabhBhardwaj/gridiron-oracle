@@ -221,6 +221,8 @@ engine/.cache/
 mutants/
 # nflreadpy cache files
 *.parquet
+# ...except the SHA-pinned bucket attributions that ship with a release candidate
+!releases/candidates/**/attr_*.parquet
 *.arrow
 nflverse_cache/
 .nflverse_cache/
