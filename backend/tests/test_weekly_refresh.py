@@ -20,6 +20,9 @@ _PATCHED_STEPS = {
     "dead_letter": "scripts.weekly_refresh._write_dead_letter",
     "upsert_playerids": "scripts.weekly_refresh.upsert_playerids",
     "stack": "scripts.materialize_stack_projections.main",
+    "availability": "pipeline.availability_store.capture_snapshot",
+    "features": "scripts.build_forward_features.build_forward_snapshot",
+    "forward": "ml.forward_serving.run_forward",
     "simulation": "scripts.materialize_season_simulation.materialize",
     "team_game": "scripts.materialize_team_game_predictions.materialize",
     "acceptance": "scripts.verify_season_acceptance.main",
@@ -56,6 +59,9 @@ def _weekly_refresh_with_orchestrator(summary: OrchestratorSummary):
         mocks["cursor"] = cur
         mocks["upsert_playerids"].return_value = 5
         mocks["stack"].return_value = 0
+        mocks["availability"].return_value = {"snapshot_id": "avail_x"}
+        mocks["features"].return_value = {"pipeline_run_id": "forward_features_2026_w03_x", "feature_rows": 900}
+        mocks["forward"].return_value = {"rows_served": 700}
         mocks["acceptance"].return_value = 0
         mocks["purge_processed"].return_value = 0
         mocks["purge_stale"].return_value = 0
@@ -293,3 +299,121 @@ def test_step7_failed_structural_gate_aborts_before_promotion():
     assert source == "weekly_refresh/verify_acceptance"
     assert "non-zero exit code: 1" in error
     assert season == 2026
+
+
+# ── Step 4b: the forward producer (decision 0012, commit 7) ───────────────────
+
+def _record_order(m):
+    """Make each step append its name to a list when called; return values stay as set."""
+    order: list[str] = []
+    for name in ("stack", "availability", "features", "forward", "simulation", "team_game", "acceptance"):
+        value = m[name].return_value
+
+        def spy(*a, _n=name, _v=value, **k):
+            order.append(_n)
+            return _v
+        m[name].side_effect = spy
+    return order
+
+
+def test_step4b_runs_after_the_stack_and_before_the_simulation_in_causal_order():
+    """Availability is captured first: a snapshot fetched after as_of would be unusable."""
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        order = _record_order(m)
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 0
+    assert order == ["stack", "availability", "features", "forward", "simulation", "team_game", "acceptance"]
+
+
+def test_step4b_hands_the_new_snapshot_to_the_producer_for_the_target_week():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    assert m["availability"].call_args.args[1:3] == (2026, 3)
+    build = m["features"].call_args
+    assert build.args[1:3] == (2026, 3) or (build.kwargs["season"], build.kwargs["week"]) == (2026, 3)
+    forward = m["forward"].call_args
+    assert forward.args[1:3] == (2026, 3)
+    assert forward.kwargs["feature_run_id"] == "forward_features_2026_w03_x"
+
+
+def test_a_failed_forward_producer_dead_letters_and_stops_before_the_simulation():
+    from ml.forward_serving import ForwardGuardError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["forward"].side_effect = ForwardGuardError("G5", "pinned prediction bounds exceeded")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    m["dead_letter"].assert_called_once()
+    _, source, error, season = m["dead_letter"].call_args.args
+    assert source == "weekly_refresh/forward_producer"
+    assert "G5" in error and season == 2026
+    m["simulation"].assert_not_called()
+    m["team_game"].assert_not_called()
+    m["acceptance"].assert_not_called()
+
+
+def test_a_failed_availability_capture_stops_before_features_and_the_producer():
+    from pipeline.availability_store import AvailabilityFetchError
+
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        _record_order(m)
+        m["availability"].side_effect = AvailabilityFetchError("source unavailable")
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026)
+    assert rc == 1
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/forward_producer"
+    m["features"].assert_not_called()
+    m["forward"].assert_not_called()
+
+
+def test_step7_passes_the_approved_run_id_so_a_promoted_week_counts_as_current():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m:
+        seen = _gate_argv(m)
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    argv = seen["argv"]
+    assert argv[argv.index("--approved-run-id") + 1] == "weekly_auto_2026"
+
+
+def test_replace_week_clears_the_week_before_availability_and_the_producer():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m, \
+            patch("scripts.weekly_refresh.replace_week_rows", return_value=41) as replace:
+        order = _record_order(m)
+        replace.side_effect = lambda *a, **k: order.append("replace") or 41
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 0
+    assert order[:3] == ["stack", "replace", "availability"]
+    assert replace.call_args.args[1:] == (2026, 3)
+
+
+def test_a_refused_replace_week_dead_letters_and_never_reaches_the_producer():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m, \
+            patch("scripts.weekly_refresh.replace_week_rows", side_effect=RuntimeError("kicked off")):
+        m["cursor"].fetchone.side_effect = [(2,)]
+        rc = run_weekly_refresh("postgres://dummy", season=2026, replace_week=True)
+    assert rc == 1
+    assert m["dead_letter"].call_args.args[1] == "weekly_refresh/replace_week"
+    m["availability"].assert_not_called()
+    m["forward"].assert_not_called()
+
+
+def test_without_replace_week_nothing_is_deleted():
+    summary = _summary(_CLEAN_INGEST, _CLEAN_NORMALIZE, _CLEAN_FEATURES)
+    with _weekly_refresh_with_orchestrator(summary) as m, \
+            patch("scripts.weekly_refresh.replace_week_rows") as replace:
+        m["cursor"].fetchone.side_effect = [(2,), (False,)]
+        run_weekly_refresh("postgres://dummy", season=2026)
+    replace.assert_not_called()

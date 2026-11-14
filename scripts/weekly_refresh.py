@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 import time
+from contextlib import closing
 from pathlib import Path
 
 import psycopg2
@@ -196,10 +197,63 @@ def log_database_size(cur) -> None:
         logger.warning("Could not query pg_database_size: %s", exc)
 
 
+def replace_week_rows(conn, season: int, week: int) -> int:
+    """Delete the target week's projection rows so step 4b can write them again (manual only).
+
+    Refuses a week that has scores or whose first kickoff has passed: the producer would refuse it
+    too, and the delete would leave the week empty. Commits itself; returns the rows deleted.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM games WHERE season = %s AND week = %s "
+            "AND (home_score IS NOT NULL OR away_score IS NOT NULL OR kickoff_at <= now())",
+            (season, week),
+        )
+        blocking = cur.fetchone()[0]
+        if blocking:
+            conn.rollback()
+            raise RuntimeError(
+                f"week {week} of {season} has {blocking} game(s) played or has kicked off; "
+                "refusing to delete its projections"
+            )
+        cur.execute("DELETE FROM projections WHERE season = %s AND week = %s", (season, week))
+        deleted = cur.rowcount
+    conn.commit()
+    return int(deleted)
+
+
+def produce_forward_week(dsn: str, season: int, week: int) -> dict:
+    """Capture availability, build the forward features at as_of=now, run the producer.
+
+    The order is the causality rule: an availability snapshot fetched after ``as_of`` is
+    unusable, so it is captured first. Any failure raises; the caller dead-letters and stops.
+    """
+    from datetime import datetime, timezone
+
+    from ml.forward_serving import run_forward
+    from pipeline.availability_store import capture_snapshot
+    from scripts.build_forward_features import build_forward_snapshot
+
+    now = datetime.now(timezone.utc)
+    snapshot_id = f"forward_features_{season}_w{week:02d}_{now.strftime('%Y%m%dT%H%M%SZ')}"
+    with closing(psycopg2.connect(dsn)) as conn:
+        availability = capture_snapshot(conn, season, week)
+    logger.info("Availability snapshot captured: %s", availability)
+    # as_of is read after the capture, so the snapshot's fetch time is not after it.
+    built = build_forward_snapshot(
+        dsn, season, week, as_of=datetime.now(timezone.utc), pipeline_run_id=snapshot_id,
+    )
+    with closing(psycopg2.connect(dsn)) as conn:
+        report = run_forward(conn, season, week, feature_run_id=built["pipeline_run_id"])
+    logger.info("Forward producer wrote: %s", {k: report.get(k) for k in ("rows_served", "rows_not_served")})
+    return report
+
+
 def run_weekly_refresh(
     database_url: str,
     season: int | None = None,
     dry_run: bool = False,
+    replace_week: bool = False,
 ) -> int:
     dsn = normalize_dsn(database_url)
     t_start = time.monotonic()
@@ -296,6 +350,32 @@ def run_weekly_refresh(
         _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
         return 1
 
+    # 4a. Manual only (--replace-week, after a dump): clear the week so 4b can rewrite it.
+    if replace_week:
+        step_name = "replace_week"
+        try:
+            with closing(psycopg2.connect(dsn)) as conn:
+                deleted = replace_week_rows(conn, season, start_week)
+            logger.warning("--replace-week: deleted %d projection rows for season=%d week=%d",
+                           deleted, season, start_week)
+        except (Exception, SystemExit) as exc:
+            logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
+            _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+            return 1
+
+    # 4b. Forward producer (decision 0012): the pinned base models write the forward week's
+    # projections under the pending id. Order is causal: availability is captured first, then
+    # features are built with as_of=now, so the snapshot's fetch time is never after as_of.
+    step_name = "forward_producer"
+    try:
+        logger.info("Step 4b: Forward producer for season=%d week=%d (run id %s)...",
+                    season, start_week, pending_run_id)
+        produce_forward_week(dsn, season, start_week)
+    except (Exception, SystemExit) as exc:
+        logger.error("[%s] FAILED: %s", step_name, exc, exc_info=True)
+        _write_dead_letter(dsn, f"weekly_refresh/{step_name}", str(exc), season)
+        return 1
+
     # 5. Materialize season simulation with pending run id
     step_name = "materialize_season_simulation"
     try:
@@ -385,6 +465,8 @@ def run_weekly_refresh(
                 "--structural-only",
                 "--pipeline-run-id",
                 pending_run_id,
+                "--approved-run-id",
+                approved_run_id,
                 "--database-url",
                 dsn,
             ]
@@ -472,7 +554,7 @@ def run_weekly_refresh(
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database-url",
@@ -490,11 +572,31 @@ def main() -> int:
         action="store_true",
         help="Dry run mode: calculate target week and exit without writes",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--replace-week",
+        action="store_true",
+        help="MANUAL ONLY, never from a timer: delete the target week's projection rows so the "
+             "producer rewrites them. Requires --dump-path to a non-empty database dump.",
+    )
+    parser.add_argument(
+        "--dump-path",
+        type=Path,
+        default=None,
+        help="Database dump taken before --replace-week (must exist and be non-empty)",
+    )
+    args = parser.parse_args(argv)
+    if args.dump_path is not None and not args.replace_week:
+        parser.error("--dump-path is only used with --replace-week")
+    if args.replace_week:
+        if args.dump_path is None:
+            parser.error("--replace-week requires --dump-path: take a database dump first")
+        if not args.dump_path.is_file() or args.dump_path.stat().st_size == 0:
+            parser.error(f"--dump-path {args.dump_path} must be an existing, non-empty file")
     return run_weekly_refresh(
         database_url=args.database_url,
         season=args.season,
         dry_run=args.dry_run,
+        replace_week=args.replace_week,
     )
 
 

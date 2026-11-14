@@ -115,11 +115,17 @@ Rollback for the whole runbook's data steps: `docker compose exec -T db pg_resto
 
 ### 3. Sync the box to C1
 
-`[Mac]`, from a clean checkout of C1 (`git status --porcelain` is empty and `git rev-parse HEAD` is C1):
+`[Mac]`, from a clean checkout of C1 (`git status --porcelain` is empty and `git rev-parse HEAD` is C1). Model files are Git LFS objects: pull them first, or rsync copies 130-byte pointer files and the box fails its digest check only when it serves.
 
 ```bash
+git lfs pull
+git lfs ls-files        # every releases/candidates/*/models/* line must show "*" (content present), not "-" (pointer)
+python3 scripts/check_no_lfs_pointers.py
 git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/
+ssh $BOX 'cd /srv/gridiron && python3 scripts/check_no_lfs_pointers.py'    # same check on the box, plain python3
 ```
+
+The second check must print `ok: <n> model files, none is an LFS pointer`. It exits 1 and names the files otherwise, or when no model files exist at all. Repeat this block before every later sync (steps 13 and 18).
 
 This sends exactly the tracked files. It does not use `--delete`, never touches `infra/hosts/vps1/.env` (untracked), and does not send ignored paths (`reports/`, `ml/oof/`). On the box, set the provisional commit and confirm no secret is printed:
 
@@ -302,7 +308,7 @@ Rollback: `git reset --hard HEAD~1` on the Mac (never pushed).
 
 ### 13. Sync C2, set `GIT_COMMIT_SHA`, rebuild, recreate training
 
-`[Mac]`: `git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/`. Then on the box:
+`[Mac]`: run the step 3 block (`git lfs pull`, the pointer check, then `git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/`). Then on the box:
 
 ```bash
 cd /srv/gridiron/infra/hosts/vps1
@@ -408,6 +414,7 @@ Then sync C3 and prove the release was not overwritten:
 
 ```bash
 # [Mac]
+git lfs pull && python3 scripts/check_no_lfs_pointers.py
 git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/
 git show HEAD:releases/current_baseline.json | shasum -a 256
 # box
@@ -451,6 +458,30 @@ vim .env     # confirm TRAIN_SMALL_CMD / TRAIN_FULL_CMD are the pinned recipes (
 ```
 
 Rollback: the refresh only writes pending rows until step 8; to undo a promoted refresh restore the step 2 dump.
+
+#### Forward producer in the weekly refresh (decision 0012)
+
+Step 4b runs after the stack step and before the simulation. In this order, and the order matters:
+
+1. Capture an availability snapshot (nflverse injuries plus weekly roster status), stored with its fetch time.
+2. Build the forward features with `as_of` = now. The snapshot was fetched before `as_of`, so it is usable. A snapshot fetched after `as_of` would not be.
+3. `ml.forward_serving.run_forward` runs guards G1-G5 and writes the week's projections and a `forecast_runs` row in one transaction under `weekly_auto_<season>_pending`.
+
+Any refusal (a guard, a missing availability snapshot, a library-version mismatch) writes a dead letter named `weekly_refresh/forward_producer`, returns 1 and stops before the simulation. Step 7 then checks the target week only: rows for every pinned cell and every position, under the pending id, or under the approved id when the week was already promoted.
+
+Inactives: the NFL publishes game-day inactives about 90 minutes before kickoff. The Tuesday refresh sees only injury reports, so a Questionable player is served with his status shown. The weekly refresh does not see inactives; do not expect it to.
+
+#### `--replace-week` (manual only)
+
+The producer never overwrites rows an approved run already serves. To rewrite a served week (for example after a data fix), take a dump first, then:
+
+```bash
+docker compose exec -T db pg_dump -U oracle -Fc oracle > ~/rerun_backup/pre_replace_$(date -u +%Y%m%dT%H%M%SZ).dump
+docker compose --profile training exec -T training python3 scripts/weekly_refresh.py \
+  --replace-week --dump-path /home/<user>/rerun_backup/pre_replace_<STAMP>.dump
+```
+
+`--dump-path` must be an existing, non-empty file, or the command refuses with exit 2 before touching anything. It deletes that week's `projections` rows (all run ids), then step 4b writes them again; the week stays empty until the refresh finishes, so a failure after the delete means restoring the dump. It refuses a week that has scores or has kicked off. It is never in a systemd unit or compose file, and a test fails if one ever carries it.
 
 ## Files that land
 
