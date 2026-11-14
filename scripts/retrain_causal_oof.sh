@@ -113,6 +113,6 @@ for CELL in "${CELLS[@]}"; do
   printf '%s\t%s\t%s\n' "$STAT:$POS" "$((T1 - T0))" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$OUT_DIR/TIMINGS.tsv"
 done
 
-find "$OUT_DIR" -maxdepth 1 -type f \( -name '*.csv' -o -name '*.parquet' \) -print0 | sort -z | xargs -0 shasum -a 256 >"$OUT_DIR/SHA256SUMS"
+find "$OUT_DIR" -maxdepth 1 -type f \( -name '*.csv' -o -name '*.parquet' \) -print0 | sort -z | bash scripts/sha256_files.sh >"$OUT_DIR/SHA256SUMS"
 echo "Causal OOF rebuild complete: $OUT_DIR"
 echo "Not served: release manifest and projection materialization were intentionally untouched."
