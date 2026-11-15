@@ -176,7 +176,7 @@ sudo systemd-run --quiet --wait --pipe --collect --property=EnvironmentFile=$ENV
     else echo "$v UNSET"; fi
   done'
 
-# 3. Compose's parse of the same four; the lengths and digests must equal step 2.
+# 3. Compose's parse of the same four; each length must equal the len in step 2.
 docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile training config --format json \
   | jq -r '.services.training.environment | to_entries[]
       | select(.key|IN("TRAIN_SMALL_CMD","TRAIN_FULL_CMD","HEALTHCHECKS_TRAIN_SMALL_URL","HEALTHCHECKS_TRAIN_FULL_URL"))
