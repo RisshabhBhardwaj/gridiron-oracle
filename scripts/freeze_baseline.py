@@ -19,7 +19,12 @@ if str(ROOT) not in sys.path:
 
 from backend.app.core.config import settings
 from backend.app.services.runtime_status import RuntimeStatusService
-from ml.artifact_manifest import REQUIRED_SERVING_CELLS
+from ml.artifact_manifest import (
+    REQUIRED_SERVING_CELLS,
+    LfsPointerError,
+    is_lfs_pointer,
+    lfs_pointer_message,
+)
 
 
 def _git(args: list[str]) -> str:
@@ -130,10 +135,16 @@ def _carry_forward_artifact_pins(payload: dict, current_path: Path) -> None:
 
     digests: dict[str, str] = {}
     missing: list[str] = []
+    pointers: list[str] = []
     for relpath in sorted(set(_walk(artifacts))):
         path = ROOT / relpath
         if not path.is_file():
             missing.append(relpath)
+            continue
+        if is_lfs_pointer(path):
+            # Never pin a pointer's digest: the release would then "verify" only on
+            # unsmudged checkouts and fail closed everywhere the real model exists.
+            pointers.append(relpath)
             continue
         digest = hashlib.sha256()
         with open(path, "rb") as handle:
@@ -141,6 +152,11 @@ def _carry_forward_artifact_pins(payload: dict, current_path: Path) -> None:
                 digest.update(chunk)
         digests[relpath] = digest.hexdigest()
 
+    if pointers:
+        raise LfsPointerError(
+            lfs_pointer_message(pointers[0])
+            + f" {len(pointers)} pinned file(s) are pointers: " + ", ".join(pointers)
+        )
     payload["artifact_digests"] = digests
     if missing:
         # Recorded rather than swallowed: a pinned artifact that is not on disk

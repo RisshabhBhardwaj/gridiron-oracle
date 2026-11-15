@@ -256,7 +256,12 @@ def sha256_of(path: Path | str, *, chunk_size: int = 1 << 20) -> str:
 def verify_file_digest(path: Path | str, expected: str) -> None:
     """
     Raise :class:`ArtifactIntegrityError` unless *path* hashes to *expected*.
+
+    A Git LFS pointer is refused first with :class:`LfsPointerError`, even when
+    *expected* is the pointer's own digest: a pin must never be satisfied by an
+    unsmudged checkout.
     """
+    refuse_lfs_pointer(path)
     actual = sha256_of(path)
     if actual.lower() != str(expected).lower():
         raise ArtifactIntegrityError(
@@ -276,6 +281,22 @@ def is_lfs_pointer(path: Path | str) -> bool:
     """True if *path* is a Git LFS pointer file (it starts with the LFS spec line)."""
     with open(path, "rb") as handle:
         return handle.read(len(LFS_POINTER_PREFIX)) == LFS_POINTER_PREFIX
+
+
+def lfs_pointer_message(path: Path | str) -> str:
+    """The one wording every pointer refusal uses, so it is never misread as a digest drift."""
+    return (
+        f"LFS file not fetched: {path} is a Git LFS pointer, not the file. "
+        'Run `git lfs pull --include "releases/candidates/*/models/*"`, check that '
+        "`git lfs ls-files` shows `*` for every model, then sync the smudged files "
+        "(docs/runbooks/vps4-causal-rerun.md)."
+    )
+
+
+def refuse_lfs_pointer(path: Path | str) -> None:
+    """Raise :class:`LfsPointerError` if *path* is a Git LFS pointer."""
+    if is_lfs_pointer(path):
+        raise LfsPointerError(lfs_pointer_message(path))
 
 
 # ── Manifest ──────────────────────────────────────────────────────────────────
@@ -465,11 +486,7 @@ class ArtifactManifest:
             )
         if verify:
             if is_lfs_pointer(absolute):
-                raise LfsPointerError(
-                    f"{relpath} is a Git LFS pointer, not the model. Run `git lfs pull` on the "
-                    "Mac, check that `git lfs ls-files` shows `*` for every model, then sync the "
-                    "smudged files (docs/runbooks/vps4-causal-rerun.md)."
-                )
+                raise LfsPointerError(lfs_pointer_message(relpath))
             self.require_digest(relpath, absolute)
         return absolute
 

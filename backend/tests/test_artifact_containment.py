@@ -879,6 +879,27 @@ class TestFreezeBaselinePreservesPins:
         _carry_forward_artifact_pins(payload, manifest)
         assert payload["artifact_pins_missing"] == ["ml/oof/does_not_exist_20260809.csv"]
 
+    def test_carry_forward_refuses_an_lfs_pointer_instead_of_pinning_it(self, tmp_path, monkeypatch):
+        """Freeze must fail closed on an unfetched LFS file, never record the pointer's digest."""
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        import freeze_baseline
+        from ml.artifact_manifest import LfsPointerError
+
+        rel = "releases/candidates/r/models/lgbm_targets_TE.txt"
+        (tmp_path / rel).parent.mkdir(parents=True)
+        (tmp_path / rel).write_text(
+            "version https://git-lfs.github.com/spec/v1\n"
+            "oid sha256:" + "a" * 64 + "\nsize 1234\n"
+        )
+        manifest = tmp_path / "m.json"
+        manifest.write_text(json.dumps({"artifacts": {"base_models": [rel]}}))
+        monkeypatch.setattr(freeze_baseline, "ROOT", tmp_path)
+        payload: dict = {}
+        with pytest.raises(LfsPointerError, match="LFS file not fetched") as err:
+            freeze_baseline._carry_forward_artifact_pins(payload, manifest)
+        assert rel in str(err.value)
+        assert "artifact_digests" not in payload
+
     def test_freeze_baseline_emits_the_keys_the_loader_requires(self):
         """The writer and the reader must agree on the manifest schema."""
         src = (REPO_ROOT / "scripts" / "freeze_baseline.py").read_text()

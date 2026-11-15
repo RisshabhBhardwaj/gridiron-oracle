@@ -19,6 +19,7 @@ from ml.artifact_manifest import (
     ManifestEntryMissing,
     ManifestError,
     load_manifest,
+    verify_file_digest,
 )
 from ml.season_constants import LAST_COMPLETE_SEASON
 
@@ -177,6 +178,7 @@ def test_git_lfs_pointer_is_named_as_such_with_the_fix(root: Path) -> None:
     (root / f"releases/candidates/{RELEASE}/models/catboost_targets_TE.cbm").write_text(LFS_POINTER)
     with pytest.raises(LfsPointerError) as err:
         _load(root).resolve_base_model("targets", "TE", "catboost")
+    assert "LFS file not fetched" in str(err.value)
     assert "git lfs pull" in str(err.value)
     assert isinstance(err.value, ArtifactIntegrityError)  # callers that catch integrity errors still catch it
 
@@ -189,6 +191,16 @@ def test_lfs_pointer_is_refused_even_when_the_digest_was_computed_from_the_point
                                       for e in meta["models"] if e["file"] == "catboost_targets_TE.cbm"])
     with pytest.raises(LfsPointerError):
         _load(root).resolve_base_model("targets", "TE", "catboost")
+
+
+def test_digest_check_names_an_lfs_pointer_instead_of_reporting_a_mismatch(tmp_path: Path) -> None:
+    """A pointer must never pass a digest check, even against its own digest, and the
+    error must say the file was not fetched rather than look like a drifted pin."""
+    pointer = tmp_path / "lgbm_targets_TE.txt"
+    pointer.write_text(LFS_POINTER)
+    for expected in (_sha(LFS_POINTER.encode()), "0" * 64):
+        with pytest.raises(LfsPointerError, match="LFS file not fetched"):
+            verify_file_digest(pointer, expected)
 
 
 def test_non_zero_weight_learner_without_a_pinned_model_fails_at_load(root: Path) -> None:

@@ -108,6 +108,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The pinned base models (decision 0012) are Git LFS. checkout leaves them as
+      # ~130-byte pointer files, and the digest tests would hash the pointer. Fetch
+      # only releases/candidates/*/models/* (about 23 MB); never `lfs: true`, which
+      # would also pull ml/onnx (~237 MB). The cache key is the LFS file list itself,
+      # so a new or changed model misses the cache and is fetched.
+      - name: LFS cache key from the pinned-model file list
+        id: lfs-key
+        run: |
+          set -euo pipefail
+          git lfs ls-files -l -I "releases/candidates/*/models/*" > "$RUNNER_TEMP/lfs-models.list"
+          test -s "$RUNNER_TEMP/lfs-models.list"
+          echo "key=lfs-models-$(sha256sum "$RUNNER_TEMP/lfs-models.list" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ steps.lfs-key.outputs.key }}
+
+      - name: Fetch the pinned base models from LFS
+        run: git lfs pull -I "releases/candidates/*/models/*"
+
+      - name: Fail if any pinned model is still an LFS pointer
+        run: python3 scripts/check_no_lfs_pointers.py
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
