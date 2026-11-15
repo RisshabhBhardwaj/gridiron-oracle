@@ -167,7 +167,9 @@ export function Settings() {
           <p className="text-xs text-fg-muted leading-relaxed">
             Raise an area to count it more in the numbers, lower it to count it less.
             Numbers changed this way are marked as adjusted. They are a what-if —
-            they have not been checked against past games.
+            they have not been checked against past games. These apply to
+            past-season numbers now; weekly forecasts will use them in a later
+            update.
           </p>
           {/* Total indicator */}
           <div className={clsx(toneClass(totalValid ? 'positive' : 'negative'), 'flex items-center justify-between p-3 rounded-lg bg-tone/[0.06] border border-tone/20')}>

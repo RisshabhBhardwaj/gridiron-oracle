@@ -199,6 +199,16 @@ describe('Settings (saved-settings provenance)', () => {
     await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
     expect(screen.getByText(/they are a what-if/i)).toBeInTheDocument()
   })
+
+  it('says weights apply to past seasons now and to weekly forecasts later (D7)', async () => {
+    renderSettings()
+    await waitFor(() => expect(screen.getByText('Feature Weights')).toBeInTheDocument())
+    expect(
+      screen.getByText(
+        /These apply to past-season numbers now; weekly forecasts will use them in a later update\./,
+      ),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('Settings (editable build, server refuses the write)', () => {
