@@ -40,12 +40,12 @@ The backend address is one line: `BACKEND_URL` in `frontend/wrangler.toml` `[var
 
 Rollback: Cloudflare dashboard → Workers & Pages → `gridiron-oracle` → Deployments → pick an earlier one → Rollback.
 
-## Current production deploy (2026-11-14)
+## Current production deploy (2026-11-15)
 
-Production runs `main` at `ffcd5d3` (Pages deploy `549ff5d3`, by the coordinator with owner approval). The Pages Function proxies `/api/*` to `https://gridiron-api.risshabh.com` (Cloudflare Tunnel to the api on the OVH box). This build reads the served release `causal_20261114` for Backtest and Season Review, and includes UI phase 2 items 1-3.
+Production runs `main` at `9bcbd6e` (Pages deploy `b2469f78`, 2026-11-15 ~01:10 UTC, by the manager with the owner's yes relayed by the coordinator). It adds UI phase 2 items 4-7 (player page, draft board, one error pattern and loading states, projections table and accessibility) to the build below. The box api was redeployed from the same commit just before Pages (`/explain` now answers 404 `{explanation_available: false}` instead of 503 when no breakdown is published; rollback image tag `pre-explain404-20261115T0101Z` on the api image). `9bcbd6e` is deliberately older than `main`: the forward producer (`de79477`) needs migrations 0028-0030 on the box first.
 
-Verified live 2026-11-14 by the coordinator: `/backtest` and `/season` render with 0 console errors at 1440 and 390 px; `/api/backtest` returns release `causal_20261114` with 158/160.
+Verified live 2026-11-15 at 1440 and 390 px: `/`, `/season`, `/draft`, `/backtest` and a not-found page have 0 console errors and no sideways scroll. `/projections` and the player page log one browser network 404 each, the expected "no forecast for this week" answer from `/api/team-games` and `/api/predict` (no forward-week rows until the forward producer runs on the box); both pages show the calm "No forecast yet" note with next steps. The explain panel can't be seen in the UI until a week has a forecast; the api 404 was checked directly.
 
-Previous production deploys: `d77a1738` (`main` `49c2706` + `2d9d372`, 2026-11-12), before that the live-parity branch `agent/cloudflare-live` (`cfb46f9`), now superseded and due for retirement.
+Previous production deploys: `549ff5d3` (`main` `ffcd5d3`, 2026-11-14), `d77a1738` (`main` `49c2706` + `2d9d372`, 2026-11-12), before that the live-parity branch `agent/cloudflare-live` (`cfb46f9`), now superseded and due for retirement.
 
 Keep the frontend and api in step: when an api change alters a response shape (for example a re-freeze that adds a pinned group), deploy the frontend in the same window. Rollback: redeploy the previous deployment from the Pages dashboard, or rebuild the previous commit with the command above.
