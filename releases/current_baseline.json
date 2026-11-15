@@ -376,14 +376,14 @@
     ]
   },
   "baseline_manifest_path": "releases/current_baseline.json",
-  "created_at": "2026-11-14T16:53:35.742556+00:00",
+  "created_at": "2026-11-15T03:15:48.626866+00:00",
   "environment": {
     "ARTIFACT_INVALIDATION_PATH": "releases/artifact_invalidations.json",
     "BASELINE_MANIFEST_PATH": "releases/current_baseline.json",
     "DATABASE_URL": "postgresql+asyncpg://oracle:***@db:5432/oracle"
   },
   "git_branch": "unknown",
-  "git_commit": "a05689198a641f425d274021d84441bcad729c7e",
+  "git_commit": "ace11e21a2faaaf8e9434d24af71437d7e51becc",
   "git_dirty": false,
   "git_provenance": "env:GIT_COMMIT_SHA",
   "integrity": {
@@ -401,9 +401,9 @@
       "baseline_manifest": {
         "detail": "Deployed commit differs from the baseline manifest's pinned commit, and lineage cannot be verified without a git worktree. Re-freeze the baseline at the deployed commit to clear this.",
         "observed": {
-          "created_at": "2026-11-14T11:57:26.565839+00:00",
-          "git_commit": "226e0ec72730e38a243818a9aad41801cf8c6644",
-          "head": "a05689198a641f425d274021d84441bcad729c7e",
+          "created_at": "2026-11-14T16:53:35.742556+00:00",
+          "git_commit": "a05689198a641f425d274021d84441bcad729c7e",
+          "head": "ace11e21a2faaaf8e9434d24af71437d7e51becc",
           "model_version": "latest",
           "path": "/app/releases/current_baseline.json",
           "worktree_dirty": false
@@ -417,7 +417,7 @@
       "feature_matrix": {
         "detail": "feature_matrix freshness checked",
         "observed": {
-          "age_hours": 3.22,
+          "age_hours": 13.59,
           "computed_at": "2026-11-14T13:40:08.672670+00:00",
           "season": 2026,
           "week": 9
@@ -446,7 +446,7 @@
       }
     },
     "fallback_allowed": false,
-    "generated_at": "2026-11-14T16:53:35.741774+00:00",
+    "generated_at": "2026-11-15T03:15:48.626026+00:00",
     "model_version": "latest",
     "overall_status": "degraded",
     "product_mode": "artifact_backed"
