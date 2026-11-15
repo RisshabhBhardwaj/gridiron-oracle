@@ -169,7 +169,7 @@ class TestGlobalEnrichmentWiring:
         with patch("pipeline.orchestrator._live_season", return_value=SeasonResult(season=2025, dry_run=False)), \
              patch("pipeline.orchestrator._run_global_enrichment") as mock_enrich:
             Orchestrator(db_url="postgresql://unused").run(seasons=[2025], dry_run=False)
-        mock_enrich.assert_called_once_with("postgresql://unused")
+        mock_enrich.assert_called_once_with("postgresql://unused", [2025])
 
 
 class TestOrchestratorSourcesScoping:

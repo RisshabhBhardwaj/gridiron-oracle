@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import pytest
 
+from backend.tests.fail_on_skip import (  # noqa: F401  (hooks; see module)
+    pytest_collectreport,
+    pytest_runtest_makereport,
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_user_settings_file(tmp_path, monkeypatch):

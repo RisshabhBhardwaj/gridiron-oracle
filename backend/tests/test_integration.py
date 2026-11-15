@@ -350,7 +350,7 @@ class TestBacktest:
             assert r.status_code == 200
 
     def test_has_all_required_fields_when_backtest_is_available(self, int_client):
-        """MAE, RMSE, Brier, P&L, Sharpe, max_drawdown, calibration."""
+        """The served-release shape: verdicts, per-cell rows, and what was not measured."""
         response = int_client.get("/backtest", params={"stat": "receiving_yards"})
         if response.status_code == 503:
             # Artifact-backed mode must not fabricate a backtest response.
@@ -359,11 +359,13 @@ class TestBacktest:
         assert response.status_code == 200
         body = response.json()
         for field in (
-            "overall_mae", "overall_rmse", "brier_score",
-            "simulated_pnl", "sharpe_ratio", "max_drawdown", "calibration",
+            "release", "generated_at", "seasons", "stat", "positions",
+            "verdict", "release_verdict", "cohort_rules", "rows",
+            "available", "not_measured", "table_url",
         ):
             assert field in body, f"Missing required backtest field: {field}"
-        assert isinstance(body["calibration"], list)
+        assert isinstance(body["rows"], list)
+        assert isinstance(body["available"], list)
 
     def test_coverage_80_above_threshold(self, int_client):
         """
