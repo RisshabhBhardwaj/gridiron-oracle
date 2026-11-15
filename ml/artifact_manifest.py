@@ -592,24 +592,14 @@ def _parse_base_model_relpath(relpath: str) -> Optional[tuple[str, str, str]]:
     return None
 
 
-def _check_base_models(
-    manifest_path_: Path,
-    base: Path,
-    digests: Mapping[str, str],
-    base_model_relpaths: list[str],
-    coefficient_index: Mapping[tuple[str, str], str],
-) -> tuple[dict[tuple[str, str, str], str], dict[tuple[str, str, str], dict]]:
-    """
-    Load-time cross-check of ``artifacts.base_models`` (decision 0012, section 4).
+_MODEL_ENTRY_FIELDS = ("learner", "stat", "position", "file", "sha256", "release_id",
+                       "train_seasons", "max_train_season", "features")
 
-    Everything checkable without reading the model files themselves is checked
-    here, so a bad release fails at load and not at the first prediction. The
-    model files are verified by digest when resolved. Returns the model index
-    and the per-model MODELS.json entries.
-    """
-    from ml.season_constants import LAST_COMPLETE_SEASON
 
-    where = f"Release manifest {manifest_path_}"
+def _index_base_model_relpaths(
+    where: str, base_model_relpaths: list[str]
+) -> tuple[dict[tuple[str, str, str], str], str]:
+    """Split the pinned list into the model index and the single MODELS.json path."""
     if not base_model_relpaths:
         raise ManifestError(f"{where}: 'artifacts.base_models' is present but empty.")
 
@@ -633,12 +623,14 @@ def _check_base_models(
             f"{where}: 'artifacts.base_models' must list exactly one {MODELS_META_NAME}; "
             f"found {len(meta_relpaths)}."
         )
-    meta_relpath = meta_relpaths[0]
-    unpinned = sorted(r for r in [*model_index.values(), meta_relpath] if r not in digests)
-    if unpinned:
-        raise ManifestError(f"{where} records no SHA-256 for base-model file(s): {unpinned}.")
+    return model_index, meta_relpaths[0]
 
-    # MODELS.json: pinned, then read. A changed file must not be trusted for its own checks.
+
+def _load_models_meta(
+    where: str, base: Path, meta_relpath: str, digests: Mapping[str, str]
+) -> tuple[object, list]:
+    """Read MODELS.json after verifying its digest; return ``(release_id, entries)``."""
+    # Pinned, then read: a changed file must not be trusted for its own checks.
     meta_path = base / meta_relpath
     if not meta_path.exists():
         raise ManifestError(f"{where} pins {meta_relpath}, but the file is missing.")
@@ -653,57 +645,74 @@ def _check_base_models(
     entries = meta.get("models")
     if not release_id or not isinstance(entries, list) or not entries:
         raise ManifestError(f"{meta_relpath}: needs a release_id and a non-empty 'models' list.")
+    return release_id, entries
 
-    meta_dir = Path(meta_relpath).parent
-    model_meta: dict[tuple[str, str, str], dict] = {}
-    for entry in entries:
-        for field_name in ("learner", "stat", "position", "file", "sha256", "release_id",
-                           "train_seasons", "max_train_season", "features"):
-            if not isinstance(entry, dict) or field_name not in entry:
-                raise ManifestError(f"{meta_relpath}: a model entry lacks {field_name!r}.")
-        key = (entry["learner"], entry["stat"], entry["position"])
-        label = "/".join(key)
-        relpath = (meta_dir / entry["file"]).as_posix()
-        if _parse_base_model_relpath(relpath) != key:
-            raise ManifestError(
-                f"{meta_relpath}: entry {label} says file {entry['file']!r}, which names a different model."
-            )
-        if key in model_meta:
-            raise ManifestError(f"{meta_relpath}: two entries for {label}.")
-        if model_index.get(key) != relpath:
-            raise ManifestError(
-                f"{meta_relpath} lists {relpath} for {label}, but the manifest does not pin that file "
-                "under 'artifacts.base_models'."
-            )
-        if str(entry["sha256"]).lower() != digests[relpath].lower():
-            raise ManifestError(
-                f"{meta_relpath}: sha256 for {label} differs from 'artifact_digests' ({relpath})."
-            )
-        if entry["release_id"] != release_id:
-            raise ManifestError(
-                f"{meta_relpath}: {label} has release_id {entry['release_id']!r}, "
-                f"but the file's release_id is {release_id!r}. All models must come from one release."
-            )
-        seasons = entry["train_seasons"]
-        if (not isinstance(seasons, list) or not seasons
-                or not all(isinstance(x, int) for x in seasons)
-                or max(seasons) != entry["max_train_season"]):
-            raise ManifestError(f"{meta_relpath}: {label} train_seasons must be ints ending at max_train_season.")
-        if entry["max_train_season"] > LAST_COMPLETE_SEASON:
-            raise ManifestError(
-                f"{meta_relpath}: {label} was fitted through {entry['max_train_season']}, past "
-                f"LAST_COMPLETE_SEASON={LAST_COMPLETE_SEASON}."
-            )
-        features = entry["features"]
-        if not isinstance(features, list) or not features or not all(isinstance(f, str) for f in features):
-            raise ManifestError(f"{meta_relpath}: {label} needs a non-empty feature list.")
-        model_meta[key] = entry
-    unlisted = sorted("/".join(k) for k in set(model_index) - set(model_meta))
-    if unlisted:
-        raise ManifestError(f"{meta_relpath} (MODELS.json) has no entry for pinned model(s): {unlisted}.")
 
-    # Cross-check against the pinned ridge files: every learner that carries weight has a
-    # model, and no model is pinned that no ridge file uses.
+def _check_entry_training_span(meta_relpath: str, label: str, entry: Mapping) -> None:
+    """Train seasons, the leakage bound and the feature list of one MODELS.json entry."""
+    from ml.season_constants import LAST_COMPLETE_SEASON
+
+    seasons = entry["train_seasons"]
+    if (not isinstance(seasons, list) or not seasons
+            or not all(isinstance(x, int) for x in seasons)
+            or max(seasons) != entry["max_train_season"]):
+        raise ManifestError(f"{meta_relpath}: {label} train_seasons must be ints ending at max_train_season.")
+    if entry["max_train_season"] > LAST_COMPLETE_SEASON:
+        raise ManifestError(
+            f"{meta_relpath}: {label} was fitted through {entry['max_train_season']}, past "
+            f"LAST_COMPLETE_SEASON={LAST_COMPLETE_SEASON}."
+        )
+    features = entry["features"]
+    if not isinstance(features, list) or not features or not all(isinstance(f, str) for f in features):
+        raise ManifestError(f"{meta_relpath}: {label} needs a non-empty feature list.")
+
+
+def _check_model_entry(
+    meta_relpath: str,
+    entry: Mapping,
+    release_id: object,
+    model_index: Mapping[tuple[str, str, str], str],
+    digests: Mapping[str, str],
+    seen: Mapping[tuple[str, str, str], dict],
+) -> tuple[str, str, str]:
+    """Validate one MODELS.json entry against the manifest pins; return its model key."""
+    for field_name in _MODEL_ENTRY_FIELDS:
+        if not isinstance(entry, dict) or field_name not in entry:
+            raise ManifestError(f"{meta_relpath}: a model entry lacks {field_name!r}.")
+    key = (entry["learner"], entry["stat"], entry["position"])
+    label = "/".join(key)
+    relpath = (Path(meta_relpath).parent / entry["file"]).as_posix()
+    if _parse_base_model_relpath(relpath) != key:
+        raise ManifestError(
+            f"{meta_relpath}: entry {label} says file {entry['file']!r}, which names a different model."
+        )
+    if key in seen:
+        raise ManifestError(f"{meta_relpath}: two entries for {label}.")
+    if model_index.get(key) != relpath:
+        raise ManifestError(
+            f"{meta_relpath} lists {relpath} for {label}, but the manifest does not pin that file "
+            "under 'artifacts.base_models'."
+        )
+    if str(entry["sha256"]).lower() != digests[relpath].lower():
+        raise ManifestError(
+            f"{meta_relpath}: sha256 for {label} differs from 'artifact_digests' ({relpath})."
+        )
+    if entry["release_id"] != release_id:
+        raise ManifestError(
+            f"{meta_relpath}: {label} has release_id {entry['release_id']!r}, "
+            f"but the file's release_id is {release_id!r}. All models must come from one release."
+        )
+    _check_entry_training_span(meta_relpath, label, entry)
+    return key
+
+
+def _models_needed_by_ridge(
+    where: str,
+    base: Path,
+    digests: Mapping[str, str],
+    coefficient_index: Mapping[tuple[str, str], str],
+) -> set[tuple[str, str, str]]:
+    """Every (learner, stat, position) that carries non-zero weight in a pinned ridge file."""
     needed: set[tuple[str, str, str]] = set()
     for (stat, position), ridge_relpath in coefficient_index.items():
         ridge_path = base / ridge_relpath
@@ -719,6 +728,42 @@ def _check_base_models(
                     needed.add((learner, stat, position))
         except (KeyError, TypeError, ValueError) as exc:
             raise ManifestError(f"{ridge_relpath}: unreadable ridge coefficients: {exc!r}") from exc
+    return needed
+
+
+def _check_base_models(
+    manifest_path_: Path,
+    base: Path,
+    digests: Mapping[str, str],
+    base_model_relpaths: list[str],
+    coefficient_index: Mapping[tuple[str, str], str],
+) -> tuple[dict[tuple[str, str, str], str], dict[tuple[str, str, str], dict]]:
+    """
+    Load-time cross-check of ``artifacts.base_models`` (decision 0012, section 4).
+
+    Everything checkable without reading the model files themselves is checked
+    here, so a bad release fails at load and not at the first prediction. The
+    model files are verified by digest when resolved. Returns the model index
+    and the per-model MODELS.json entries.
+    """
+    where = f"Release manifest {manifest_path_}"
+    model_index, meta_relpath = _index_base_model_relpaths(where, base_model_relpaths)
+    unpinned = sorted(r for r in [*model_index.values(), meta_relpath] if r not in digests)
+    if unpinned:
+        raise ManifestError(f"{where} records no SHA-256 for base-model file(s): {unpinned}.")
+
+    release_id, entries = _load_models_meta(where, base, meta_relpath, digests)
+    model_meta: dict[tuple[str, str, str], dict] = {}
+    for entry in entries:
+        key = _check_model_entry(meta_relpath, entry, release_id, model_index, digests, model_meta)
+        model_meta[key] = entry
+    unlisted = sorted("/".join(k) for k in set(model_index) - set(model_meta))
+    if unlisted:
+        raise ManifestError(f"{meta_relpath} (MODELS.json) has no entry for pinned model(s): {unlisted}.")
+
+    # Cross-check against the pinned ridge files: every learner that carries weight has a
+    # model, and no model is pinned that no ridge file uses.
+    needed = _models_needed_by_ridge(where, base, digests, coefficient_index)
     missing = sorted("/".join(k) for k in needed - set(model_index))
     if missing:
         raise ManifestError(
