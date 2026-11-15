@@ -2,16 +2,16 @@
   "batches": [
     {
       "n_rows": 1260,
-      "rows_sha256": "bf68d06eba692d21674373f3daa614b55fece5dac7067683b54e866b587e226e",
+      "rows_sha256": "59ca0cbe23b5628648dafac8e94ef80c97f5a1e100d09e31e22b382adfee9715",
       "sql": "INSERT INTO projections (player_id, game_id, season, week, stat, position, projection, floor, ceiling, p25, p75, boom_probability, bust_probability, fantasy_projection, fantasy_floor, fantasy_ceiling, derived_fantasy_projection, pipeline_run_id, posterior_samples, max_train_season, interval_method) VALUES ( %(player_id)s, %(game_id)s, %(season)s, %(week)s, %(stat)s, %(position)s, %(projection)s, %(floor)s, %(ceiling)s, %(p25)s, %(p75)s, NULL, NULL, %(fantasy_projection)s, %(fantasy_floor)s, %(fantasy_ceiling)s, %(derived_fantasy_projection)s, %(pipeline_run_id)s, NULL, %(max_train_season)s, %(interval_method)s ) ON CONFLICT (player_id, game_id, stat) DO UPDATE SET season = EXCLUDED.season, week = EXCLUDED.week, position = EXCLUDED.position, projection = EXCLUDED.projection, floor = EXCLUDED.floor, ceiling = EXCLUDED.ceiling, p25 = EXCLUDED.p25, p75 = EXCLUDED.p75, fantasy_projection = EXCLUDED.fantasy_projection, fantasy_floor = EXCLUDED.fantasy_floor, fantasy_ceiling = EXCLUDED.fantasy_ceiling, derived_fantasy_projection = EXCLUDED.derived_fantasy_projection, pipeline_run_id = EXCLUDED.pipeline_run_id, boom_probability = EXCLUDED.boom_probability, bust_probability = EXCLUDED.bust_probability, posterior_samples = EXCLUDED.posterior_samples, max_train_season = EXCLUDED.max_train_season, interval_method = EXCLUDED.interval_method WHERE NOT (COALESCE(projections.pipeline_run_id = ANY(ARRAY['season_sim_2026_1_20260823T000324_8fb263f0','stack_materialize_20261114T115324Z','weekly_auto_2026']), false) AND projections.pipeline_run_id IS DISTINCT FROM EXCLUDED.pipeline_run_id)"
     },
     {
       "n_rows": 1260,
-      "rows_sha256": "6ddd371e6e761c27e886d3a050ca0271bd421d427b2d0598c025197adebe0ff6",
+      "rows_sha256": "2bee038722031edee1201e0a7f1714ac79542433d9f5930c5d9fd968772a5253",
       "sql": "INSERT INTO projection_attributions (player_id, game_id, stat, pipeline_run_id, base, kalman_form, seasonal_baseline, matchup, weather_venue, team_context, roster_injury, rule_meta, unweighted, max_residual) VALUES ( %(player_id)s, %(game_id)s, %(stat)s, %(pipeline_run_id)s, %(base)s, %(kalman_form)s, %(seasonal_baseline)s, %(matchup)s, %(weather_venue)s, %(team_context)s, %(roster_injury)s, %(rule_meta)s, %(unweighted)s, %(max_residual)s ) ON CONFLICT (player_id, game_id, stat) DO UPDATE SET pipeline_run_id = EXCLUDED.pipeline_run_id, base = EXCLUDED.base, kalman_form = EXCLUDED.kalman_form, seasonal_baseline = EXCLUDED.seasonal_baseline, matchup = EXCLUDED.matchup, weather_venue = EXCLUDED.weather_venue, team_context = EXCLUDED.team_context, roster_injury = EXCLUDED.roster_injury, rule_meta = EXCLUDED.rule_meta, unweighted = EXCLUDED.unweighted, max_residual = EXCLUDED.max_residual, created_at = now() WHERE NOT (COALESCE(projection_attributions.pipeline_run_id = ANY(ARRAY['season_sim_2026_1_20260823T000324_8fb263f0','stack_materialize_20261114T115324Z','weekly_auto_2026']), false) AND projection_attributions.pipeline_run_id IS DISTINCT FROM EXCLUDED.pipeline_run_id)"
     }
   ],
   "committed": 1,
-  "frame_sha256": "52e03ef6890cebe458d7206c01145ec9d3b423e0245b706c2562b11e4759fe8a",
+  "frame_sha256": "15f47749ab52fbcb6ca0a6950c1e084a6fdf4743cb6e700469081d03c726b29d",
   "n_rows": 1260
 }
