@@ -11,6 +11,7 @@ Who runs it: the Gridiron manager, with the owner's go-ahead for the production-
 - **Mac commands** run in the merged repo checkout and are marked `[Mac]`. `$BOX` is `deploy@<box address>`, set in your shell. The address is never written in the repo.
 - Commit names used below: **C1** = merged `main` that carries this work. **C2** = C1 plus the promoted release candidate (step 12). **C3** = C2 plus evidence only (step 18).
 - **Code-sync rule (`CODE_GIT_SHA`).** Every sync starts by refusing a dirty Mac tree: `git diff --quiet && git diff --cached --quiet || { echo 'dirty tree: commit first'; exit 1; }`, before the rsync and before the build arg is set (the rsync copies working-tree content of tracked files, so a dirty tree would ship code no commit names). Then set `.env` `CODE_GIT_SHA` to `git rev-parse HEAD` of that tree (`vim .env` on the box; `grep -c '^CODE_GIT_SHA=' .env` must print 1) and build the image. The build arg is baked into `/app/CODE_GIT_SHA`; the producer reads only that file in an image, so a later `.env` edit cannot change what an image records. Never derive it from `GIT_COMMIT_SHA` (pinned to the freeze commit). The value must be 40 lowercase hex; anything else makes the forward producer refuse to write.
+- **Never sync `infra/hosts/vps1/cloudflared.config.yml`.** The tracked file holds a placeholder hostname (`api.<your-domain>`); the box keeps its own edited copy, and a sync would overwrite it. Every `git ls-files -z | rsync ...` line below therefore carries `--exclude infra/hosts/vps1/cloudflared.config.yml` (excludes apply to the `--files-from` list; checked 2026-11-15 with a local rsync into a temp directory: the file was skipped, 1272 of 1273 files copied, and an existing destination copy was left untouched). rsync prints one `skipping excluded file` warning; that is expected.
 - `/srv/gridiron` has no `.git`. The images copy code and `releases/` at build time (`backend/Dockerfile` and `Dockerfile.serving` both `COPY releases`). `reports/` is gitignored and is **not** in the image.
 
 ## Decisions this runbook makes
@@ -123,7 +124,7 @@ git diff --quiet && git diff --cached --quiet || { echo 'dirty tree: commit firs
 git lfs pull
 git lfs ls-files        # every releases/candidates/*/models/* line must show "*" (content present), not "-" (pointer)
 python3 scripts/check_no_lfs_pointers.py
-git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/
+git ls-files -z | rsync -a --from0 --files-from=- --exclude infra/hosts/vps1/cloudflared.config.yml ./ $BOX:/srv/gridiron/
 ssh $BOX 'cd /srv/gridiron && python3 scripts/check_no_lfs_pointers.py'    # same check on the box, plain python3
 ```
 
@@ -310,7 +311,7 @@ Rollback: `git reset --hard HEAD~1` on the Mac (never pushed).
 
 ### 13. Sync C2, set `GIT_COMMIT_SHA`, rebuild, recreate training
 
-`[Mac]`: run the step 3 block (`git lfs pull`, the pointer check, then `git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/`). Then on the box:
+`[Mac]`: run the step 3 block (`git lfs pull`, the pointer check, then `git ls-files -z | rsync -a --from0 --files-from=- --exclude infra/hosts/vps1/cloudflared.config.yml ./ $BOX:/srv/gridiron/`). Then on the box:
 
 ```bash
 cd /srv/gridiron/infra/hosts/vps1
@@ -419,7 +420,7 @@ Then sync C3 and prove the release was not overwritten:
 ```bash
 # [Mac]
 git lfs pull && python3 scripts/check_no_lfs_pointers.py
-git ls-files -z | rsync -a --from0 --files-from=- ./ $BOX:/srv/gridiron/
+git ls-files -z | rsync -a --from0 --files-from=- --exclude infra/hosts/vps1/cloudflared.config.yml ./ $BOX:/srv/gridiron/
 git show HEAD:releases/current_baseline.json | shasum -a 256
 # box
 sha256sum /srv/gridiron/releases/current_baseline.json        # must be identical
