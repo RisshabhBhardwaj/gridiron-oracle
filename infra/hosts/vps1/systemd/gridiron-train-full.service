@@ -12,6 +12,11 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+# The launcher script reads TRAIN_*_CMD and the healthchecks URL from the environment.
+# systemd does not read .env; without this line the script exits "TRAIN_..._CMD is unset"
+# (found 2026-11-15: train-small failed every night). No "-" prefix on purpose: a missing
+# .env must fail the unit loudly. Value syntax rules: .env.example, "systemd also reads .env".
+EnvironmentFile=/srv/gridiron/infra/hosts/vps1/.env
 Slice=gridiron-training.slice
 Nice=10
 RuntimeMaxSec=54h 30min

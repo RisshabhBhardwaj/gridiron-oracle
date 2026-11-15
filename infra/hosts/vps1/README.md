@@ -114,7 +114,11 @@ TFT/GNN retrains wait for their own fold profile.
 - **Recipes (pinned 2026-11-14, not yet run on the box):**
   `scripts/train_small.sh` and `scripts/train_full.sh` take `TRAIN_SMALL_CMD`
   / `TRAIN_FULL_CMD` from `.env` (values in `.env.example`) and fail loud when
-  unset. Both call `scripts/train_window.sh` inside the container:
+  unset. systemd supplies them: the two training units carry
+  `EnvironmentFile=/srv/gridiron/infra/hosts/vps1/.env`. The etl, backup and
+  availability units do not: they only run `docker compose`, which reads `.env`
+  from the project directory itself, and availability must not get the secrets
+  (no `env_file` in compose on purpose). Both call `scripts/train_window.sh` inside the container:
   - `full`: the 32-cell causal OOF rebuild with per-row bucket attributions
     (`scripts/retrain_causal_oof.sh`, 20 trials). Resumable: a window killed
     at `RuntimeMaxSec` continues the same rebuild next time (pointer file
@@ -147,6 +151,48 @@ TFT/GNN retrains wait for their own fold profile.
   producer refuse to write a forward run.
 - Every training run pings its dead-man URL on success only
   (`HEALTHCHECKS_TRAIN_SMALL_URL` / `HEALTHCHECKS_TRAIN_FULL_URL`).
+
+### Checking .env (systemd and compose)
+
+Two things read `.env`: systemd (`EnvironmentFile=` on the two training units)
+and `docker compose` (project-directory `.env` for `${...}` interpolation, plus
+`env_file` on `etl`, `backup`, `training` and `api`). They parse differently:
+systemd does no `$` expansion and keeps text after a `#` that follows a value;
+compose does both. `.env.example` lists the rules. After any `.env` edit, run
+this on the box; it prints no secret values (only lengths and a digest):
+
+```sh
+ENV=/srv/gridiron/infra/hosts/vps1/.env
+# 1. Unit files are valid and name the env file (train units only).
+sudo systemd-analyze verify /etc/systemd/system/gridiron-train-small.service \
+  /etc/systemd/system/gridiron-train-full.service
+systemctl show -p EnvironmentFiles gridiron-train-small.service gridiron-train-full.service
+
+# 2. systemd's own parse of the four variables the launchers read.
+sudo systemd-run --quiet --wait --pipe --collect --property=EnvironmentFile=$ENV sh -c '
+  for v in TRAIN_SMALL_CMD TRAIN_FULL_CMD HEALTHCHECKS_TRAIN_SMALL_URL HEALTHCHECKS_TRAIN_FULL_URL; do
+    eval "x=\${$v:-}"
+    if [ -n "$x" ]; then printf "%s set len=%s sha=%s\n" "$v" "${#x}" "$(printf %s "$x" | sha256sum | cut -c1-12)"
+    else echo "$v UNSET"; fi
+  done'
+
+# 3. Compose's parse of the same four; the lengths and digests must equal step 2.
+docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile training config --format json \
+  | jq -r '.services.training.environment | to_entries[]
+      | select(.key|IN("TRAIN_SMALL_CMD","TRAIN_FULL_CMD","HEALTHCHECKS_TRAIN_SMALL_URL","HEALTHCHECKS_TRAIN_FULL_URL"))
+      | "\(.key) \(.value|length)"'
+```
+
+The `etl`, `backup` and `availability` units need no `EnvironmentFile=`; check
+what compose hands them (variable names and set/empty only):
+
+```sh
+docker compose --project-directory /srv/gridiron/infra/hosts/vps1 --profile jobs config --format json \
+  | jq -r '.services | to_entries[] | select(.key|IN("etl","backup","availability"))
+      | .key as $s | .value.environment | to_entries[]
+      | select(.key|test("HEALTHCHECKS|R2_|API_KEY")) | "\($s) \(.key) \(if .value=="" then "EMPTY" else "set" end)"'
+# expected: each job's HEALTHCHECKS_*_URL set; R2_* only under backup; API_KEY never under availability.
+```
 
 ## Observability fit (inside the 2.5 GB site envelope)
 
@@ -213,7 +259,8 @@ sudo systemctl enable --now gridiron-etl.timer gridiron-backup.timer \
 #    never stops training: it shares the training lock and has a hard 20 minute
 #    limit; train-full starts at 23:30 UTC and waits up to 30 minutes for the lock.
 #    Set TRAIN_SMALL_CMD / TRAIN_FULL_CMD (see "Training slice") and the
-#    four healthchecks.io URLs in .env; a missing ping after a scheduled
+#    healthchecks.io URLs (backup, etl, availability, train-small, train-full)
+#    in .env; a missing ping after a scheduled
 #    run is the alert. Logs: journalctl -u gridiron-<name>.
 
 # 9. Observability trio (optional, fits the envelope):
